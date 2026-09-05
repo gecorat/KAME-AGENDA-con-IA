@@ -1,0 +1,8 @@
+{
+  "name": "AgendaPro AI",
+  "description": "Sistema de gestión para consultorios: agenda inteligente, bot IA en WhatsApp, historias clínicas con notas de voz y transcripción IA, recordatorios, cobros y caja",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
