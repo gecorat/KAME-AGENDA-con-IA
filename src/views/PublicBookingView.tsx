@@ -13,18 +13,33 @@ import {
   ChevronRight,
   ArrowRight,
   Video,
-  FileText
+  FileText,
+  CreditCard,
+  ExternalLink,
+  Landmark,
+  Copy
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { Service } from '../types';
 
 interface PublicBookingViewProps {
+  onBack?: () => void;
   onBackToDashboard?: () => void;
 }
 
-export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDashboard }) => {
+export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, onBackToDashboard }) => {
   const { practiceSettings, services, availability, appointments, addAppointment } = useAgendaStore();
+
+  const handleBackClick = () => {
+    if (onBack) {
+      onBack();
+    } else if (onBackToDashboard) {
+      onBackToDashboard();
+    } else if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+    }
+  };
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [selectedService, setSelectedService] = useState<Service | null>(
@@ -42,6 +57,9 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDa
   const [patientDni, setPatientDni] = useState('');
   const [patientNotes, setPatientNotes] = useState('');
   const [confirmedBookingCode, setConfirmedBookingCode] = useState('');
+  const [depositPaid, setDepositPaid] = useState(false);
+  const [isPayingDeposit, setIsPayingDeposit] = useState(false);
+  const [copiedAlias, setCopiedAlias] = useState(false);
 
   // Active services
   const activeServices = services.filter(s => s.active);
@@ -150,6 +168,37 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDa
     setConfirmedBookingCode(bookingCode);
     setStep(5);
 
+    // Automated email reminder & confirmation dispatch
+    if (patientEmail.trim()) {
+      fetch('/api/reminders/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: patientEmail.trim(),
+          patientName: patientName.trim(),
+          practiceName: practiceSettings.practice_name,
+          date: selectedDate,
+          time: selectedSlot,
+          serviceName: selectedService.name,
+          modality: selectedService.category === 'Online' ? 'virtual' : 'presencial',
+          address: practiceSettings.address,
+          meetUrl: practiceSettings.google_meet_url || 'https://meet.google.com/new'
+        })
+      }).catch(err => console.warn('Reminder email background dispatch:', err));
+    }
+
+    // Automated WhatsApp confirmation message if line is connected
+    if (patientPhone.trim() && practiceSettings.whatsapp_connected) {
+      fetch('/api/evolution/send-message', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: patientPhone.trim(),
+          text: `¡Hola ${patientName.trim()}! 👋 Tu reserva para *${selectedService.name}* en *${practiceSettings.practice_name}* ha sido registrada con éxito para el día ${selectedDate} a las ${selectedSlot} hs (Código: #${bookingCode}). ¡Te esperamos!`
+        })
+      }).catch(err => console.warn('WhatsApp booking confirmation dispatch:', err));
+    }
+
     confetti({
       particleCount: 100,
       spread: 80,
@@ -157,17 +206,76 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDa
     });
   };
 
+  const themePreset = practiceSettings.public_theme_preset || 'minimal-slate';
+  const photoUrl = practiceSettings.public_profile_photo_url;
+  const photoShape = practiceSettings.public_profile_photo_shape || 'rounded-smooth';
+  const photoAlign = practiceSettings.public_profile_photo_align || 'left';
+  const cardBorder = practiceSettings.public_card_border_style || 'rounded-xl';
+  const badgeText = practiceSettings.public_badge_text;
+  const bio = practiceSettings.public_bio;
+  const showReviews = practiceSettings.public_show_reviews ?? true;
+  const customAccent = practiceSettings.public_custom_accent || practiceSettings.page_color || '#0284c7';
+
+  // Dynamic style helpers based on theme
+  const getThemeWrapperClass = () => {
+    switch (themePreset) {
+      case 'medical-teal':
+        return 'bg-teal-50/40 text-teal-950';
+      case 'warm-oat':
+        return 'bg-[#faf7f2] text-[#3c342d]';
+      case 'nordic-blue':
+        return 'bg-sky-50/40 text-sky-950';
+      case 'dark-carbon':
+        return 'bg-neutral-950 text-neutral-100';
+      case 'minimal-slate':
+      default:
+        return 'bg-neutral-50/80 text-neutral-900';
+    }
+  };
+
+  const getCardClass = () => {
+    const borderR = cardBorder === 'square' ? 'rounded-xl' : cardBorder === 'rounded-smooth' ? 'rounded-2xl' : 'rounded-3xl';
+    switch (themePreset) {
+      case 'medical-teal':
+        return `bg-white border-teal-200/80 shadow-xs ${borderR}`;
+      case 'warm-oat':
+        return `bg-white border-[#ebdccb] shadow-xs ${borderR}`;
+      case 'nordic-blue':
+        return `bg-white border-sky-100 shadow-xs ${borderR}`;
+      case 'dark-carbon':
+        return `bg-neutral-900 border-neutral-800 text-white shadow-xs ${borderR}`;
+      case 'minimal-slate':
+      default:
+        return `bg-white border-neutral-200 shadow-xs ${borderR}`;
+    }
+  };
+
+  const getPhotoShapeClass = () => {
+    switch (photoShape) {
+      case 'square':
+        return 'rounded-none';
+      case 'rounded-full':
+        return 'rounded-full';
+      case 'rounded-smooth':
+      default:
+        return 'rounded-2xl';
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-neutral-50/70 py-8 px-4 sm:px-6">
+    <div className={`min-h-screen py-8 px-4 sm:px-6 transition-colors duration-300 ${getThemeWrapperClass()}`}>
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Navigation Bar / Mode Notice */}
-        {onBackToDashboard && (
+        {(onBack || onBackToDashboard) && (
           <div className="flex items-center justify-between">
             <button
-              onClick={onBackToDashboard}
-              className="text-xs font-semibold text-neutral-600 hover:text-neutral-900 bg-white border border-neutral-200 px-3 py-1.5 rounded-xl shadow-2xs transition-colors inline-flex items-center gap-1.5"
+              type="button"
+              onClick={handleBackClick}
+              className="text-xs font-semibold text-neutral-700 hover:text-neutral-950 bg-white hover:bg-neutral-50 active:scale-95 border border-neutral-300/80 hover:border-neutral-400 px-3.5 py-1.5 rounded-xl shadow-2xs transition-all inline-flex items-center gap-1.5 cursor-pointer"
+              title="Volver atrás"
             >
-              <ChevronLeft className="w-4 h-4" /> Volver al Panel de Administración
+              <ChevronLeft className="w-4 h-4 text-neutral-500" />
+              <span>Volver atrás</span>
             </button>
             <span className="text-xs bg-sky-100 text-sky-800 font-medium px-2.5 py-1 rounded-full border border-sky-200">
               Vista previa del enlace público: agendapro.ai/u/{practiceSettings.handle}
@@ -176,29 +284,84 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDa
         )}
 
         {/* Practice Header Card */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-neutral-200 shadow-xs relative overflow-hidden">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="w-16 h-16 rounded-2xl bg-sky-600 text-white font-bold text-xl flex items-center justify-center shadow-xs">
-                {practiceSettings.professional_name.slice(3, 5).toUpperCase() || 'DC'}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-lg sm:text-xl font-bold text-neutral-900">
+        <div className={`p-6 sm:p-8 border relative overflow-hidden transition-all duration-200 ${getCardClass()}`}>
+          <div className={`flex flex-col gap-4 ${
+            photoAlign === 'center' ? 'items-center text-center sm:text-center' :
+            photoAlign === 'right' ? 'items-end text-right' :
+            'items-start text-left'
+          }`}>
+            <div className={`flex flex-col sm:flex-row items-center gap-4 ${
+              photoAlign === 'center' ? 'sm:flex-col sm:text-center' :
+              photoAlign === 'right' ? 'sm:flex-row-reverse' : ''
+            }`}>
+              {/* Profile Photo / Avatar */}
+              {photoUrl ? (
+                <div className="relative shrink-0">
+                  <img
+                    src={photoUrl}
+                    alt={practiceSettings.professional_name || 'Médico'}
+                    className={`w-20 h-20 object-cover border-2 shadow-xs ${getPhotoShapeClass()}`}
+                    style={{ borderColor: customAccent }}
+                  />
+                  <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white" />
+                </div>
+              ) : (
+                <div
+                  className={`w-20 h-20 text-white font-bold text-2xl flex items-center justify-center shadow-xs uppercase shrink-0 ${getPhotoShapeClass()}`}
+                  style={{ backgroundColor: customAccent }}
+                >
+                  {(() => {
+                    const clean = (practiceSettings.professional_name || 'CM').replace(/^(Dr\.|Dra\.|Lic\.|Prof\.)\s*/i, '').trim();
+                    const parts = clean.split(/\s+/);
+                    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`;
+                    if (parts[0] && parts[0].length >= 2) return parts[0].slice(0, 2);
+                    return clean.charAt(0) || 'CM';
+                  })()}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
+                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
                     {practiceSettings.practice_name}
                   </h1>
-                  <ShieldCheck className="w-5 h-5 text-sky-600" />
+                  <ShieldCheck className="w-5 h-5 text-sky-600 shrink-0" />
+                  {showReviews && (
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-200">
+                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
+                      4.9 (128 opiniones)
+                    </span>
+                  )}
                 </div>
-                <p className="text-sm font-medium text-neutral-600 mt-0.5">
+
+                <p className="text-sm font-medium text-neutral-600">
                   {practiceSettings.professional_name} • {practiceSettings.specialty}
+                  {practiceSettings.medical_license && ` • ${practiceSettings.medical_license}`}
                 </p>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500 mt-2">
+
+                {badgeText && (
+                  <div className="pt-1">
+                    <span className="inline-block text-[11px] font-bold px-3 py-1 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-200">
+                      {badgeText}
+                    </span>
+                  </div>
+                )}
+
+                {bio && (
+                  <p className="text-xs text-neutral-600 leading-relaxed max-w-xl pt-1">
+                    {bio}
+                  </p>
+                )}
+
+                <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500 pt-1.5">
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5 text-neutral-400" /> {practiceSettings.address}, {practiceSettings.city}
                   </span>
-                  <span className="flex items-center gap-1 font-semibold text-amber-600">
-                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> 4.9 (128 valoraciones)
-                  </span>
+                  {practiceSettings.phone && (
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-3.5 h-3.5 text-neutral-400" /> {practiceSettings.phone}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -206,7 +369,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDa
         </div>
 
         {/* Booking Steps Container */}
-        <div className="bg-white rounded-3xl border border-neutral-200 shadow-xs overflow-hidden">
+        <div className={`border overflow-hidden transition-all duration-200 ${getCardClass()}`}>
           {/* Step Progress Tracker */}
           {step < 5 && (
             <div className="border-b border-neutral-200 bg-neutral-50/50 p-4">
@@ -516,6 +679,135 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBackToDa
                     <span className="font-semibold text-neutral-900">${selectedService?.price.toLocaleString()} ARS</span>
                   </div>
                 </div>
+
+                {/* Patient Deposit Payment Box */}
+                {(practiceSettings.patient_deposit_enabled ?? practiceSettings.mercadopago_deposit_enabled ?? true) && (
+                  <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-left space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link' ? (
+                          <CreditCard className="w-4 h-4 text-sky-600" />
+                        ) : (
+                          <Landmark className="w-4 h-4 text-emerald-700" />
+                        )}
+                        <span className="text-xs font-bold text-neutral-900">
+                          Seña Requerida ({practiceSettings.patient_deposit_percent ?? practiceSettings.mercadopago_deposit_percent ?? 30}%)
+                        </span>
+                      </div>
+                      <span className="text-xs font-black text-emerald-950">
+                        ${Math.round(((selectedService?.price || 0) * (practiceSettings.patient_deposit_percent ?? practiceSettings.mercadopago_deposit_percent ?? 30)) / 100).toLocaleString('es-AR')} ARS
+                      </span>
+                    </div>
+
+                    {/* Method 1: Alias / CBU Transfer */}
+                    {(!practiceSettings.patient_deposit_method || practiceSettings.patient_deposit_method === 'alias_cbu') && (
+                      <div className="space-y-2 text-xs">
+                        <p className="text-[11px] text-neutral-600">
+                          Para asegurar tu turno, realiza la transferencia bancaria y envía el comprobante:
+                        </p>
+                        <div className="p-3 bg-white rounded-xl border border-neutral-200 space-y-1.5 font-mono text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-neutral-500">Alias:</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded">
+                                {practiceSettings.patient_deposit_alias || 'consultorio.turnos.mp'}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(practiceSettings.patient_deposit_alias || 'consultorio.turnos.mp');
+                                  setCopiedAlias(true);
+                                  setTimeout(() => setCopiedAlias(false), 2000);
+                                }}
+                                className="p-1 text-neutral-600 hover:text-neutral-900 rounded hover:bg-neutral-100"
+                                title="Copiar Alias"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          {copiedAlias && (
+                            <p className="text-[10px] text-emerald-700 font-sans font-semibold text-right">
+                              ¡Alias copiado al portapapeles!
+                            </p>
+                          )}
+                          {practiceSettings.patient_deposit_cbu && (
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-neutral-500">CBU:</span>
+                              <span className="text-neutral-700">{practiceSettings.patient_deposit_cbu}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-neutral-500">Titular:</span>
+                            <span className="text-neutral-700">{practiceSettings.patient_deposit_account_holder || practiceSettings.professional_name}</span>
+                          </div>
+                          <div className="flex justify-between text-[11px]">
+                            <span className="text-neutral-500">Banco:</span>
+                            <span className="text-neutral-700">{practiceSettings.patient_deposit_bank_name || 'Mercado Pago / Banco'}</span>
+                          </div>
+                        </div>
+
+                        {depositPaid ? (
+                          <div className="p-2.5 bg-emerald-100 border border-emerald-300 rounded-xl flex items-center gap-2 text-xs font-bold text-emerald-800">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            <span>¡Comprobante informado con éxito!</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDepositPaid(true);
+                              confetti({ particleCount: 50, spread: 50 });
+                            }}
+                            className="w-full py-2 px-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Ya realicé la transferencia</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Method 2: Mercado Pago Online */}
+                    {(practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link') && (
+                      <div className="space-y-2">
+                        <p className="text-[11px] text-neutral-600 leading-relaxed">
+                          Abona tu seña de forma segura con tarjeta de débito, crédito o dinero en cuenta.
+                        </p>
+
+                        {depositPaid ? (
+                          <div className="p-2.5 bg-emerald-100 border border-emerald-300 rounded-xl flex items-center gap-2 text-xs font-bold text-emerald-800">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            <span>¡Seña de Mercado Pago abonada con éxito!</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isPayingDeposit}
+                            onClick={() => {
+                              setIsPayingDeposit(true);
+                              setTimeout(() => {
+                                setIsPayingDeposit(false);
+                                setDepositPaid(true);
+                                confetti({ particleCount: 60, spread: 60 });
+                              }, 1200);
+                            }}
+                            className="w-full py-2.5 px-4 bg-[#009ee3] hover:bg-[#0081b8] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
+                          >
+                            {isPayingDeposit ? (
+                              <span className="animate-pulse">Conectando con Mercado Pago...</span>
+                            ) : (
+                              <>
+                                <CreditCard className="w-4 h-4" />
+                                <span>Pagar Seña con Mercado Pago</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="pt-2 flex flex-col gap-2">
                   <a

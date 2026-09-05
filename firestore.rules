@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidAppointment(data) {
+      return data.patient_name is string && data.patient_name.size() > 0 &&
+             data.patient_phone is string && data.patient_phone.size() > 0 &&
+             data.start_datetime is string &&
+             data.end_datetime is string;
+    }
+
+    // Services - Public read (for booking portal), staff write
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Practice Settings - Public read (for booking portal), staff write
+    match /settings/{settingsId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    // Appointments - Public can create a new booking from the web portal; authenticated users have full access
+    match /appointments/{appointmentId} {
+      allow read: if true;
+      allow create: if isValidAppointment(request.resource.data);
+      allow update, delete: if isAuthenticated();
+    }
+
+    // Patients - Authenticated staff access
+    match /patients/{patientId} {
+      allow read, write: if isAuthenticated();
+      // Allow patients creating a booking to register their basic profile
+      allow create: if request.resource.data.first_name is string && request.resource.data.phone is string;
+    }
+
+    // Waitlist - Authenticated staff access or public addition
+    match /waitlist/{waitlistId} {
+      allow read: if true;
+      allow create: if request.resource.data.patient_name is string && request.resource.data.patient_phone is string;
+      allow update, delete: if isAuthenticated();
+    }
+
+    // User profiles - read by authenticated staff, written by the user themselves
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Connection test document
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

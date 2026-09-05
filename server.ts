@@ -392,6 +392,454 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     }
   });
 
+  // ==========================================
+  // EVOLUTION API (WhatsApp Microservice)
+  // ==========================================
+
+  // Check Evolution API Connection Status
+  app.post("/api/evolution/test-connection", async (req, res) => {
+    try {
+      const { apiUrl, apiKey, instanceName } = req.body;
+      const targetUrl = (apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+
+      if (!targetUrl || !targetKey) {
+        return res.status(400).json({
+          success: false,
+          error: "Falta la URL de Evolution API o la API Key (global/instance)",
+          status: "disconnected"
+        });
+      }
+
+      const response = await fetch(`${targetUrl}/instance/connectionState/${targetInstance}`, {
+        method: "GET",
+        headers: {
+          "apikey": targetKey,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        return res.json({
+          success: false,
+          status: "error",
+          statusCode: response.status,
+          message: `Error al consultar la instancia: ${errText || response.statusText}`
+        });
+      }
+
+      const data = await response.json();
+      return res.json({
+        success: true,
+        status: data?.instance?.state || data?.state || "connected",
+        data
+      });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/test-connection:", err);
+      res.json({
+        success: false,
+        status: "error",
+        error: err.message || "No se pudo conectar con el servidor de Evolution API"
+      });
+    }
+  });
+
+  // Get or Generate QR Code for a Doctor's Instance (Used by regular doctors without seeing API keys)
+  app.post("/api/evolution/instance-qr", async (req, res) => {
+    try {
+      const { instanceName } = req.body;
+      const targetUrl = (process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+
+      if (!targetUrl || !targetKey) {
+        // Master APIs not configured in .env yet -> Return simulated QR response for immediate testing
+        return res.json({
+          success: true,
+          simulated: true,
+          status: "connecting",
+          instanceName: targetInstance,
+          qrcode: null,
+          message: "Modo simulación activo. El administrador (gonzalocorat@gmail.com) puede configurar EVOLUTION_API_URL y EVOLUTION_API_KEY en el servidor para generar QRs de WhatsApp en vivo."
+        });
+      }
+
+      // Check current connection state
+      const checkRes = await fetch(`${targetUrl}/instance/connectionState/${targetInstance}`, {
+        headers: { "apikey": targetKey }
+      });
+
+      if (checkRes.ok) {
+        const checkData = await checkRes.json();
+        const state = checkData?.instance?.state || checkData?.state;
+        if (state === "open") {
+          return res.json({
+            success: true,
+            status: "connected",
+            connected: true,
+            instanceName: targetInstance
+          });
+        }
+      }
+
+      // Request or create instance connection QR from Evolution API
+      let connectRes = await fetch(`${targetUrl}/instance/connect/${targetInstance}`, {
+        method: "GET",
+        headers: { "apikey": targetKey }
+      });
+
+      // If instance doesn't exist, create it first
+      if (connectRes.status === 404) {
+        const createRes = await fetch(`${targetUrl}/instance/create`, {
+          method: "POST",
+          headers: {
+            "apikey": targetKey,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            instanceName: targetInstance,
+            qrcode: true,
+            integration: "WHATSAPP-BAILEYS"
+          })
+        });
+        const createData = await createRes.json();
+        return res.json({
+          success: true,
+          status: "connecting",
+          instanceName: targetInstance,
+          qrcode: createData?.qrcode?.base64 || createData?.base64 || null,
+          pairingCode: createData?.pairingCode || null
+        });
+      }
+
+      const connectData = await connectRes.json();
+      return res.json({
+        success: true,
+        status: "connecting",
+        instanceName: targetInstance,
+        qrcode: connectData?.base64 || connectData?.qrcode?.base64 || null,
+        code: connectData?.code || null,
+        pairingCode: connectData?.pairingCode || null
+      });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/instance-qr:", err);
+      res.status(500).json({
+        success: false,
+        error: err.message || "Error al obtener código QR de Evolution API"
+      });
+    }
+  });
+
+  // Disconnect / Logout WhatsApp instance
+  app.post("/api/evolution/disconnect-instance", async (req, res) => {
+    try {
+      const { instanceName } = req.body;
+      const targetUrl = (process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+
+      if (targetUrl && targetKey) {
+        await fetch(`${targetUrl}/instance/logout/${targetInstance}`, {
+          method: "DELETE",
+          headers: { "apikey": targetKey }
+        });
+      }
+
+      return res.json({ success: true, status: "disconnected" });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/disconnect-instance:", err);
+      res.json({ success: true, status: "disconnected" });
+    }
+  });
+
+  // Send WhatsApp message via Evolution API
+  app.post("/api/evolution/send-message", async (req, res) => {
+    try {
+      const { phone, text, apiUrl, apiKey, instanceName } = req.body;
+      const targetUrl = (apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+
+      if (!phone || !text) {
+        return res.status(400).json({ error: "Número y texto son obligatorios" });
+      }
+
+      // Format phone (remove spaces, symbols)
+      const cleanPhone = phone.replace(/\D/g, "");
+
+      if (!targetUrl || !targetKey) {
+        // Fallback simulated success for preview
+        return res.json({
+          success: true,
+          simulated: true,
+          message: `Mensaje simulado enviado a ${cleanPhone}: "${text.slice(0, 40)}..."`,
+          note: "Configure EVOLUTION_API_URL y EVOLUTION_API_KEY para envíos reales por WhatsApp."
+        });
+      }
+
+      const response = await fetch(`${targetUrl}/message/sendText/${targetInstance}`, {
+        method: "POST",
+        headers: {
+          "apikey": targetKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          number: cleanPhone,
+          text: text,
+          delay: 1200
+        })
+      });
+
+      const data = await response.json();
+      return res.json({
+        success: response.ok,
+        data
+      });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/send-message:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Incoming Webhook from Evolution API
+  app.post("/api/evolution/webhook", async (req, res) => {
+    try {
+      const eventData = req.body;
+      console.log("Evolution Webhook received:", eventData?.event);
+
+      // Evolution API event: messages.upsert
+      if (eventData?.event === "messages.upsert" && eventData?.data) {
+        const messageData = eventData.data;
+        const fromMe = messageData?.key?.fromMe;
+        const senderPhone = messageData?.key?.remoteJid?.replace(/@.*$/, "") || "";
+        const messageText =
+          messageData?.message?.conversation ||
+          messageData?.message?.extendedTextMessage?.text ||
+          "";
+
+        // If not sent by our bot and has text
+        if (!fromMe && messageText && senderPhone) {
+          console.log(`Incoming WhatsApp from ${senderPhone}: "${messageText}"`);
+          // Note: In full deployment, this webhook triggers getAI() and replies back via /message/sendText
+        }
+      }
+
+      return res.status(200).json({ received: true });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/webhook:", err);
+      return res.status(200).json({ received: false, error: err.message });
+    }
+  });
+
+  // ==========================================
+  // MERCADO PAGO API (Deposit & Payment Checkout)
+  // ==========================================
+
+  // Create Checkout Preference for Deposit / Seña
+  app.post("/api/mercadopago/create-preference", async (req, res) => {
+    try {
+      const {
+        title = "Seña de Consulta Médica",
+        price = 5000,
+        appointmentId,
+        patientName = "Paciente",
+        patientEmail = "paciente@email.com",
+        accessToken
+      } = req.body;
+
+      const token = accessToken || process.env.MERCADOPAGO_ACCESS_TOKEN;
+      const appUrl = (process.env.APP_URL || "https://agendapro.ai").replace(/\/$/, "");
+
+      if (!token) {
+        // Fallback simulation link for testing
+        return res.json({
+          success: true,
+          simulated: true,
+          init_point: `${appUrl}/#demo-mercadopago-success?apt=${appointmentId || "new"}&amount=${price}`,
+          preferenceId: `pref-demo-${Date.now()}`,
+          message: "Preferencia de pago simulada (agregue MERCADOPAGO_ACCESS_TOKEN para checkout real en vivo)."
+        });
+      }
+
+      const preferenceData = {
+        items: [
+          {
+            id: appointmentId || `apt-${Date.now()}`,
+            title: title,
+            quantity: 1,
+            unit_price: Number(price),
+            currency_id: "ARS"
+          }
+        ],
+        payer: {
+          name: patientName,
+          email: patientEmail
+        },
+        back_urls: {
+          success: `${appUrl}/#payment-success?apt=${appointmentId}`,
+          pending: `${appUrl}/#payment-pending?apt=${appointmentId}`,
+          failure: `${appUrl}/#payment-failure?apt=${appointmentId}`
+        },
+        auto_return: "approved",
+        external_reference: appointmentId || `apt-${Date.now()}`,
+        statement_descriptor: "AGENDA PRO",
+        notification_url: `${appUrl}/api/mercadopago/webhook`
+      };
+
+      const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(preferenceData)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return res.status(response.status).json({
+          success: false,
+          error: data?.message || "Error al crear la preferencia en Mercado Pago"
+        });
+      }
+
+      return res.json({
+        success: true,
+        init_point: data.init_point,
+        sandbox_init_point: data.sandbox_init_point,
+        preferenceId: data.id
+      });
+    } catch (err: any) {
+      console.error("Error in /api/mercadopago/create-preference:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Mercado Pago IPN / Webhook endpoint
+  app.post("/api/mercadopago/webhook", async (req, res) => {
+    try {
+      const topic = req.query.topic || req.body.type;
+      const paymentId = req.query.id || req.body.data?.id;
+
+      console.log(`Mercado Pago notification: topic=${topic}, id=${paymentId}`);
+
+      if ((topic === "payment" || req.body.action === "payment.created") && paymentId) {
+        const token = process.env.MERCADOPAGO_ACCESS_TOKEN;
+        if (token) {
+          const checkRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          const paymentInfo = await checkRes.json();
+          console.log(`Payment ${paymentId} status: ${paymentInfo.status}, external_ref: ${paymentInfo.external_reference}`);
+        }
+      }
+
+      return res.status(200).json({ status: "ok" });
+    } catch (err: any) {
+      console.error("Error in /api/mercadopago/webhook:", err);
+      return res.status(200).json({ received: true });
+    }
+  });
+
+  // ==========================================
+  // TRANSACTIONAL EMAIL REMINDERS (Resend / SMTP)
+  // ==========================================
+  app.post("/api/reminders/send-email", async (req, res) => {
+    try {
+      const {
+        to,
+        patientName,
+        practiceName,
+        date,
+        time,
+        serviceName,
+        modality,
+        address,
+        meetUrl,
+        resendApiKey,
+        senderEmail
+      } = req.body;
+
+      if (!to) {
+        return res.status(400).json({ error: "El email del destinatario es obligatorio" });
+      }
+
+      const key = resendApiKey || process.env.RESEND_API_KEY;
+      const fromAddress = senderEmail || process.env.EMAIL_FROM || "turnos@resend.dev";
+
+      const htmlBody = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 24px; color: #171717;">
+          <div style="border-bottom: 1px solid #f0f0f0; padding-bottom: 16px; margin-bottom: 20px;">
+            <h2 style="margin: 0; font-size: 18px; color: #0a0a0a; font-weight: 700;">${practiceName || "AgendaPro AI"}</h2>
+            <p style="margin: 4px 0 0 0; font-size: 13px; color: #737373;">Recordatorio de turno médico / profesional</p>
+          </div>
+          
+          <p style="font-size: 14px; line-height: 1.6; margin-bottom: 16px;">
+            Hola <strong>${patientName}</strong>, te recordamos tu próximo turno:
+          </p>
+
+          <div style="background: #fafafa; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <div style="margin-bottom: 8px; font-size: 13px;"><strong>Tratamiento:</strong> ${serviceName || "Consulta"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><strong>Fecha:</strong> ${date}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><strong>Hora:</strong> ${time} hs</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><strong>Modalidad:</strong> ${modality === "telemedicine" ? "Telemedicina (Videollamada)" : "Presencial en consultorio"}</div>
+            ${modality === "telemedicine" && meetUrl ? `<div style="font-size: 13px;"><strong>Enlace de llamada:</strong> <a href="${meetUrl}" style="color: #0284c7;">${meetUrl}</a></div>` : ""}
+            ${modality !== "telemedicine" && address ? `<div style="font-size: 13px;"><strong>Dirección:</strong> ${address}</div>` : ""}
+          </div>
+
+          <p style="font-size: 13px; color: #525252; line-height: 1.5; margin-bottom: 24px;">
+            Por favor, te solicitamos presentarte 10 minutos antes. Si necesitas reprogramar o cancelar, responde a este correo o contáctanos por WhatsApp con al menos 24 hs de anticipación.
+          </p>
+
+          <div style="border-top: 1px solid #f0f0f0; padding-top: 16px; font-size: 11px; color: #a3a3a3; text-align: center;">
+            Enviado automáticamente por ${practiceName || "AgendaPro AI"} • Sistema de gestión clínica
+          </div>
+        </div>
+      `;
+
+      if (!key) {
+        // Fallback simulation response for demo/preview
+        return res.json({
+          success: true,
+          simulated: true,
+          message: `Recordatorio por correo simulado con éxito a ${to}`,
+          details: {
+            to,
+            subject: `Recordatorio de turno: ${date} ${time} hs - ${practiceName || "Consultorio"}`,
+            sender: fromAddress
+          }
+        });
+      }
+
+      // Call Resend REST API
+      const resendRes = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${key}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: fromAddress,
+          to: [to],
+          subject: `Recordatorio de turno: ${date} ${time} hs - ${practiceName || "Consultorio"}`,
+          html: htmlBody
+        })
+      });
+
+      const resendData = await resendRes.json();
+      return res.json({
+        success: resendRes.ok,
+        data: resendData
+      });
+    } catch (err: any) {
+      console.error("Error in /api/reminders/send-email:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Vite middleware for development vs static production serving
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

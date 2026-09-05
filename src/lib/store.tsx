@@ -18,7 +18,10 @@ import {
   MedicalPrescription,
   MedicalCertificate,
   VoiceNote,
-  MedicalPrescriptionItem
+  MedicalPrescriptionItem,
+  UserSession,
+  UserRole,
+  SaasTenantUser
 } from '../types';
 import {
   INITIAL_PRACTICE_SETTINGS,
@@ -33,8 +36,26 @@ import {
   INITIAL_PAYMENTS,
   INITIAL_CASH_REGISTER,
   INITIAL_CASH_MOVEMENTS,
-  INITIAL_CONSULTATIONS
+  INITIAL_CONSULTATIONS,
+  DEMO_SAAS_TENANTS
 } from './demo-data';
+import {
+  saveAppointmentToFirestore,
+  deleteAppointmentFromFirestore,
+  savePatientToFirestore,
+  saveSettingsToFirestore,
+  saveWaitlistToFirestore,
+  subscribeToAppointments,
+  subscribeToSettings,
+  auth,
+  googleProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
+} from './firestore-sync';
 
 interface AgendaStoreContextType {
   appointments: Appointment[];
@@ -104,6 +125,19 @@ interface AgendaStoreContextType {
   deleteConsultation: (id: string) => void;
   addVoiceNoteToConsultation: (consultationId: string, voiceNote: Omit<VoiceNote, 'id' | 'recorded_at'>) => VoiceNote;
 
+  // Authentication & Access Control
+  currentUser: UserSession | null;
+  isAuthenticated: boolean;
+  isAuthLoading: boolean;
+  loginWithGoogle: () => Promise<void>;
+  loginWithEmail: (email: string, pass: string) => Promise<void>;
+  registerWithEmail: (name: string, email: string, pass: string, specialty?: string) => Promise<void>;
+  loginAsDemo: (type: 'superadmin' | 'pro' | 'basic') => void;
+  logout: () => Promise<void>;
+  switchUserRole: (role: UserRole) => void;
+  saasTenants: SaasTenantUser[];
+  updateSaasTenant: (id: string, updates: Partial<SaasTenantUser>) => void;
+
   // Utilities
   resetToDemoData: () => void;
 }
@@ -130,7 +164,21 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return saved ? JSON.parse(saved) : INITIAL_PRACTICE_SETTINGS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.professional_name === 'Dr. Gonzalo Corat' || parsed.email === 'gonzalocorat@gmail.com' || parsed.handle === 'dr-corat') {
+          return {
+            ...INITIAL_PRACTICE_SETTINGS,
+            ...parsed,
+            practice_name: parsed.practice_name === 'Consultorio Dr. Gonzalo Corat' ? 'Consultorio Médico Integral' : parsed.practice_name,
+            handle: parsed.handle === 'dr-corat' ? 'consultorio-medico' : parsed.handle,
+            professional_name: parsed.professional_name === 'Dr. Gonzalo Corat' ? 'Dr/a. Especialista' : parsed.professional_name,
+            email: parsed.email === 'gonzalocorat@gmail.com' ? 'contacto@consultorio.com' : parsed.email
+          };
+        }
+        return parsed;
+      }
+      return INITIAL_PRACTICE_SETTINGS;
     } catch {
       return INITIAL_PRACTICE_SETTINGS;
     }
@@ -193,7 +241,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [reminderConfig, setReminderConfig] = useState<ReminderConfig>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.REMINDER_CONFIG);
-      return saved ? JSON.parse(saved) : DEFAULT_REMINDER_CONFIG;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.sender_email_alias && parsed.sender_email_alias.includes('Gonzalo')) {
+          parsed.sender_email_alias = 'Consultorio Médico - AgendaPro AI';
+        }
+        return parsed;
+      }
+      return DEFAULT_REMINDER_CONFIG;
     } catch {
       return DEFAULT_REMINDER_CONFIG;
     }
@@ -238,11 +293,260 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [consultations, setConsultations] = useState<ConsultationRecord[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CONSULTATIONS);
-      return saved ? JSON.parse(saved) : INITIAL_CONSULTATIONS;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map((c: ConsultationRecord) => ({
+            ...c,
+            professional_name: c.professional_name === 'Dr. Gonzalo Corat' ? 'Dr/a. Especialista' : c.professional_name,
+            certificates: c.certificates?.map(cert => ({
+              ...cert,
+              professional_name: cert.professional_name === 'Dr. Gonzalo Corat' ? 'Dr/a. Especialista' : cert.professional_name
+            }))
+          }));
+        }
+      }
+      return INITIAL_CONSULTATIONS;
     } catch {
       return INITIAL_CONSULTATIONS;
     }
   });
+
+  // Current User Session & Role (Unauthenticated by default)
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
+    try {
+      const saved = localStorage.getItem('agendapro_current_user_v1');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {}
+    return null;
+  });
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+
+  // Synchronize with Firebase Auth in real-time
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      if (firebaseUser && firebaseUser.email) {
+        const isSuper = firebaseUser.email.toLowerCase() === 'gonzalocorat@gmail.com';
+        const session: UserSession = {
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          name: firebaseUser.displayName || (isSuper ? 'Gonzalo Corat (Super Admin)' : 'Dr/a. Especialista'),
+          role: isSuper ? 'superadmin' : 'professional',
+          isSuperAdmin: isSuper,
+          photoURL: firebaseUser.photoURL || undefined,
+          plan: isSuper ? 'pro' : (practiceSettings.subscription_plan || 'pro')
+        };
+        setCurrentUser(session);
+        try {
+          localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
+        } catch {}
+      } else {
+        try {
+          const saved = localStorage.getItem('agendapro_current_user_v1');
+          if (saved) {
+            setCurrentUser(JSON.parse(saved));
+          } else {
+            setCurrentUser(null);
+          }
+        } catch {
+          setCurrentUser(null);
+        }
+      }
+      setIsAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [practiceSettings.subscription_plan]);
+
+  const loginWithGoogle = async () => {
+    try {
+      setIsAuthLoading(true);
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      if (user && user.email) {
+        const isSuper = user.email.toLowerCase() === 'gonzalocorat@gmail.com';
+        const session: UserSession = {
+          uid: user.uid,
+          email: user.email,
+          name: user.displayName || (isSuper ? 'Gonzalo Corat (Super Admin)' : 'Dr/a. Especialista'),
+          role: isSuper ? 'superadmin' : 'professional',
+          isSuperAdmin: isSuper,
+          photoURL: user.photoURL || undefined,
+          plan: isSuper ? 'pro' : 'pro'
+        };
+        setCurrentUser(session);
+        localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
+        if (user.displayName) {
+          updatePracticeSettings({
+            professional_name: user.displayName,
+            email: user.email
+          });
+        }
+      }
+    } catch (error: any) {
+      console.error('Error al conectar con Google:', error);
+      throw error;
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const loginWithEmail = async (email: string, pass: string) => {
+    try {
+      setIsAuthLoading(true);
+      const cred = await signInWithEmailAndPassword(auth, email, pass);
+      const user = cred.user;
+      const isSuper = user.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+      const session: UserSession = {
+        uid: user.uid,
+        email: user.email || email,
+        name: user.displayName || (isSuper ? 'Gonzalo Corat (Super Admin)' : 'Dr/a. Especialista'),
+        role: isSuper ? 'superadmin' : 'professional',
+        isSuperAdmin: isSuper,
+        plan: isSuper ? 'pro' : (practiceSettings.subscription_plan || 'pro')
+      };
+      setCurrentUser(session);
+      localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
+    } catch (error: any) {
+      console.error('Error al iniciar sesión con email:', error);
+      throw error;
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const registerWithEmail = async (name: string, email: string, pass: string, specialty: string = 'Medicina General') => {
+    try {
+      setIsAuthLoading(true);
+      const cred = await createUserWithEmailAndPassword(auth, email, pass);
+      const user = cred.user;
+      await updateProfile(user, { displayName: name });
+      const isSuper = email.toLowerCase() === 'gonzalocorat@gmail.com';
+      const session: UserSession = {
+        uid: user.uid,
+        email,
+        name,
+        role: isSuper ? 'superadmin' : 'professional',
+        isSuperAdmin: isSuper,
+        plan: isSuper ? 'pro' : 'pro'
+      };
+      setCurrentUser(session);
+      localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
+      updatePracticeSettings({
+        professional_name: name,
+        email: email,
+        specialty,
+        practice_name: `Consultorio ${name}`
+      });
+    } catch (error: any) {
+      console.error('Error al registrar usuario:', error);
+      throw error;
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const loginAsDemo = (type: 'superadmin' | 'pro' | 'basic') => {
+    let session: UserSession;
+    if (type === 'superadmin') {
+      session = {
+        email: 'gonzalocorat@gmail.com',
+        name: 'Gonzalo Corat (Super Admin)',
+        role: 'superadmin',
+        isSuperAdmin: true,
+        plan: 'pro'
+      };
+      updatePracticeSettings({ subscription_plan: 'pro' });
+    } else if (type === 'pro') {
+      session = {
+        email: 'dra.valenzuela@agendapro.ai',
+        name: 'Dra. Valentina Valenzuela',
+        role: 'professional',
+        isSuperAdmin: false,
+        plan: 'pro'
+      };
+      updatePracticeSettings({
+        professional_name: 'Dra. Valentina Valenzuela',
+        email: 'dra.valenzuela@agendapro.ai',
+        specialty: 'Dermatología Clínica & Estética',
+        subscription_plan: 'pro',
+        trial_active: true
+      });
+    } else {
+      session = {
+        email: 'dr.romero@agendapro.ai',
+        name: 'Dr. Lucas Romero',
+        role: 'professional',
+        isSuperAdmin: false,
+        plan: 'basic'
+      };
+      updatePracticeSettings({
+        professional_name: 'Dr. Lucas Romero',
+        email: 'dr.romero@agendapro.ai',
+        specialty: 'Traumatología General',
+        subscription_plan: 'basic',
+        trial_active: false
+      });
+    }
+    setCurrentUser(session);
+    localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+    } catch (e) {
+      console.warn('Sign out notice:', e);
+    }
+    setCurrentUser(null);
+    localStorage.removeItem('agendapro_current_user_v1');
+    localStorage.removeItem('agendapro_active_role');
+  };
+
+  const switchUserRole = (role: UserRole) => {
+    if (role === 'superadmin') {
+      const adminUser: UserSession = {
+        email: 'gonzalocorat@gmail.com',
+        name: 'Gonzalo Corat (Super Admin)',
+        role: 'superadmin',
+        isSuperAdmin: true,
+        plan: 'pro'
+      };
+      setCurrentUser(adminUser);
+      localStorage.setItem('agendapro_current_user_v1', JSON.stringify(adminUser));
+    } else {
+      const docUser: UserSession = {
+        email: 'doctor@consultoriomedico.com',
+        name: 'Dr/a. Especialista (Consultorio)',
+        role: 'professional',
+        isSuperAdmin: false,
+        plan: practiceSettings.subscription_plan || 'pro'
+      };
+      setCurrentUser(docUser);
+      localStorage.setItem('agendapro_current_user_v1', JSON.stringify(docUser));
+    }
+  };
+
+  const [saasTenants, setSaasTenants] = useState<SaasTenantUser[]>(() => {
+    try {
+      const saved = localStorage.getItem('agendapro_saas_tenants_v1');
+      return saved ? JSON.parse(saved) : DEMO_SAAS_TENANTS;
+    } catch {
+      return DEMO_SAAS_TENANTS;
+    }
+  });
+
+  const updateSaasTenant = (id: string, updates: Partial<SaasTenantUser>) => {
+    setSaasTenants(prev => {
+      const next = prev.map(t => t.id === id ? { ...t, ...updates } : t);
+      try {
+        localStorage.setItem('agendapro_saas_tenants_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Sync to local storage
   useEffect(() => {
@@ -297,12 +601,40 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     localStorage.setItem(STORAGE_KEYS.CASH_MOVEMENTS, JSON.stringify(cashMovements));
   }, [cashMovements]);
 
+  // Real-time synchronization with Firestore
+  useEffect(() => {
+    const unsubAppointments = subscribeToAppointments((remoteAppointments) => {
+      if (remoteAppointments && remoteAppointments.length > 0) {
+        setAppointments(prev => {
+          const map = new Map<string, Appointment>();
+          prev.forEach(a => map.set(a.id, a));
+          remoteAppointments.forEach(a => map.set(a.id, a));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubSettings = subscribeToSettings((remoteSettings) => {
+      if (remoteSettings && remoteSettings.practice_name) {
+        setPracticeSettings(prev => ({ ...prev, ...remoteSettings }));
+      }
+    });
+
+    return () => {
+      unsubAppointments();
+      unsubSettings();
+    };
+  }, []);
+
   // Appointment Handlers
   const addAppointment = (data: Omit<Appointment, 'id'>): Appointment => {
     const id = `apt-${Date.now()}`;
     const newApt: Appointment = { ...data, id };
     
     setAppointments(prev => [newApt, ...prev]);
+
+    // Save to Firestore in background
+    saveAppointmentToFirestore(newApt);
 
     // Update patient's appointment count
     setPatients(prev => prev.map(p => {
@@ -316,11 +648,22 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const updateAppointment = (id: string, updates: Partial<Appointment>) => {
-    setAppointments(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+    setAppointments(prev => {
+      const next = prev.map(a => {
+        if (a.id === id) {
+          const updated = { ...a, ...updates };
+          saveAppointmentToFirestore(updated);
+          return updated;
+        }
+        return a;
+      });
+      return next;
+    });
   };
 
   const deleteAppointment = (id: string) => {
     setAppointments(prev => prev.filter(a => a.id !== id));
+    deleteAppointmentFromFirestore(id);
   };
 
   // Patient Handlers
@@ -333,11 +676,22 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       created_at: new Date().toISOString()
     };
     setPatients(prev => [newPatient, ...prev]);
+    savePatientToFirestore(newPatient);
     return newPatient;
   };
 
   const updatePatient = (id: string, updates: Partial<Patient>) => {
-    setPatients(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+    setPatients(prev => {
+      const next = prev.map(p => {
+        if (p.id === id) {
+          const updated = { ...p, ...updates };
+          savePatientToFirestore(updated);
+          return updated;
+        }
+        return p;
+      });
+      return next;
+    });
   };
 
   const deletePatient = (id: string) => {
@@ -367,7 +721,11 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Practice Settings
   const updatePracticeSettings = (updates: Partial<PracticeSettings>) => {
-    setPracticeSettings(prev => ({ ...prev, ...updates }));
+    setPracticeSettings(prev => {
+      const next = { ...prev, ...updates };
+      saveSettingsToFirestore(next);
+      return next;
+    });
   };
 
   // Conversations
@@ -426,6 +784,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       created_at: new Date().toISOString()
     };
     setWaitlist(prev => [newEntry, ...prev]);
+    saveWaitlistToFirestore(newEntry);
     return newEntry;
   };
 
@@ -794,6 +1153,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setCashRegister(INITIAL_CASH_REGISTER);
     setCashMovements(INITIAL_CASH_MOVEMENTS);
     setConsultations(INITIAL_CONSULTATIONS);
+    setSaasTenants(DEMO_SAAS_TENANTS);
     localStorage.clear();
   };
 
@@ -882,6 +1242,17 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       updateConsultation,
       deleteConsultation,
       addVoiceNoteToConsultation,
+      currentUser,
+      isAuthenticated: Boolean(currentUser),
+      isAuthLoading,
+      loginWithGoogle,
+      loginWithEmail,
+      registerWithEmail,
+      loginAsDemo,
+      logout,
+      switchUserRole,
+      saasTenants,
+      updateSaasTenant,
       resetToDemoData
     }}>
       {children}

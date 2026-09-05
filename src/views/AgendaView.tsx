@@ -18,7 +18,8 @@ import {
   Sparkles,
   AlertCircle,
   Bell,
-  CheckCheck
+  CheckCheck,
+  Cloud
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment, AppointmentStatus } from '../types';
@@ -125,54 +126,54 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   return (
     <div className="space-y-4">
       {/* Header controls */}
-      <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center bg-neutral-100 rounded-xl p-0.5 border border-neutral-200">
+      <div className="bg-white p-3.5 rounded-xl border border-neutral-200/75 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 border border-neutral-200/70">
             <button
               onClick={handlePrev}
-              className="p-1.5 rounded-lg hover:bg-white text-neutral-600 transition-colors"
+              className="p-1 rounded-md hover:bg-white text-neutral-600 transition-colors"
               title="Anterior"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               onClick={handleToday}
-              className="px-3 py-1 text-xs font-semibold text-neutral-800 hover:bg-white rounded-lg transition-colors"
+              className="px-2.5 py-1 text-xs font-semibold text-neutral-800 hover:bg-white rounded-md transition-colors"
             >
               Hoy
             </button>
             <button
               onClick={handleNext}
-              className="p-1.5 rounded-lg hover:bg-white text-neutral-600 transition-colors"
+              className="p-1 rounded-md hover:bg-white text-neutral-600 transition-colors"
               title="Siguiente"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
 
-          <h2 className="text-base font-semibold text-neutral-900 capitalize ml-2">
+          <h2 className="text-sm sm:text-base font-semibold text-neutral-900 capitalize font-display ml-1">
             {formattedDateTitle}
           </h2>
         </div>
 
         {/* View Mode Switcher + Add button */}
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
-          <div className="flex items-center bg-neutral-100 rounded-xl p-1 border border-neutral-200 text-xs">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+          <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 border border-neutral-200/70 text-xs">
             <button
               onClick={() => setViewMode('day')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'day' ? 'bg-white text-neutral-900 shadow-2xs' : 'text-neutral-500 hover:text-neutral-900'}`}
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'day' ? 'bg-white text-neutral-900 shadow-2xs font-semibold' : 'text-neutral-500 hover:text-neutral-900'}`}
             >
               <CalendarDays className="w-3.5 h-3.5" /> Día
             </button>
             <button
               onClick={() => setViewMode('week')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'week' ? 'bg-white text-neutral-900 shadow-2xs' : 'text-neutral-500 hover:text-neutral-900'}`}
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'week' ? 'bg-white text-neutral-900 shadow-2xs font-semibold' : 'text-neutral-500 hover:text-neutral-900'}`}
             >
               <Columns3 className="w-3.5 h-3.5" /> Semana
             </button>
             <button
               onClick={() => setViewMode('list')}
-              className={`px-3 py-1 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'list' ? 'bg-white text-neutral-900 shadow-2xs' : 'text-neutral-500 hover:text-neutral-900'}`}
+              className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 ${viewMode === 'list' ? 'bg-white text-neutral-900 shadow-2xs font-semibold' : 'text-neutral-500 hover:text-neutral-900'}`}
             >
               <List className="w-3.5 h-3.5" /> Lista
             </button>
@@ -180,7 +181,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
           <button
             onClick={() => onOpenNewAppointment(currentDateStr, '10:00')}
-            className="px-3.5 py-2 text-xs font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-xl shadow-xs transition-colors flex items-center gap-1.5"
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
           >
             <Plus className="w-4 h-4" />
             Nuevo Turno
@@ -188,14 +189,25 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
           {onNavigateToTab && (
             <button
+              onClick={() => onNavigateToTab('google-sync')}
+              className="px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors flex items-center gap-1.5"
+              title="Sincronizar con Google Calendar y Sheets"
+            >
+              <Cloud className="w-3.5 h-3.5 text-neutral-500" />
+              <span className="hidden md:inline">Google Sync</span>
+            </button>
+          )}
+
+          {onNavigateToTab && (
+            <button
               onClick={() => onNavigateToTab('espera')}
-              className="px-3 py-2 text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors flex items-center gap-1.5"
+              className="px-2.5 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors flex items-center gap-1.5"
               title="Abrir Lista de Espera Inteligente"
             >
-              <ListOrdered className="w-3.5 h-3.5 text-amber-600" />
-              <span className="hidden sm:inline">Lista de Espera</span>
+              <ListOrdered className="w-3.5 h-3.5 text-neutral-500" />
+              <span className="hidden sm:inline">Espera</span>
               {waitingEntries.length > 0 && (
-                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-amber-200 text-amber-900 font-bold">
+                <span className="px-1.5 py-0.2 rounded text-[10px] bg-neutral-100 text-neutral-800 font-semibold border border-neutral-200">
                   {waitingEntries.length}
                 </span>
               )}
@@ -206,40 +218,40 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
       {/* Smart Cancellation Recovery Banner */}
       {filteredAppointments.some(a => a.status === 'cancelled') && waitingEntries.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
+        <div className="bg-white border border-neutral-200/80 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-in fade-in">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
-              <Sparkles className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-md bg-neutral-100 text-neutral-700 flex items-center justify-center shrink-0">
+              <Sparkles className="w-3.5 h-3.5" />
             </div>
             <div>
-              <p className="text-xs font-bold text-amber-950">
+              <p className="text-xs font-semibold text-neutral-900">
                 Se detectaron huecos por cancelación en esta fecha
               </p>
-              <p className="text-[11px] text-amber-800">
-                Tienes {waitingEntries.length} pacientes en Lista de Espera listos para tomar turnos liberados.
+              <p className="text-[11px] text-neutral-500">
+                Tienes {waitingEntries.length} pacientes en Lista de Espera disponibles para asignación inmediata.
               </p>
             </div>
           </div>
           {onNavigateToTab && (
             <button
               onClick={() => onNavigateToTab('espera')}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors shrink-0"
+              className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-medium shadow-2xs transition-colors shrink-0"
             >
-              Ofrecer hueco a lista de espera
+              Ofrecer a lista de espera
             </button>
           )}
         </div>
       )}
 
       {/* Filters Bar */}
-      <div className="flex flex-wrap items-center gap-2 text-xs bg-white p-3 rounded-xl border border-neutral-200">
+      <div className="flex flex-wrap items-center gap-2 text-xs bg-white p-2.5 rounded-xl border border-neutral-200/75 shadow-2xs">
         <span className="text-neutral-500 font-medium flex items-center gap-1">
           <Filter className="w-3.5 h-3.5" /> Filtrar:
         </span>
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value)}
-          className="px-2.5 py-1 bg-neutral-50 border border-neutral-200 rounded-lg text-neutral-700"
+          className="px-2.5 py-1 bg-neutral-50 border border-neutral-200 rounded-md text-neutral-700 text-xs"
         >
           <option value="all">Todos los estados</option>
           <option value="confirmed">Confirmados</option>
@@ -251,7 +263,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         <select
           value={serviceFilter}
           onChange={e => setServiceFilter(e.target.value)}
-          className="px-2.5 py-1 bg-neutral-50 border border-neutral-200 rounded-lg text-neutral-700"
+          className="px-2.5 py-1 bg-neutral-50 border border-neutral-200 rounded-md text-neutral-700 text-xs"
         >
           <option value="all">Todos los servicios</option>
           {services.map(s => (
@@ -260,13 +272,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         </select>
 
         <div className="ml-auto text-neutral-400 text-[11px]">
-          {filteredAppointments.length} turnos registrados en total
+          {filteredAppointments.length} turnos registrados
         </div>
       </div>
 
       {/* View Content */}
       {viewMode === 'day' && (
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-xl border border-neutral-200/75 shadow-2xs overflow-hidden">
           <div className="divide-y divide-neutral-100">
             {HOURS.map(hour => {
               const hourStr = `${hour.toString().padStart(2, '0')}:00`;

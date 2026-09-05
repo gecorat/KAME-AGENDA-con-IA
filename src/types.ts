@@ -74,7 +74,7 @@ export interface DayAvailability {
 
 export interface PracticeSettings {
   practice_name: string;
-  handle: string; // p. ej. "consultorio-dr-corat"
+  handle: string; // p. ej. "consultorio-medico"
   professional_name: string;
   professional_title: string; // p. ej. "Odontólogo Especialista"
   medical_license?: string; // p. ej. "M.N. 142.890 / M.P. 45.210"
@@ -92,6 +92,110 @@ export interface PracticeSettings {
   welcome_message: string;
   auto_confirm_bookings: boolean;
   allow_telemedicine: boolean;
+  // Subscription and payments
+  subscription_plan?: 'trial' | 'basic' | 'pro';
+  subscription_billing_cycle?: 'monthly' | 'annual';
+  trial_active?: boolean;
+  trial_started_at?: string;
+  trial_days_left?: number;
+  whatsapp_connected?: boolean;
+  whatsapp_session_phone?: string;
+  onboarding_completed_steps?: string[];
+  mercadopago_public_key?: string;
+  mercadopago_access_token?: string;
+  mercadopago_webhook_secret?: string;
+  mercadopago_deposit_enabled?: boolean;
+  mercadopago_deposit_percent?: number;
+  // Professional's deposit payment setup for their patients (No API keys needed for doctors)
+  patient_deposit_enabled?: boolean;
+  patient_deposit_percent?: number;
+  patient_deposit_method?: 'alias_cbu' | 'mercadopago_connect' | 'mercadopago_link';
+  patient_deposit_alias?: string;
+  patient_deposit_cbu?: string;
+  patient_deposit_bank_name?: string;
+  patient_deposit_account_holder?: string;
+  patient_deposit_cuit?: string;
+  patient_deposit_mp_link?: string;
+  patient_deposit_mp_connected?: boolean;
+  patient_deposit_mp_email?: string;
+  // Evolution API (WhatsApp infrastructure - Superadmin only)
+  evolution_api_url?: string;
+  evolution_api_key?: string;
+  evolution_instance_name?: string;
+  evolution_auto_connect?: boolean;
+  // Email Transaccional / Recordatorios (Superadmin only)
+  email_provider?: 'resend' | 'smtp';
+  email_resend_api_key?: string;
+  email_sender_address?: string;
+  email_sender_name?: string;
+  email_smtp_host?: string;
+  email_smtp_port?: number;
+  email_smtp_user?: string;
+  email_smtp_pass?: string;
+  email_reminders_active?: boolean;
+  // Public Page Customization (Theme, Profile Photo, Shapes & Alignment)
+  public_profile_photo_url?: string;
+  public_profile_photo_shape?: 'square' | 'rounded-smooth' | 'rounded-full';
+  public_profile_photo_align?: 'left' | 'center' | 'right';
+  public_theme_preset?: 'minimal-slate' | 'medical-teal' | 'warm-oat' | 'nordic-blue' | 'dark-carbon';
+  public_card_border_style?: 'square' | 'rounded-smooth' | 'rounded-xl' | 'pill';
+  public_badge_text?: string;
+  public_bio?: string;
+  public_show_reviews?: boolean;
+  public_custom_accent?: string;
+}
+
+export interface SaasTenantUser {
+  id: string;
+  practice_name: string;
+  doctor_name: string;
+  email: string;
+  phone: string;
+  plan: 'trial' | 'basic' | 'pro';
+  billing_cycle: 'monthly' | 'annual';
+  status: 'active' | 'trial' | 'past_due' | 'cancelled';
+  subscription_started_at: string;
+  next_billing_date: string;
+  amount_monthly_ars: number;
+  payment_method: 'mercadopago' | 'transfer';
+  last_payment_date: string;
+  last_payment_amount: number;
+  total_paid_ars: number;
+  appointments_count: number;
+  whatsapp_status: 'connected' | 'disconnected';
+}
+
+export type UserRole = 'superadmin' | 'professional' | 'assistant';
+
+export interface UserSession {
+  uid?: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  isSuperAdmin: boolean;
+  photoURL?: string;
+  plan?: 'trial' | 'basic' | 'pro';
+}
+
+export type SubscriptionPlanId = 'trial' | 'basic' | 'pro';
+export type BillingCycle = 'monthly' | 'annual';
+export type CurrencyCode = 'ARS' | 'USD';
+
+export interface SubscriptionPlanDef {
+  id: SubscriptionPlanId;
+  name: string;
+  badge?: string;
+  tagline: string;
+  priceMonthARS: number;
+  priceAnnualARS: number;
+  priceMonthUSD: number;
+  priceAnnualUSD: number;
+  popular?: boolean;
+  features: {
+    text: string;
+    included: boolean;
+    highlight?: boolean;
+  }[];
 }
 
 export interface ChatMessage {

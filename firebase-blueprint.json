@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Medical appointment booking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patient_id": { "type": "string" },
+        "patient_name": { "type": "string" },
+        "patient_phone": { "type": "string" },
+        "patient_email": { "type": "string" },
+        "service_id": { "type": "string" },
+        "service_name": { "type": "string" },
+        "service_price": { "type": "number" },
+        "start_datetime": { "type": "string" },
+        "end_datetime": { "type": "string" },
+        "status": { "type": "string", "enum": ["confirmed", "pending", "completed", "cancelled", "no_show"] },
+        "payment_status": { "type": "string", "enum": ["pending", "paid", "partial", "refunded"] },
+        "notes": { "type": "string" },
+        "origin": { "type": "string" }
+      },
+      "required": ["patient_name", "patient_phone", "start_datetime", "end_datetime", "status"]
+    },
+    "Patient": {
+      "title": "Patient",
+      "description": "Clinical record and contact info for a patient",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "first_name": { "type": "string" },
+        "last_name": { "type": "string" },
+        "phone": { "type": "string" },
+        "email": { "type": "string" },
+        "dni": { "type": "string" },
+        "insurance_company": { "type": "string" },
+        "insurance_number": { "type": "string" },
+        "notes": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["first_name", "last_name", "phone"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "Medical service / treatment offered by the practice",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "price": { "type": "number" },
+        "duration_minutes": { "type": "number" },
+        "description": { "type": "string" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["name", "price", "duration_minutes", "active"]
+    },
+    "PracticeSettings": {
+      "title": "PracticeSettings",
+      "description": "General settings and configuration for the practice",
+      "type": "object",
+      "properties": {
+        "practice_name": { "type": "string" },
+        "professional_name": { "type": "string" },
+        "specialty": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp_number": { "type": "string" },
+        "email": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "currency": { "type": "string" },
+        "subscription_plan": { "type": "string" }
+      },
+      "required": ["practice_name", "professional_name", "whatsapp_number"]
+    },
+    "WaitlistEntry": {
+      "title": "WaitlistEntry",
+      "description": "Patient waiting for an early cancellation slot",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patient_name": { "type": "string" },
+        "patient_phone": { "type": "string" },
+        "priority": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "required": ["patient_name", "patient_phone", "priority", "status"]
+    }
+  },
+  "firestore": {
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Collection of appointments booked by patients or clinic staff"
+    },
+    "/patients/{patientId}": {
+      "schema": { "$ref": "#/entities/Patient" },
+      "description": "Directory of registered patients"
+    },
+    "/services/{serviceId}": {
+      "schema": { "$ref": "#/entities/Service" },
+      "description": "Medical services and consult aranceles"
+    },
+    "/settings/{settingsId}": {
+      "schema": { "$ref": "#/entities/PracticeSettings" },
+      "description": "Global practice configurations"
+    },
+    "/waitlist/{waitlistId}": {
+      "schema": { "$ref": "#/entities/WaitlistEntry" },
+      "description": "Smart waitlist entries"
+    }
+  }
+}
