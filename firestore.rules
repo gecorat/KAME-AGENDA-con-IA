@@ -7,6 +7,10 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isSuperAdmin() {
+      return isAuthenticated() && request.auth.token.email == 'gonzalocorat@gmail.com';
+    }
+
     function isValidAppointment(data) {
       return data.patient_name is string && data.patient_name.size() > 0 &&
              data.patient_phone is string && data.patient_phone.size() > 0 &&
@@ -47,10 +51,26 @@ service cloud.firestore {
       allow update, delete: if isAuthenticated();
     }
 
-    // User profiles - read by authenticated staff, written by the user themselves
+    // Consultations & SOAP records
+    match /consultations/{consultationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Billing & Payments
+    match /payments/{paymentId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Conversations / WhatsApp chats
+    match /conversations/{conversationId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // User profiles & SaaS Tenants
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && request.auth.uid == userId;
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAuthenticated();
     }
 
     // Connection test document

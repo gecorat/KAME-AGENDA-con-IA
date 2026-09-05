@@ -84,9 +84,30 @@
         "status": { "type": "string" }
       },
       "required": ["patient_name", "patient_phone", "priority", "status"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered SaaS user and practice owner profile",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "plan": { "type": "string" },
+        "status": { "type": "string" },
+        "trial_days_left": { "type": "number" },
+        "trial_active": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["email", "role", "plan", "status"]
     }
   },
   "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Collection of all registered users, clinics and superadmins"
+    },
     "/appointments/{appointmentId}": {
       "schema": { "$ref": "#/entities/Appointment" },
       "description": "Collection of appointments booked by patients or clinic staff"

@@ -15,7 +15,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialMode = 'login',
   onSuccess
 }) => {
-  const { loginWithGoogle, loginWithEmail, registerWithEmail, loginAsDemo, isAuthLoading } = useAgendaStore();
+  const { loginWithGoogle, loginWithEmail, registerWithEmail, isAuthLoading } = useAgendaStore();
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +39,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       } else if (err.code === 'auth/popup-blocked') {
         setError('Tu navegador bloqueó la ventana emergente de Google. Habilítala para continuar.');
       } else {
-        setError(err.message || 'No se pudo iniciar sesión con Google. Puedes probar el acceso con email o demo.');
+        setError(err.message || 'No se pudo iniciar sesión con Google. Puedes probar el acceso con correo y contraseña.');
       }
     } finally {
       setLoading(false);
@@ -80,12 +80,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleQuickDemo = (type: 'superadmin' | 'pro' | 'basic') => {
-    loginAsDemo(type);
-    onSuccess?.();
-    onClose();
   };
 
   return (
@@ -283,62 +277,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </>
               ) : (
                 <>
-                  <span>Crear Cuenta y Comenzar</span>
+                  <span>Crear Cuenta y Activar 14 Días Gratis</span>
                   <Sparkles className="w-3.5 h-3.5" />
                 </>
               )}
             </button>
           </form>
 
-          {/* Direct Demo / Fast Access Selector */}
-          <div className="pt-2 border-t border-neutral-100">
-            <div className="text-[11px] font-semibold text-neutral-500 mb-2 flex items-center justify-between">
-              <span>Accesos rápidos de prueba (1 clic):</span>
-              <span className="text-[10px] bg-neutral-100 px-1.5 py-0.5 rounded text-neutral-600">Sin registro previo</span>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('superadmin')}
-                className="p-2 text-left bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 rounded-xl transition-colors group"
-              >
-                <span className="block text-[11px] font-bold text-neutral-900 leading-tight group-hover:text-amber-600">
-                  Super Admin
-                </span>
-                <span className="block text-[10px] text-neutral-500 truncate">
-                  Gonzalo Corat
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('pro')}
-                className="p-2 text-left bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 rounded-xl transition-colors group"
-              >
-                <span className="block text-[11px] font-bold text-neutral-900 leading-tight group-hover:text-sky-600">
-                  Plan Pro AI
-                </span>
-                <span className="block text-[10px] text-neutral-500 truncate">
-                  Dra. Valenzuela
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('basic')}
-                className="p-2 text-left bg-neutral-50 hover:bg-neutral-100 border border-neutral-200/80 rounded-xl transition-colors group"
-              >
-                <span className="block text-[11px] font-bold text-neutral-900 leading-tight group-hover:text-neutral-700">
-                  Plan Básico
-                </span>
-                <span className="block text-[10px] text-neutral-500 truncate">
-                  Dr. Romero
-                </span>
-              </button>
-            </div>
-          </div>
-
-          <div className="text-center">
+          <div className="pt-2 text-center border-t border-neutral-100">
             <p className="text-[11px] text-neutral-400 flex items-center justify-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
               <span>Tus datos y los de tus pacientes están 100% protegidos</span>

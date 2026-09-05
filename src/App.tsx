@@ -49,14 +49,45 @@ function MainApp() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [pendingProtectedTab, setPendingProtectedTab] = useState<string | null>(null);
 
-  const isSuperAdmin = currentUser?.isSuperAdmin || currentUser?.email === 'gonzalocorat@gmail.com';
+  const VALID_TABS = [
+    'guia', 'dashboard', 'agenda', 'pacientes', 'consultas', 'chats', 'asistente',
+    'espera', 'recordatorios', 'cobros', 'servicios', 'horarios', 'metricas',
+    'suscripcion', 'google-sync', 'editor-pagina', 'configuracion', 'superadmin-analytics'
+  ];
+
+  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
   const isBasicPlan = practiceSettings.subscription_plan === 'basic' && !isSuperAdmin;
+  const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
+  const trialExpired = isTrial && (practiceSettings.trial_days_left ?? 0) <= 0 && !practiceSettings.is_permanent;
+
+  // Synchronize browser URL bar cleanly
+  const syncBrowserUrl = (tab: string) => {
+    if (typeof window === 'undefined') return;
+    let targetPath = '/';
+    if (tab === 'portal') {
+      targetPath = `/u/${practiceSettings.handle || 'consultorio-medico'}`;
+    } else if (tab === 'landing') {
+      targetPath = '/';
+    } else if (VALID_TABS.includes(tab)) {
+      targetPath = `/${tab}`;
+    }
+    if (window.location.pathname !== targetPath) {
+      window.history.pushState({ tab }, '', targetPath);
+    }
+  };
 
   const handleSelectTab = (tab: string) => {
+    // Superadmin tab is strictly protected
+    if (tab === 'superadmin-analytics' && !isSuperAdmin) {
+      tab = 'dashboard';
+    }
+
     // Public routes that don't need authentication
     if (tab === 'landing' || tab === 'portal') {
       setTabHistory(prev => (prev[prev.length - 1] === tab ? prev : [...prev, tab]));
       setActiveTab(tab);
+      syncBrowserUrl(tab);
       return;
     }
 
@@ -73,13 +104,16 @@ function MainApp() {
       return [...prev, tab];
     });
     setActiveTab(tab);
+    syncBrowserUrl(tab);
   };
 
   const handleAuthSuccess = () => {
     const destination = pendingProtectedTab || 'dashboard';
+    const finalDest = (destination === 'superadmin-analytics' && !isSuperAdmin) ? 'dashboard' : destination;
     setPendingProtectedTab(null);
-    setTabHistory(prev => [...prev, destination]);
-    setActiveTab(destination);
+    setTabHistory(prev => [...prev, finalDest]);
+    setActiveTab(finalDest);
+    syncBrowserUrl(finalDest);
   };
 
   const handleBack = () => {
@@ -89,10 +123,13 @@ function MainApp() {
       const prevTab = newHist[newHist.length - 1] || (currentUser ? 'dashboard' : 'landing');
       setTabHistory(newHist);
       setActiveTab(prevTab);
+      syncBrowserUrl(prevTab);
     } else if (typeof window !== 'undefined' && window.history.length > 1) {
       window.history.back();
     } else {
-      setActiveTab(currentUser ? 'dashboard' : 'landing');
+      const fallback = currentUser ? 'dashboard' : 'landing';
+      setActiveTab(fallback);
+      syncBrowserUrl(fallback);
     }
   };
 
@@ -112,35 +149,75 @@ function MainApp() {
   const [waitlistToEdit, setWaitlistToEdit] = useState<WaitlistEntry | null>(null);
   const [activeWaitlistToSchedule, setActiveWaitlistToSchedule] = useState<WaitlistEntry | null>(null);
 
-  // Check initial URL parameters
+  // Check initial URL parameters and subscribe to browser history navigation (popstate)
   useEffect(() => {
-    if (window.location.pathname.startsWith('/u/')) {
-      setActiveTab('portal');
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('portal') === 'true') {
-      setActiveTab('portal');
-      return;
-    }
-    if (params.get('panel') === 'true' || params.get('tab')) {
-      const requestedTab = params.get('tab') || 'dashboard';
-      if (currentUser) {
-        setActiveTab(requestedTab);
-      } else {
-        setPendingProtectedTab(requestedTab);
-        setAuthModalOpen(true);
+    const parseUrlToTab = () => {
+      const pathname = window.location.pathname;
+      const hash = window.location.hash;
+
+      // Handle public booking URL like /u/consultorio-medico or #/u/...
+      if (pathname.startsWith('/u/') || hash.startsWith('#/u/')) {
+        return 'portal';
       }
-    }
+
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('portal') === 'true') {
+        return 'portal';
+      }
+
+      // Check URL pathname like /agenda, /pacientes, /cobros
+      const rawSlug = pathname.replace(/^\//, '').toLowerCase().trim();
+      const queryTab = params.get('tab');
+      const targetSlug = VALID_TABS.includes(rawSlug) ? rawSlug : (queryTab && VALID_TABS.includes(queryTab) ? queryTab : null);
+
+      if (targetSlug) {
+        if (currentUser) {
+          if (targetSlug === 'superadmin-analytics' && !isSuperAdmin) {
+            return 'dashboard';
+          }
+          return targetSlug;
+        } else {
+          setPendingProtectedTab(targetSlug);
+          setAuthModalOpen(true);
+          return 'landing';
+        }
+      }
+
+      if (params.get('panel') === 'true') {
+        return currentUser ? 'dashboard' : 'landing';
+      }
+
+      // Default
+      return currentUser ? 'dashboard' : 'landing';
+    };
+
+    const initialTab = parseUrlToTab();
+    setActiveTab(initialTab);
+
+    // Appointment confirmation link
+    const params = new URLSearchParams(window.location.search);
     const confirmAptId = params.get('confirmar');
     if (confirmAptId) {
       confirmAppointmentByPatient(confirmAptId);
       alert('¡Turno confirmado con éxito por el paciente!');
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [currentUser]);
+
+    const handlePopState = () => {
+      const poppedTab = parseUrlToTab();
+      setActiveTab(poppedTab);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [currentUser, isSuperAdmin]);
 
   const handleOpenNewAppointment = (date?: string, time?: string) => {
+    if (trialExpired) {
+      alert('Tu periodo de prueba de 14 días ha finalizado. Actualiza a Plan Pro o Básico para continuar agendando nuevos turnos.');
+      handleSelectTab('suscripcion');
+      return;
+    }
     setAptToEdit(null);
     setDefaultDate(date);
     setDefaultTime(time);

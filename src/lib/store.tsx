@@ -43,9 +43,22 @@ import {
   saveAppointmentToFirestore,
   deleteAppointmentFromFirestore,
   savePatientToFirestore,
+  deletePatientFromFirestore,
+  saveServiceToFirestore,
+  deleteServiceFromFirestore,
+  saveConsultationToFirestore,
+  savePaymentToFirestore,
   saveSettingsToFirestore,
   saveWaitlistToFirestore,
+  saveUserToFirestore,
+  getUserFromFirestore,
+  subscribeToUsers,
+  updateUserInFirestore,
+  deleteUserFromFirestore,
+  cleanupDuplicateUsers,
   subscribeToAppointments,
+  subscribeToPatients,
+  subscribeToServices,
   subscribeToSettings,
   auth,
   googleProvider,
@@ -136,11 +149,57 @@ interface AgendaStoreContextType {
   logout: () => Promise<void>;
   switchUserRole: (role: UserRole) => void;
   saasTenants: SaasTenantUser[];
-  updateSaasTenant: (id: string, updates: Partial<SaasTenantUser>) => void;
+  updateSaasTenant: (id: string, updates: Partial<SaasTenantUser>) => Promise<void>;
+  deleteSaasTenant: (id: string) => Promise<boolean>;
+  extendUserTrial: (id: string, daysToAdd: number) => Promise<boolean>;
+  grantUserPlan: (id: string, plan: 'basic' | 'pro', isPermanent: boolean, days?: number) => Promise<boolean>;
 
   // Utilities
   resetToDemoData: () => void;
 }
+
+// Clean storage helper: removes legacy mock demo items so only real data is shown
+function getCleanStorageList<T>(key: string): T[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      const hasMock = parsed.some((item: any) =>
+        item.id === 'pat-1' ||
+        item.id === 'apt-1' ||
+        item.first_name === 'Valentina' ||
+        item.patient_name === 'Valentina Rossi' ||
+        item.id === 'conv-1' ||
+        item.id === 'pay-1' ||
+        item.id === 'mov-1' ||
+        item.id === 'cs-1' ||
+        item.id === 'tenant-1'
+      );
+      if (hasMock) {
+        localStorage.removeItem(key);
+        return [];
+      }
+      return parsed;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+const CLEAN_DEFAULT_SERVICES: Service[] = [
+  {
+    id: "srv-default-1",
+    name: "Consulta Médica General",
+    price: 15000,
+    duration_minutes: 30,
+    description: "Evaluación clínica integral y diagnóstico personalizado.",
+    color: "#0284c7",
+    active: true,
+    category: "Consulta"
+  }
+];
 
 const AgendaStoreContext = createContext<AgendaStoreContextType | null>(null);
 
@@ -185,12 +244,8 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
 
   const [services, setServices] = useState<Service[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.SERVICES);
-      return saved ? JSON.parse(saved) : INITIAL_SERVICES;
-    } catch {
-      return INITIAL_SERVICES;
-    }
+    const list = getCleanStorageList<Service>(STORAGE_KEYS.SERVICES);
+    return list.length > 0 ? list : CLEAN_DEFAULT_SERVICES;
   });
 
   const [availability, setAvailability] = useState<DayAvailability[]>(() => {
@@ -202,40 +257,24 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   });
 
+  // Real clean patients (starts empty, only real data)
   const [patients, setPatients] = useState<Patient[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PATIENTS);
-      return saved ? JSON.parse(saved) : INITIAL_PATIENTS;
-    } catch {
-      return INITIAL_PATIENTS;
-    }
+    return getCleanStorageList<Patient>(STORAGE_KEYS.PATIENTS);
   });
 
+  // Real clean appointments (starts empty, only real data)
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.APPOINTMENTS);
-      return saved ? JSON.parse(saved) : getInitialAppointments();
-    } catch {
-      return getInitialAppointments();
-    }
+    return getCleanStorageList<Appointment>(STORAGE_KEYS.APPOINTMENTS);
   });
 
+  // Real clean conversations (starts empty)
   const [conversations, setConversations] = useState<Conversation[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS);
-      return saved ? JSON.parse(saved) : INITIAL_CONVERSATIONS;
-    } catch {
-      return INITIAL_CONVERSATIONS;
-    }
+    return getCleanStorageList<Conversation>(STORAGE_KEYS.CONVERSATIONS);
   });
 
+  // Real clean waitlist (starts empty)
   const [waitlist, setWaitlist] = useState<WaitlistEntry[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.WAITLIST);
-      return saved ? JSON.parse(saved) : INITIAL_WAITLIST;
-    } catch {
-      return INITIAL_WAITLIST;
-    }
+    return getCleanStorageList<WaitlistEntry>(STORAGE_KEYS.WAITLIST);
   });
 
   const [reminderConfig, setReminderConfig] = useState<ReminderConfig>(() => {
@@ -255,21 +294,11 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
 
   const [reminderLogs, setReminderLogs] = useState<ReminderLog[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.REMINDER_LOGS);
-      return saved ? JSON.parse(saved) : INITIAL_REMINDER_LOGS;
-    } catch {
-      return INITIAL_REMINDER_LOGS;
-    }
+    return getCleanStorageList<ReminderLog>(STORAGE_KEYS.REMINDER_LOGS);
   });
 
   const [payments, setPayments] = useState<PaymentRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.PAYMENTS);
-      return saved ? JSON.parse(saved) : INITIAL_PAYMENTS;
-    } catch {
-      return INITIAL_PAYMENTS;
-    }
+    return getCleanStorageList<PaymentRecord>(STORAGE_KEYS.PAYMENTS);
   });
 
   const [cashRegister, setCashRegister] = useState<CashRegister>(() => {
@@ -282,34 +311,11 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
 
   const [cashMovements, setCashMovements] = useState<CashMovement[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CASH_MOVEMENTS);
-      return saved ? JSON.parse(saved) : INITIAL_CASH_MOVEMENTS;
-    } catch {
-      return INITIAL_CASH_MOVEMENTS;
-    }
+    return getCleanStorageList<CashMovement>(STORAGE_KEYS.CASH_MOVEMENTS);
   });
 
   const [consultations, setConsultations] = useState<ConsultationRecord[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEYS.CONSULTATIONS);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.map((c: ConsultationRecord) => ({
-            ...c,
-            professional_name: c.professional_name === 'Dr. Gonzalo Corat' ? 'Dr/a. Especialista' : c.professional_name,
-            certificates: c.certificates?.map(cert => ({
-              ...cert,
-              professional_name: cert.professional_name === 'Dr. Gonzalo Corat' ? 'Dr/a. Especialista' : cert.professional_name
-            }))
-          }));
-        }
-      }
-      return INITIAL_CONSULTATIONS;
-    } catch {
-      return INITIAL_CONSULTATIONS;
-    }
+    return getCleanStorageList<ConsultationRecord>(STORAGE_KEYS.CONSULTATIONS);
   });
 
   // Current User Session & Role (Unauthenticated by default)
@@ -324,24 +330,59 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
 
-  // Synchronize with Firebase Auth in real-time
+  // Synchronize with Firebase Auth and Firestore in real-time
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser && firebaseUser.email) {
-        const isSuper = firebaseUser.email.toLowerCase() === 'gonzalocorat@gmail.com';
+        const emailLower = firebaseUser.email.toLowerCase();
+        const isSuper = emailLower === 'gonzalocorat@gmail.com';
+        
+        const remoteDoc = await getUserFromFirestore(firebaseUser.uid);
+        const effectivePlan = isSuper ? 'pro' : (remoteDoc?.plan || 'basic');
+        const effectiveTrialActive = isSuper ? false : (remoteDoc?.trial_active ?? true);
+        const effectiveTrialDays = isSuper ? 0 : (remoteDoc?.trial_days_left ?? 14);
+
         const session: UserSession = {
           uid: firebaseUser.uid,
           email: firebaseUser.email,
-          name: firebaseUser.displayName || (isSuper ? 'Gonzalo Corat (Super Admin)' : 'Dr/a. Especialista'),
+          name: firebaseUser.displayName || remoteDoc?.doctor_name || (isSuper ? 'Gonzalo Corat (Super Admin)' : 'Dr/a. Especialista'),
           role: isSuper ? 'superadmin' : 'professional',
           isSuperAdmin: isSuper,
           photoURL: firebaseUser.photoURL || undefined,
-          plan: isSuper ? 'pro' : (practiceSettings.subscription_plan || 'pro')
+          plan: effectivePlan
         };
         setCurrentUser(session);
         try {
           localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
         } catch {}
+
+        setPracticeSettings(prev => ({
+          ...prev,
+          professional_name: session.name,
+          email: firebaseUser.email || prev.email,
+          subscription_plan: effectivePlan,
+          trial_active: effectiveTrialActive,
+          trial_days_left: effectiveTrialDays
+        }));
+
+        saveUserToFirestore({
+          id: firebaseUser.uid,
+          email: emailLower,
+          doctor_name: session.name,
+          practice_name: remoteDoc?.practice_name || (isSuper ? 'Plataforma SaaS AgendaPro AI' : `Consultorio ${session.name}`),
+          phone: remoteDoc?.phone || '',
+          plan: effectivePlan,
+          status: isSuper ? 'active' : (remoteDoc?.status || 'trial'),
+          trial_active: effectiveTrialActive,
+          trial_days_left: effectiveTrialDays,
+          is_permanent: isSuper ? true : (remoteDoc?.is_permanent ?? false),
+          amount_monthly_ars: isSuper ? 0 : (remoteDoc?.amount_monthly_ars || 0),
+          last_payment_amount: isSuper ? 0 : (remoteDoc?.last_payment_amount || 0),
+          total_paid_ars: isSuper ? 0 : (remoteDoc?.total_paid_ars || 0),
+          appointments_count: appointments.length,
+          whatsapp_status: 'connected',
+          created_at: remoteDoc?.created_at || new Date().toISOString()
+        });
       } else {
         try {
           const saved = localStorage.getItem('agendapro_current_user_v1');
@@ -358,7 +399,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
 
     return () => unsubscribe();
-  }, [practiceSettings.subscription_plan]);
+  }, []);
 
   const loginWithGoogle = async () => {
     try {
@@ -434,11 +475,42 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       };
       setCurrentUser(session);
       localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
+
+      // Persist real user into Firestore users collection
+      const newTenant: SaasTenantUser = {
+        id: user.uid,
+        practice_name: `Consultorio ${name}`,
+        doctor_name: name,
+        email: email.toLowerCase(),
+        phone: '',
+        plan: isSuper ? 'pro' : 'pro',
+        billing_cycle: 'monthly',
+        status: isSuper ? 'active' : 'trial',
+        subscription_started_at: new Date().toISOString(),
+        next_billing_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+        amount_monthly_ars: 34000,
+        payment_method: 'mercadopago',
+        last_payment_date: '-',
+        last_payment_amount: 0,
+        total_paid_ars: 0,
+        appointments_count: 0,
+        whatsapp_status: 'connected',
+        trial_days_left: 14,
+        trial_active: !isSuper,
+        is_permanent: isSuper,
+        created_at: new Date().toISOString(),
+        last_active_at: new Date().toISOString()
+      };
+      await saveUserToFirestore(newTenant);
+
       updatePracticeSettings({
         professional_name: name,
         email: email,
         specialty,
-        practice_name: `Consultorio ${name}`
+        practice_name: `Consultorio ${name}`,
+        subscription_plan: 'pro',
+        trial_active: !isSuper,
+        trial_days_left: 14
       });
     } catch (error: any) {
       console.error('Error al registrar usuario:', error);
@@ -458,34 +530,40 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         isSuperAdmin: true,
         plan: 'pro'
       };
-      updatePracticeSettings({ subscription_plan: 'pro' });
+      updatePracticeSettings({
+        professional_name: 'Gonzalo Corat',
+        email: 'gonzalocorat@gmail.com',
+        subscription_plan: 'pro',
+        trial_active: false
+      });
     } else if (type === 'pro') {
       session = {
-        email: 'dra.valenzuela@agendapro.ai',
-        name: 'Dra. Valentina Valenzuela',
+        email: 'gecorat@gmail.com',
+        name: 'Dr/a. Gecorat',
         role: 'professional',
         isSuperAdmin: false,
         plan: 'pro'
       };
       updatePracticeSettings({
-        professional_name: 'Dra. Valentina Valenzuela',
-        email: 'dra.valenzuela@agendapro.ai',
-        specialty: 'Dermatología Clínica & Estética',
+        professional_name: 'Dr/a. Gecorat',
+        email: 'gecorat@gmail.com',
+        specialty: 'Medicina General',
         subscription_plan: 'pro',
-        trial_active: true
+        trial_active: true,
+        trial_days_left: 14
       });
     } else {
       session = {
-        email: 'dr.romero@agendapro.ai',
-        name: 'Dr. Lucas Romero',
+        email: 'contacto@consultorio.com',
+        name: 'Dr/a. Especialista',
         role: 'professional',
         isSuperAdmin: false,
         plan: 'basic'
       };
       updatePracticeSettings({
-        professional_name: 'Dr. Lucas Romero',
-        email: 'dr.romero@agendapro.ai',
-        specialty: 'Traumatología General',
+        professional_name: 'Dr/a. Especialista',
+        email: 'contacto@consultorio.com',
+        specialty: 'Medicina General',
         subscription_plan: 'basic',
         trial_active: false
       });
@@ -506,10 +584,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const switchUserRole = (role: UserRole) => {
+    // Only Gonzalo is authorized to switch roles or simulate views
+    if (!currentUser || currentUser.email.toLowerCase() !== 'gonzalocorat@gmail.com') {
+      return;
+    }
+
     if (role === 'superadmin') {
       const adminUser: UserSession = {
-        email: 'gonzalocorat@gmail.com',
-        name: 'Gonzalo Corat (Super Admin)',
+        ...currentUser,
         role: 'superadmin',
         isSuperAdmin: true,
         plan: 'pro'
@@ -517,35 +599,85 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setCurrentUser(adminUser);
       localStorage.setItem('agendapro_current_user_v1', JSON.stringify(adminUser));
     } else {
-      const docUser: UserSession = {
-        email: 'doctor@consultoriomedico.com',
-        name: 'Dr/a. Especialista (Consultorio)',
+      // Simulation mode for testing how doctors see the dashboard
+      const simulatedDocUser: UserSession = {
+        ...currentUser,
         role: 'professional',
         isSuperAdmin: false,
         plan: practiceSettings.subscription_plan || 'pro'
       };
-      setCurrentUser(docUser);
-      localStorage.setItem('agendapro_current_user_v1', JSON.stringify(docUser));
+      setCurrentUser(simulatedDocUser);
+      localStorage.setItem('agendapro_current_user_v1', JSON.stringify(simulatedDocUser));
     }
   };
 
-  const [saasTenants, setSaasTenants] = useState<SaasTenantUser[]>(() => {
-    try {
-      const saved = localStorage.getItem('agendapro_saas_tenants_v1');
-      return saved ? JSON.parse(saved) : DEMO_SAAS_TENANTS;
-    } catch {
-      return DEMO_SAAS_TENANTS;
-    }
-  });
+  // Real-time Firestore users synchronization for Super Admin
+  const [saasTenants, setSaasTenants] = useState<SaasTenantUser[]>([]);
 
-  const updateSaasTenant = (id: string, updates: Partial<SaasTenantUser>) => {
-    setSaasTenants(prev => {
-      const next = prev.map(t => t.id === id ? { ...t, ...updates } : t);
-      try {
-        localStorage.setItem('agendapro_saas_tenants_v1', JSON.stringify(next));
-      } catch {}
-      return next;
+  useEffect(() => {
+    cleanupDuplicateUsers();
+    const unsub = subscribeToUsers((remoteUsers) => {
+      if (remoteUsers) {
+        setSaasTenants(remoteUsers);
+      }
     });
+    return () => unsub();
+  }, []);
+
+  const updateSaasTenant = async (id: string, updates: Partial<SaasTenantUser>) => {
+    setSaasTenants(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    await updateUserInFirestore(id, updates);
+  };
+
+  const deleteSaasTenant = async (id: string): Promise<boolean> => {
+    const tenant = saasTenants.find(t => t.id === id);
+    if (tenant?.email?.toLowerCase() === 'gonzalocorat@gmail.com') {
+      alert('No se puede eliminar la cuenta del Super Administrador.');
+      return false;
+    }
+    setSaasTenants(prev => prev.filter(t => t.id !== id));
+    return await deleteUserFromFirestore(id);
+  };
+
+  const extendUserTrial = async (id: string, daysToAdd: number): Promise<boolean> => {
+    const tenant = saasTenants.find(t => t.id === id);
+    if (!tenant) return false;
+    const currentDays = tenant.trial_days_left || 0;
+    const newDays = Math.max(1, currentDays + daysToAdd);
+    const newExpiresAt = new Date(Date.now() + newDays * 86400000).toISOString();
+    const newBilling = newExpiresAt.split('T')[0];
+
+    const updates: Partial<SaasTenantUser> = {
+      trial_days_left: newDays,
+      trial_active: true,
+      status: 'trial',
+      is_permanent: false,
+      next_billing_date: newBilling
+    };
+
+    setSaasTenants(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    return await updateUserInFirestore(id, updates);
+  };
+
+  const grantUserPlan = async (id: string, plan: 'basic' | 'pro', isPermanent: boolean, days: number = 30): Promise<boolean> => {
+    const tenant = saasTenants.find(t => t.id === id);
+    if (!tenant) return false;
+
+    const expiresAt = isPermanent ? null : new Date(Date.now() + days * 86400000).toISOString();
+    const nextBilling = isPermanent ? '2099-12-31' : (expiresAt ? expiresAt.split('T')[0] : '2026-12-31');
+
+    const updates: Partial<SaasTenantUser> = {
+      plan,
+      status: 'active',
+      trial_active: false,
+      is_permanent: isPermanent,
+      access_expires_at: expiresAt,
+      amount_monthly_ars: plan === 'pro' ? 34000 : 19000,
+      next_billing_date: nextBilling
+    };
+
+    setSaasTenants(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+    return await updateUserInFirestore(id, updates);
   };
 
   // Sync to local storage
@@ -696,6 +828,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const deletePatient = (id: string) => {
     setPatients(prev => prev.filter(p => p.id !== id));
+    deletePatientFromFirestore(id);
   };
 
   // Service Handlers
@@ -703,15 +836,24 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const id = `srv-${Date.now()}`;
     const newService: Service = { ...data, id };
     setServices(prev => [...prev, newService]);
+    saveServiceToFirestore(newService);
     return newService;
   };
 
   const updateService = (id: string, updates: Partial<Service>) => {
-    setServices(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+    setServices(prev => prev.map(s => {
+      if (s.id === id) {
+        const updated = { ...s, ...updates };
+        saveServiceToFirestore(updated);
+        return updated;
+      }
+      return s;
+    }));
   };
 
   const deleteService = (id: string) => {
     setServices(prev => prev.filter(s => s.id !== id));
+    deleteServiceFromFirestore(id);
   };
 
   // Availability Handlers
@@ -1055,6 +1197,8 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setCashMovements(prev => [cashMov, ...prev]);
     }
 
+    savePaymentToFirestore(newPayment);
+
     return newPayment;
   };
 
@@ -1165,11 +1309,19 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       created_at: new Date().toISOString()
     };
     setConsultations(prev => [newRecord, ...prev]);
+    saveConsultationToFirestore(newRecord);
     return newRecord;
   };
 
   const updateConsultation = (id: string, updates: Partial<ConsultationRecord>) => {
-    setConsultations(prev => prev.map(c => c.id === id ? { ...c, ...updates, updated_at: new Date().toISOString() } : c));
+    setConsultations(prev => prev.map(c => {
+      if (c.id === id) {
+        const updated = { ...c, ...updates, updated_at: new Date().toISOString() };
+        saveConsultationToFirestore(updated);
+        return updated;
+      }
+      return c;
+    }));
   };
 
   const deleteConsultation = (id: string) => {
@@ -1253,6 +1405,9 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       switchUserRole,
       saasTenants,
       updateSaasTenant,
+      deleteSaasTenant,
+      extendUserTrial,
+      grantUserPlan,
       resetToDemoData
     }}>
       {children}

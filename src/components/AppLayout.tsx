@@ -48,9 +48,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   const waitingCount = waitlist.filter(w => w.status === 'waiting').length;
   const pendingPaymentsCount = appointments.filter(a => a.payment_status === 'pending' && a.status !== 'cancelled').length;
-  const isTrial = practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active);
-  const isPro = practiceSettings.subscription_plan === 'pro';
-  const trialDaysLeft = practiceSettings.trial_days_left ?? 7;
+  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
+  const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
+  const isPro = isSuperAdmin || practiceSettings.subscription_plan === 'pro';
+  const trialDaysLeft = practiceSettings.trial_days_left ?? 14;
 
   // Calculate guide progress
   const isProfileComplete = Boolean(practiceSettings.practice_name?.trim() && practiceSettings.professional_name?.trim() && practiceSettings.phone?.trim());
@@ -150,7 +152,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         }
       ]
     },
-    ...(currentUser?.isSuperAdmin || currentUser?.email === 'gonzalocorat@gmail.com' ? [
+    ...(isSuperAdmin ? [
       {
         title: 'Super Admin (Gonzalo)',
         items: [
@@ -423,7 +425,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 }}
                 className="font-bold text-neutral-900 hover:underline uppercase tracking-wider"
               >
-                {currentUser?.isSuperAdmin || currentUser?.email === 'gonzalocorat@gmail.com'
+                {isSuperAdmin
                   ? 'Super Admin'
                   : isTrial
                   ? `Trial (${trialDaysLeft}d)`
@@ -438,16 +440,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
       {/* Main Content Area (offset by sidebar width on desktop) */}
       <div className="lg:pl-64 flex flex-col flex-1 min-w-0">
-        {/* 7-Day Trial Notification Bar */}
+        {/* 14-Day Trial Notification Bar */}
         {isTrial && (
           <div className="bg-neutral-900 text-white px-4 sm:px-6 py-2 border-b border-neutral-800 flex items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
               <span className="font-semibold text-neutral-200 truncate">
-                Prueba gratuita de 7 días activa
+                Prueba gratuita de 14 días activa (Plan Pro AI)
               </span>
               <span className="text-neutral-400 hidden md:inline">
-                — Tienes acceso total a las funciones del Plan Básico para agendar y atender pacientes
+                — Tienes acceso total a todas las herramientas del consultorio con IA
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0">

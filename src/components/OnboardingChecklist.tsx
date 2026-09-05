@@ -105,7 +105,10 @@ export const OnboardingChecklist: React.FC<OnboardingChecklistProps> = ({
   };
 
   const handleCopyPublicLink = () => {
-    const url = `${window.location.origin}/#portal`;
+    const handle = practiceSettings.handle || 'consultorio-medico';
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/u/${handle}`
+      : `https://agendapro.ai/u/${handle}`;
     navigator.clipboard?.writeText?.(url);
     setCopiedLink(true);
     if (!completedSteps.includes('share')) {

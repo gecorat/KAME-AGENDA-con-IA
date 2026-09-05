@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Calendar,
   Users,
@@ -20,7 +20,9 @@ import {
   CheckCheck,
   Receipt,
   ArrowRight,
-  Compass
+  Compass,
+  Copy,
+  Check
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment } from '../types';
@@ -37,6 +39,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onEditAppointment
 }) => {
   const { appointments, patients, services, practiceSettings, waitlist, updateAppointment, payments } = useAgendaStore();
+  const [copiedPortal, setCopiedPortal] = useState(false);
+
+  const handleCopyPortal = () => {
+    const handle = practiceSettings.handle || 'consultorio-medico';
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/u/${handle}`
+      : `https://agendapro.ai/u/${handle}`;
+    navigator.clipboard?.writeText?.(url);
+    setCopiedPortal(true);
+    setTimeout(() => setCopiedPortal(false), 2500);
+  };
 
   const todayStr = new Date().toISOString().split('T')[0];
   const waitingList = waitlist.filter(w => w.status === 'waiting');
@@ -96,14 +109,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {practiceSettings.specialty}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-neutral-500">
+          <div className="flex items-center gap-2 mt-1 text-xs text-neutral-500 flex-wrap">
             <span>Portal público:</span>
             <button
               onClick={() => onNavigateToTab('portal')}
-              className="text-neutral-800 hover:text-sky-600 font-medium inline-flex items-center gap-1 transition-colors hover:underline"
+              className="text-neutral-800 hover:text-sky-600 font-medium inline-flex items-center gap-1 transition-colors hover:underline cursor-pointer"
             >
-              <span>agendapro.ai/u/{practiceSettings.handle}</span>
+              <span>agendapro.ai/u/{practiceSettings.handle || 'consultorio-medico'}</span>
               <ExternalLink className="w-3 h-3 text-neutral-400" />
+            </button>
+            <button
+              onClick={handleCopyPortal}
+              className="px-2 py-0.5 text-[11px] font-semibold rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition flex items-center gap-1 cursor-pointer"
+              title="Copiar link directo para compartir"
+            >
+              {copiedPortal ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-neutral-500" />}
+              <span>{copiedPortal ? '¡Copiado!' : 'Copiar'}</span>
             </button>
           </div>
         </div>

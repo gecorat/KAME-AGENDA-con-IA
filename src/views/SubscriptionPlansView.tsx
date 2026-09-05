@@ -35,7 +35,7 @@ export const SubscriptionPlansView: React.FC = () => {
 
   const currentPlan = practiceSettings.subscription_plan || 'trial';
   const isTrial = currentPlan === 'trial' || Boolean(practiceSettings.trial_active);
-  const trialDaysLeft = practiceSettings.trial_days_left ?? 7;
+  const trialDaysLeft = practiceSettings.trial_days_left ?? 14;
 
   const formatPrice = (plan: typeof SUBSCRIPTION_PLANS[0]) => {
     if (currency === 'ARS') {
@@ -72,24 +72,24 @@ export const SubscriptionPlansView: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* 7-Day Trial Status Notification Banner */}
+      {/* 14-Day Trial Status Notification Banner */}
       {isTrial && (
         <div className="bg-white border border-neutral-200/90 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-4 h-4 text-emerald-400" />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-xs sm:text-sm font-bold text-neutral-900 font-display">
-                  Prueba Gratuita de 7 Días Activa
+                  Prueba Gratuita de 14 Días Activa (Plan Pro AI Completo)
                 </h3>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-neutral-100 text-neutral-800 border border-neutral-200">
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
                   {trialDaysLeft} días restantes
                 </span>
               </div>
               <p className="text-[11px] text-neutral-500 mt-0.5">
-                Tienes acceso ilimitado a todas las herramientas del <strong>Plan Básico</strong> (agenda de turnos, portal online para pacientes, control de caja y fichas clínicas).
+                Tienes acceso total a todas las herramientas del <strong>Plan Pro AI</strong> (bot autónomo de WhatsApp, historias clínicas con IA y voz, agenda interactiva y portal de turnos).
               </p>
             </div>
           </div>

@@ -302,9 +302,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
                 <button
                   type="button"
                   onClick={handleOpenLogin}
-                  className="w-full sm:w-auto px-5 py-4 rounded-xl bg-white hover:bg-neutral-50 text-neutral-800 font-semibold text-sm border border-neutral-300/80 shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full sm:w-auto px-6 py-4 rounded-xl bg-white hover:bg-neutral-50 text-neutral-800 font-semibold text-sm border border-neutral-300/80 shadow-2xs transition flex items-center justify-center gap-2 cursor-pointer"
                 >
-                  <span>Probar Demostración en Vivo</span>
+                  <span>Ya tengo cuenta / Ingresar</span>
                 </button>
               </div>
 

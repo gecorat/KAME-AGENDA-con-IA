@@ -37,6 +37,7 @@ export const ConsultationsView: React.FC = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatientFilter, setSelectedPatientFilter] = useState<string>('all');
+  const [selectedTemplateFilter, setSelectedTemplateFilter] = useState<string>('all');
   const [expandedConsultationId, setExpandedConsultationId] = useState<string | null>(null);
 
   // Modals
@@ -62,15 +63,18 @@ export const ConsultationsView: React.FC = () => {
   // Filtered list
   const filteredConsultations = consultations.filter((c) => {
     const matchesPatient = selectedPatientFilter === 'all' || c.patient_id === selectedPatientFilter;
+    const matchesTemplate = selectedTemplateFilter === 'all' || (c.consultation_type || 'dental') === selectedTemplateFilter;
     const searchLower = searchTerm.toLowerCase();
     const matchesSearch =
       c.patient_name.toLowerCase().includes(searchLower) ||
       c.reason_for_visit.toLowerCase().includes(searchLower) ||
+      (c.dental_tooth_number && c.dental_tooth_number.toLowerCase().includes(searchLower)) ||
+      (c.treatment_performed && c.treatment_performed.toLowerCase().includes(searchLower)) ||
       (c.soap_analysis && c.soap_analysis.toLowerCase().includes(searchLower)) ||
       (c.soap_plan && c.soap_plan.toLowerCase().includes(searchLower)) ||
       (c.prescriptions && c.prescriptions.some(p => p.medication.toLowerCase().includes(searchLower)));
 
-    return matchesPatient && matchesSearch;
+    return matchesPatient && matchesTemplate && matchesSearch;
   });
 
   const toggleAudio = (id: string) => {
@@ -167,12 +171,26 @@ export const ConsultationsView: React.FC = () => {
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-slate-400" />
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <Filter className="w-4 h-4 text-slate-400" />
+            <select
+              value={selectedTemplateFilter}
+              onChange={(e) => setSelectedTemplateFilter(e.target.value)}
+              className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+            >
+              <option value="all">Todas las especialidades</option>
+              <option value="dental">🦷 Odontología</option>
+              <option value="generic">📋 Evolución Libre</option>
+              <option value="soap">🩺 Método SOAP</option>
+              <option value="psychology">🧠 Salud Mental</option>
+            </select>
+          </div>
+
           <select
             value={selectedPatientFilter}
             onChange={(e) => setSelectedPatientFilter(e.target.value)}
-            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <option value="all">Todos los pacientes</option>
             {patients.map(p => (
@@ -235,6 +253,14 @@ export const ConsultationsView: React.FC = () => {
                         {patientObj?.dni && (
                           <span className="text-xs text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
                             DNI: {patientObj.dni}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
+                          {consultation.consultation_type === 'dental' ? '🦷 Odontología' : consultation.consultation_type === 'generic' ? '📋 Evolución Libre' : consultation.consultation_type === 'psychology' ? '🧠 Psicología' : '🩺 SOAP'}
+                        </span>
+                        {consultation.dental_tooth_number && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            🦷 {consultation.dental_tooth_number}
                           </span>
                         )}
                         {hasVoiceNotes && (
@@ -352,8 +378,8 @@ export const ConsultationsView: React.FC = () => {
                 {/* Expanded Details: SOAP Breakdown, Prescriptions & Certificates */}
                 {isExpanded && (
                   <div className="p-5 sm:p-6 space-y-6">
-                    {/* Vital Signs Bar if present */}
-                    {consultation.vital_signs && Object.values(consultation.vital_signs).some(Boolean) && (
+                    {/* Vital Signs Bar - Only if enabled and filled */}
+                    {consultation.vital_signs_enabled && consultation.vital_signs && Object.values(consultation.vital_signs).some(Boolean) && (
                       <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-4 text-xs">
                         {consultation.vital_signs.blood_pressure && (
                           <div>
@@ -394,60 +420,160 @@ export const ConsultationsView: React.FC = () => {
                       </div>
                     )}
 
-                    {/* SOAP Evolution Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* S: Subjetivo */}
-                      <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-sky-800">
-                          <span className="w-5 h-5 rounded bg-sky-200 text-sky-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                            S
-                          </span>
-                          Subjetivo (Anamnesis)
+                    {/* Specialized Clinical Content According to Template */}
+                    {consultation.consultation_type === 'dental' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Procedimiento Realizado */}
+                        <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-sky-800">
+                            <span className="w-5 h-5 rounded bg-sky-200 text-sky-800 flex items-center justify-center font-bold text-[11px]">
+                              Rx
+                            </span>
+                            Procedimiento Odontológico Realizado
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.treatment_performed || consultation.soap_objective || 'Tratamiento no detallado.'}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                          {consultation.soap_subjective || 'Sin datos subjetivos registrados.'}
-                        </p>
-                      </div>
 
-                      {/* O: Objetivo */}
-                      <div className="p-4 bg-teal-50/40 border border-teal-100 rounded-xl space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800">
-                          <span className="w-5 h-5 rounded bg-teal-200 text-teal-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                            O
-                          </span>
-                          Objetivo (Examen Clínico)
+                        {/* Diagnóstico Bucal */}
+                        <div className="p-4 bg-amber-50/40 border border-amber-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                            <span className="w-5 h-5 rounded bg-amber-200 text-amber-800 flex items-center justify-center font-bold text-[11px]">
+                              Dx
+                            </span>
+                            Diagnóstico Bucodental
+                          </div>
+                          <p className="text-xs font-semibold text-slate-800 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_analysis || 'Diagnóstico no especificado.'}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                          {consultation.soap_objective || 'Sin hallazgos clínicos registrados.'}
-                        </p>
-                      </div>
 
-                      {/* A: Análisis / Diagnóstico */}
-                      <div className="p-4 bg-amber-50/40 border border-amber-100 rounded-xl space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
-                          <span className="w-5 h-5 rounded bg-amber-200 text-amber-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                            A
-                          </span>
-                          Análisis (Diagnóstico)
+                        {/* Indicaciones Post-Atención */}
+                        <div className="p-4 bg-emerald-50/40 border border-emerald-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
+                            <span className="w-5 h-5 rounded bg-emerald-200 text-emerald-800 flex items-center justify-center font-bold text-[11px]">
+                              Pl
+                            </span>
+                            Indicaciones Post-Atención y Próximo Turno
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_plan || 'Sin pautas registradas.'}
+                          </p>
                         </div>
-                        <p className="text-xs font-semibold text-slate-800 whitespace-pre-line leading-relaxed">
-                          {consultation.soap_analysis || 'Diagnóstico no especificado.'}
-                        </p>
-                      </div>
 
-                      {/* P: Plan Terapéutico */}
-                      <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-1.5">
-                        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-800">
-                          <span className="w-5 h-5 rounded bg-indigo-200 text-indigo-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                            P
-                          </span>
-                          Plan Terapéutico
+                        {/* Pieza Dental & Molestia Inicial */}
+                        <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                            <span className="w-5 h-5 rounded bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[11px]">
+                              🦷
+                            </span>
+                            Sector Dental & Motivo
+                          </div>
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            {consultation.dental_tooth_number && (
+                              <strong className="block text-sky-700 font-semibold mb-1">
+                                Pieza/Sector: {consultation.dental_tooth_number}
+                              </strong>
+                            )}
+                            {consultation.soap_subjective || consultation.reason_for_visit}
+                          </p>
                         </div>
-                        <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                          {consultation.soap_plan || 'Sin pautas registradas.'}
-                        </p>
                       </div>
-                    </div>
+                    ) : consultation.consultation_type === 'generic' ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5 md:col-span-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-sky-800">
+                            <span className="w-5 h-5 rounded bg-sky-200 text-sky-800 flex items-center justify-center font-bold text-[11px]">
+                              📋
+                            </span>
+                            Evolución Clínica y Observaciones
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.clinical_evolution || consultation.soap_subjective || 'Sin evolución detallada.'}
+                          </p>
+                        </div>
+
+                        <div className="p-4 bg-amber-50/40 border border-amber-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                            <span className="w-5 h-5 rounded bg-amber-200 text-amber-800 flex items-center justify-center font-bold text-[11px]">
+                              Dx
+                            </span>
+                            Diagnóstico / Conclusión
+                          </div>
+                          <p className="text-xs font-semibold text-slate-800 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_analysis || 'Diagnóstico no especificado.'}
+                          </p>
+                        </div>
+
+                        <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-800">
+                            <span className="w-5 h-5 rounded bg-indigo-200 text-indigo-800 flex items-center justify-center font-bold text-[11px]">
+                              Pl
+                            </span>
+                            Plan e Indicaciones
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_plan || 'Sin pautas registradas.'}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Traditional SOAP grid */
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* S: Subjetivo */}
+                        <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-sky-800">
+                            <span className="w-5 h-5 rounded bg-sky-200 text-sky-800 flex items-center justify-center font-mono font-bold text-[11px]">
+                              S
+                            </span>
+                            Subjetivo (Anamnesis)
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_subjective || 'Sin datos subjetivos registrados.'}
+                          </p>
+                        </div>
+
+                        {/* O: Objetivo */}
+                        <div className="p-4 bg-teal-50/40 border border-teal-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800">
+                            <span className="w-5 h-5 rounded bg-teal-200 text-teal-800 flex items-center justify-center font-mono font-bold text-[11px]">
+                              O
+                            </span>
+                            Objetivo (Examen Clínico)
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_objective || 'Sin hallazgos clínicos registrados.'}
+                          </p>
+                        </div>
+
+                        {/* A: Análisis / Diagnóstico */}
+                        <div className="p-4 bg-amber-50/40 border border-amber-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
+                            <span className="w-5 h-5 rounded bg-amber-200 text-amber-800 flex items-center justify-center font-mono font-bold text-[11px]">
+                              A
+                            </span>
+                            Análisis (Diagnóstico)
+                          </div>
+                          <p className="text-xs font-semibold text-slate-800 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_analysis || 'Diagnóstico no especificado.'}
+                          </p>
+                        </div>
+
+                        {/* P: Plan Terapéutico */}
+                        <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-800">
+                            <span className="w-5 h-5 rounded bg-indigo-200 text-indigo-800 flex items-center justify-center font-mono font-bold text-[11px]">
+                              P
+                            </span>
+                            Plan Terapéutico
+                          </div>
+                          <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
+                            {consultation.soap_plan || 'Sin pautas registradas.'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Prescriptions strip if any */}
                     {hasPrescriptions && (

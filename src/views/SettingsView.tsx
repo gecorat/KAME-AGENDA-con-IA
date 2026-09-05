@@ -24,13 +24,13 @@ export const SettingsView: React.FC = () => {
   const {
     practiceSettings,
     updatePracticeSettings,
-    resetToDemoData,
     currentUser,
     switchUserRole
   } = useAgendaStore();
 
   const [formData, setFormData] = useState<PracticeSettings>(practiceSettings);
-  const isSuperAdmin = currentUser.email === 'gonzalocorat@gmail.com' && currentUser.isSuperAdmin;
+  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
 
   const [activeTab, setActiveTab] = useState<'general' | 'deposits' | 'apis' | 'workspace'>('general');
   const [savedNotice, setSavedNotice] = useState(false);
@@ -47,6 +47,7 @@ export const SettingsView: React.FC = () => {
   };
 
   const handleRoleToggle = () => {
+    if (!isGonzalo) return;
     if (isSuperAdmin) {
       switchUserRole('professional');
       if (activeTab === 'apis') {
@@ -81,26 +82,29 @@ export const SettingsView: React.FC = () => {
             <p className="text-xs text-neutral-500">
               {isSuperAdmin
                 ? 'Acceso total a las APIs maestras (Evolution WhatsApp, Mercado Pago Suscripciones y Email).'
-                : 'Vista limpia de consultorio. No tiene acceso a credenciales maestras de servidor.'}
+                : 'Vista de consultorio médico con gestión de pacientes, turnos, historias clínicas y recordatorios.'}
             </p>
           </div>
         </div>
 
-        {/* Role Switcher Button for Gonzalo */}
+        {/* Role Controls */}
         <div className="flex items-center gap-2 self-stretch md:self-auto justify-between md:justify-end">
-          <button
-            type="button"
-            onClick={handleRoleToggle}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 shadow-2xs ${
-              isSuperAdmin
-                ? 'bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border-neutral-300'
-                : 'bg-neutral-900 hover:bg-neutral-800 text-white border-neutral-900'
-            }`}
-            title="Alternar entre la vista de Super Admin y la vista que experimentan los médicos"
-          >
-            <ArrowRightLeft className="w-3.5 h-3.5" />
-            <span>{isSuperAdmin ? 'Simular Vista Profesional' : 'Volver a Modo Super Admin'}</span>
-          </button>
+          {/* Role Switcher Button ONLY for Gonzalo Corat */}
+          {isGonzalo && (
+            <button
+              type="button"
+              onClick={handleRoleToggle}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 shadow-2xs ${
+                isSuperAdmin
+                  ? 'bg-neutral-50 hover:bg-neutral-100 text-neutral-800 border-neutral-300'
+                  : 'bg-neutral-900 hover:bg-neutral-800 text-white border-neutral-900'
+              }`}
+              title="Alternar entre la vista de Super Admin y la vista que experimentan los médicos"
+            >
+              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <span>{isSuperAdmin ? 'Simular Vista Profesional' : 'Volver a Modo Super Admin'}</span>
+            </button>
+          )}
 
           <button
             onClick={handleSave}
@@ -405,22 +409,12 @@ export const SettingsView: React.FC = () => {
           </div>
         )}
 
-        {/* Reset Demo Data Button */}
+        {/* System Version Footer */}
         <div className="pt-4 border-t border-neutral-200 flex justify-between items-center text-xs text-neutral-400">
-          <span>AgendaPro AI v3.0 • Sistema Integral Multi-Tenant</span>
-          <button
-            type="button"
-            onClick={() => {
-              if (confirm('¿Restablecer los datos a los valores de demostración iniciales?')) {
-                resetToDemoData();
-                setFormData(practiceSettings);
-                alert('Datos restablecidos con éxito.');
-              }
-            }}
-            className="text-neutral-500 hover:text-neutral-800 underline"
-          >
-            Restablecer demo inicial
-          </button>
+          <span>AgendaPro AI v3.0 • Sistema Integral Multi-Tenant con Datos Reales</span>
+          <span className="text-[11px] text-neutral-500 font-mono">
+            Firestore Sync • Tiempo Real
+          </span>
         </div>
       </form>
     </div>

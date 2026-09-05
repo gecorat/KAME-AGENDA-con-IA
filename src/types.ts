@@ -152,17 +152,24 @@ export interface SaasTenantUser {
   email: string;
   phone: string;
   plan: 'trial' | 'basic' | 'pro';
-  billing_cycle: 'monthly' | 'annual';
+  billing_cycle?: 'monthly' | 'annual';
   status: 'active' | 'trial' | 'past_due' | 'cancelled';
-  subscription_started_at: string;
-  next_billing_date: string;
-  amount_monthly_ars: number;
-  payment_method: 'mercadopago' | 'transfer';
-  last_payment_date: string;
-  last_payment_amount: number;
-  total_paid_ars: number;
-  appointments_count: number;
-  whatsapp_status: 'connected' | 'disconnected';
+  subscription_started_at?: string;
+  next_billing_date?: string;
+  amount_monthly_ars?: number;
+  payment_method?: 'mercadopago' | 'transfer';
+  last_payment_date?: string;
+  last_payment_amount?: number;
+  total_paid_ars?: number;
+  appointments_count?: number;
+  whatsapp_status?: 'connected' | 'disconnected';
+  // Trial & Super Admin access controls
+  trial_days_left?: number;
+  trial_active?: boolean;
+  is_permanent?: boolean;
+  access_expires_at?: string | null;
+  created_at?: string;
+  last_active_at?: string;
 }
 
 export type UserRole = 'superadmin' | 'professional' | 'assistant';
@@ -391,6 +398,12 @@ export interface ConsultationRecord {
   service_name?: string;
   date: string;
   reason_for_visit: string; // Motivo de consulta principal
+  // Specialty & Customization
+  consultation_type?: 'dental' | 'generic' | 'soap' | 'psychology' | 'kinesiology';
+  dental_tooth_number?: string; // Pieza o sector dental (ej. "3.6", "Sector anterosuperior")
+  treatment_performed?: string; // Procedimiento realizado en sesión
+  clinical_evolution?: string;  // Nota libre / Evolución clínica genérica
+  vital_signs_enabled?: boolean; // Si el profesional desea registrar signos vitales
   vital_signs?: VitalSigns;
   // SOAP Medical Evolution
   soap_subjective: string; // Subjetivo: Síntomas referidos, antecedentes recientes, dolor
