@@ -81,11 +81,11 @@ export const ProFeatureGate: React.FC<ProFeatureGateProps> = ({
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <button
             type="button"
-            onClick={handleQuickActivatePro}
+            onClick={onNavigateToPlans}
             className="w-full sm:w-auto px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white font-semibold text-sm rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
           >
             <Sparkles className="w-4 h-4 text-amber-400" />
-            <span>Activar Plan Pro (14 Días Gratis)</span>
+            <span>Suscribirse a Plan Pro AI</span>
           </button>
 
           <button
@@ -93,7 +93,7 @@ export const ProFeatureGate: React.FC<ProFeatureGateProps> = ({
             onClick={onNavigateToPlans}
             className="w-full sm:w-auto px-6 py-3 bg-white hover:bg-neutral-50 border border-neutral-200 text-neutral-800 font-semibold text-sm rounded-xl transition-colors flex items-center justify-center gap-1.5"
           >
-            <span>Comparar Planes & Precios</span>
+            <span>Ver Planes & Precios</span>
             <ArrowRight className="w-4 h-4" />
           </button>
         </div>

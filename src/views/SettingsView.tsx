@@ -13,12 +13,16 @@ import {
   UserCheck,
   ArrowRightLeft,
   Lock,
-  Calendar
+  Calendar,
+  Bell,
+  CheckSquare
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { PracticeSettings } from '../types';
 import { PatientDepositSettings } from '../components/settings/PatientDepositSettings';
 import { SuperAdminApiSettings } from '../components/settings/SuperAdminApiSettings';
+import { NotificationSettings } from '../components/settings/NotificationSettings';
+import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -32,7 +36,7 @@ export const SettingsView: React.FC = () => {
   const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
   const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'deposits' | 'apis' | 'workspace'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'required-fields' | 'notifications' | 'deposits' | 'apis' | 'workspace'>('general');
   const [savedNotice, setSavedNotice] = useState(false);
 
   const handleChange = (field: keyof PracticeSettings, value: any) => {
@@ -129,6 +133,32 @@ export const SettingsView: React.FC = () => {
         >
           <Building2 className="w-3.5 h-3.5" />
           <span>Consultorio & Perfil</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('required-fields')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'required-fields'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <CheckSquare className="w-3.5 h-3.5 text-sky-600" />
+          <span>Datos Obligatorios</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('notifications')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'notifications'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <Bell className="w-3.5 h-3.5 text-sky-600" />
+          <span>Notificaciones del Navegador</span>
         </button>
 
         <button
@@ -376,6 +406,16 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
           </>
+        )}
+
+        {/* TAB: DATOS OBLIGATORIOS PARA AGENDAR Y BOT */}
+        {activeTab === 'required-fields' && (
+          <RequiredFieldsSettings />
+        )}
+
+        {/* TAB: NOTIFICACIONES DEL NAVEGADOR & ALERTAS */}
+        {activeTab === 'notifications' && (
+          <NotificationSettings />
         )}
 
         {/* TAB 2: PATIENT DEPOSIT SETTINGS (ALIAS / CBU & MERCADO PAGO CONNECT) */}

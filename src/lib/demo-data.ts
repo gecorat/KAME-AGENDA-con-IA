@@ -78,7 +78,31 @@ export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
   public_badge_text: 'Atención Particular & Reintegros • Turnos Inmediatos',
   public_bio: 'Especialista en atención médica integral y diagnósticos avanzados. Más de 10 años de experiencia brindando atención personalizada y puntual.',
   public_show_reviews: true,
-  public_custom_accent: '#0284c7'
+  public_custom_accent: '#0284c7',
+  // Browser Notifications Defaults
+  notify_browser_enabled: true,
+  notify_bot_bookings: true,
+  notify_patient_confirmations: true,
+  notify_sound_enabled: true,
+  // Required fields defaults: Name & Phone/WhatsApp mandatory, others optional
+  booking_required_fields: {
+    full_name: true,
+    phone: true,
+    dni: false,
+    email: false,
+    insurance: false,
+    reason: false,
+    address: false
+  },
+  bot_required_fields: {
+    full_name: true,
+    phone: true,
+    dni: false,
+    email: false,
+    insurance: false,
+    reason: false,
+    address: false
+  }
 };
 
 export const INITIAL_SERVICES: Service[] = [

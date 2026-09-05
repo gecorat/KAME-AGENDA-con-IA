@@ -27,12 +27,14 @@ import { AppointmentModal } from './components/AppointmentModal';
 import { PatientModal } from './components/PatientModal';
 import { ServiceModal } from './components/ServiceModal';
 import { WaitlistModal } from './components/WaitlistModal';
-import { Appointment, Patient, Service, WaitlistEntry } from './types';
+import { ConsultationModal } from './components/ConsultationModal';
+import { Appointment, Patient, Service, WaitlistEntry, ConsultationRecord } from './types';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
 function MainApp() {
   const {
     patients,
+    appointments,
     addPatient,
     updateWaitlistEntry,
     confirmAppointmentByPatient,
@@ -80,6 +82,11 @@ function MainApp() {
   const handleSelectTab = (tab: string) => {
     // Superadmin tab is strictly protected
     if (tab === 'superadmin-analytics' && !isSuperAdmin) {
+      tab = 'dashboard';
+    }
+
+    // Landing page is only accessible to unauthenticated visitors or super admin
+    if (tab === 'landing' && currentUser && !isSuperAdmin) {
       tab = 'dashboard';
     }
 
@@ -138,6 +145,12 @@ function MainApp() {
   const [aptToEdit, setAptToEdit] = useState<Appointment | null>(null);
   const [defaultDate, setDefaultDate] = useState<string | undefined>();
   const [defaultTime, setDefaultTime] = useState<string | undefined>();
+  const [defaultPatientId, setDefaultPatientId] = useState<string | undefined>();
+
+  const [consultationModalOpen, setConsultationModalOpen] = useState(false);
+  const [consultationToEdit, setConsultationToEdit] = useState<ConsultationRecord | null>(null);
+  const [consultationPatientId, setConsultationPatientId] = useState<string | undefined>();
+  const [consultationAppointmentId, setConsultationAppointmentId] = useState<string | undefined>();
 
   const [patientModalOpen, setPatientModalOpen] = useState(false);
   const [patientToEdit, setPatientToEdit] = useState<Patient | null>(null);
@@ -214,11 +227,12 @@ function MainApp() {
 
   const handleOpenNewAppointment = (date?: string, time?: string) => {
     if (trialExpired) {
-      alert('Tu periodo de prueba de 14 días ha finalizado. Actualiza a Plan Pro o Básico para continuar agendando nuevos turnos.');
+      alert('Tu suscripción no se encuentra activa. Suscríbete al Plan Básico o Pro AI para continuar agendando nuevos turnos.');
       handleSelectTab('suscripcion');
       return;
     }
     setAptToEdit(null);
+    setDefaultPatientId(undefined);
     setDefaultDate(date);
     setDefaultTime(time);
     setAptModalOpen(true);
@@ -226,7 +240,24 @@ function MainApp() {
 
   const handleEditAppointment = (apt: Appointment) => {
     setAptToEdit(apt);
+    setDefaultPatientId(apt.patient_id);
     setAptModalOpen(true);
+  };
+
+  const handleOpenAppointmentById = (aptId: string) => {
+    const found = appointments.find(a => a.id === aptId);
+    if (found) {
+      setAptToEdit(found);
+      setDefaultPatientId(found.patient_id);
+      setAptModalOpen(true);
+    }
+  };
+
+  const handleOpenConsultation = (patientId?: string, appointmentId?: string, consultation?: ConsultationRecord) => {
+    setConsultationToEdit(consultation || null);
+    setConsultationPatientId(patientId);
+    setConsultationAppointmentId(appointmentId);
+    setConsultationModalOpen(true);
   };
 
   const handleOpenNewPatient = () => {
@@ -241,6 +272,7 @@ function MainApp() {
 
   const handleScheduleForPatient = (patient: Patient) => {
     setAptToEdit(null);
+    setDefaultPatientId(patient.id);
     setDefaultDate(new Date().toISOString().split('T')[0]);
     setDefaultTime('11:00');
     setAptModalOpen(true);
@@ -387,6 +419,7 @@ function MainApp() {
       activeTab={activeTab}
       onSelectTab={handleSelectTab}
       onOpenNewAppointment={() => handleOpenNewAppointment()}
+      onOpenAppointment={handleOpenAppointmentById}
     >
       {activeTab === 'guia' && (
         <OnboardingGuideView
@@ -432,6 +465,7 @@ function MainApp() {
           onOpenNewPatient={handleOpenNewPatient}
           onEditPatient={handleEditPatient}
           onScheduleForPatient={handleScheduleForPatient}
+          onOpenAppointment={handleOpenAppointmentById}
         />
       )}
 
@@ -549,7 +583,29 @@ function MainApp() {
         appointmentToEdit={aptToEdit}
         defaultDate={defaultDate}
         defaultTime={defaultTime}
+        defaultPatientId={defaultPatientId}
+        onOpenConsultation={handleOpenConsultation}
       />
+
+      {consultationModalOpen && (
+        <ConsultationModal
+          consultation={consultationToEdit}
+          patientId={consultationPatientId}
+          appointmentId={consultationAppointmentId}
+          onClose={() => {
+            setConsultationModalOpen(false);
+            setConsultationToEdit(null);
+            setConsultationPatientId(undefined);
+            setConsultationAppointmentId(undefined);
+          }}
+          onSaved={() => {
+            setConsultationModalOpen(false);
+            setConsultationToEdit(null);
+            setConsultationPatientId(undefined);
+            setConsultationAppointmentId(undefined);
+          }}
+        />
+      )}
 
       <PatientModal
         isOpen={patientModalOpen}

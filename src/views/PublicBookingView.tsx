@@ -22,6 +22,7 @@ import {
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { Service } from '../types';
+import { PhoneInputWithCountry } from '../components/PhoneInputWithCountry';
 
 interface PublicBookingViewProps {
   onBack?: () => void;
@@ -52,9 +53,12 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
   });
   const [selectedSlot, setSelectedSlot] = useState<string>('');
   const [patientName, setPatientName] = useState('');
-  const [patientPhone, setPatientPhone] = useState('+54 9 11 ');
+  const [patientPhone, setPatientPhone] = useState('+54 9 ');
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
   const [patientEmail, setPatientEmail] = useState('');
   const [patientDni, setPatientDni] = useState('');
+  const [patientInsurance, setPatientInsurance] = useState('');
+  const [patientAddress, setPatientAddress] = useState('');
   const [patientNotes, setPatientNotes] = useState('');
   const [confirmedBookingCode, setConfirmedBookingCode] = useState('');
   const [depositPaid, setDepositPaid] = useState(false);
@@ -138,8 +142,60 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
 
   const handleConfirmBooking = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedService || !selectedDate || !selectedSlot || !patientName.trim() || !patientPhone.trim()) {
-      alert('Por favor completa todos los datos requeridos.');
+
+    const req = practiceSettings.booking_required_fields || {
+      full_name: true,
+      phone: true,
+      dni: false,
+      email: false,
+      insurance: false,
+      reason: false,
+      address: false
+    };
+
+    if (!selectedService || !selectedDate || !selectedSlot) {
+      alert('Por favor selecciona un servicio, fecha y horario para continuar.');
+      return;
+    }
+
+    if (req.full_name && !patientName.trim()) {
+      alert('Por favor ingresa tu Nombre y Apellido completo.');
+      return;
+    }
+
+    if (req.phone) {
+      if (!patientPhone.trim()) {
+        alert('Por favor ingresa tu número de WhatsApp / Teléfono móvil.');
+        return;
+      }
+      if (!isPhoneValid) {
+        alert('El número de teléfono ingresado no es correcto. Por favor verifica que tenga la cantidad exacta de dígitos (ejemplo para Argentina: 3425123123 sin 0 ni 15).');
+        return;
+      }
+    }
+
+    if (req.dni && !patientDni.trim()) {
+      alert('El DNI / documento es obligatorio según la configuración del consultorio.');
+      return;
+    }
+
+    if (req.email && !patientEmail.trim()) {
+      alert('El correo electrónico es obligatorio para confirmar la reserva.');
+      return;
+    }
+
+    if (req.insurance && !patientInsurance.trim()) {
+      alert('Por favor indica tu Obra Social, Prepaga o si es Particular.');
+      return;
+    }
+
+    if (req.address && !patientAddress.trim()) {
+      alert('Por favor completa tu domicilio o localidad.');
+      return;
+    }
+
+    if (req.reason && !patientNotes.trim()) {
+      alert('Por favor indica el motivo de la consulta.');
       return;
     }
 
@@ -148,6 +204,13 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
     const endObj = new Date(startObj.getTime() + selectedService.duration_minutes * 60000);
 
     const bookingCode = `KAME-${Math.floor(100000 + Math.random() * 900000)}`;
+
+    const extraNotes = [
+      patientNotes.trim() ? `Motivo: ${patientNotes.trim()}` : null,
+      patientDni.trim() ? `DNI: ${patientDni.trim()}` : null,
+      patientInsurance.trim() ? `Cobertura: ${patientInsurance.trim()}` : null,
+      patientAddress.trim() ? `Domicilio: ${patientAddress.trim()}` : null,
+    ].filter(Boolean).join(' • ');
 
     addAppointment({
       patient_id: `pat-web-${Date.now()}`,
@@ -161,7 +224,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
       end_datetime: endObj.toISOString(),
       status: practiceSettings.auto_confirm_bookings ? 'confirmed' : 'pending',
       payment_status: 'pending',
-      notes: `Reserva online #${bookingCode}. ${patientNotes.trim() ? `Nota: ${patientNotes.trim()}` : ''}`,
+      notes: `Reserva online #${bookingCode}. ${extraNotes}`,
       origin: selectedService.category === 'Online' ? 'telemedicine' : 'public_booking'
     });
 
@@ -531,114 +594,168 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
             )}
 
             {/* Step 4: Patient Info Form */}
-            {step === 4 && (
-              <form onSubmit={handleConfirmBooking} className="space-y-5">
-                <div>
-                  <h2 className="text-lg font-bold text-neutral-900">Tus datos para confirmar el turno</h2>
-                  <p className="text-xs text-neutral-500 mt-0.5">
-                    Te enviaremos los detalles y recordatorio por WhatsApp.
-                  </p>
-                </div>
+            {step === 4 && (() => {
+              const req = practiceSettings.booking_required_fields || {
+                full_name: true,
+                phone: true,
+                dni: false,
+                email: false,
+                insurance: false,
+                reason: false,
+                address: false
+              };
 
-                {/* Summary Pill */}
-                <div className="p-4 bg-sky-50/60 rounded-2xl border border-sky-100 flex items-center justify-between text-xs">
+              return (
+                <form onSubmit={handleConfirmBooking} className="space-y-5">
                   <div>
-                    <span className="font-bold text-sky-950 block">{selectedService?.name}</span>
-                    <span className="text-sky-700">
-                      Fecha: {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })} a las {selectedSlot} hs
+                    <h2 className="text-lg font-bold text-neutral-900">Tus datos para confirmar el turno</h2>
+                    <p className="text-xs text-neutral-500 mt-0.5">
+                      Te enviaremos los detalles y recordatorio por WhatsApp.
+                    </p>
+                  </div>
+
+                  {/* Summary Pill */}
+                  <div className="p-4 bg-sky-50/60 rounded-2xl border border-sky-100 flex items-center justify-between text-xs">
+                    <div>
+                      <span className="font-bold text-sky-950 block">{selectedService?.name}</span>
+                      <span className="text-sky-700">
+                        Fecha: {new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })} a las {selectedSlot} hs
+                      </span>
+                    </div>
+                    <span className="font-bold text-sky-950 text-sm">
+                      ${selectedService?.price.toLocaleString()} ARS
                     </span>
                   </div>
-                  <span className="font-bold text-sky-950 text-sm">
-                    ${selectedService?.price.toLocaleString()} ARS
-                  </span>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                      Nombre y Apellido *
-                    </label>
-                    <input
-                      type="text"
-                      value={patientName}
-                      onChange={e => setPatientName(e.target.value)}
-                      placeholder="Ej. Lucas Ferrari"
-                      className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                      WhatsApp / Celular *
-                    </label>
-                    <input
-                      type="tel"
-                      value={patientPhone}
-                      onChange={e => setPatientPhone(e.target.value)}
-                      placeholder="+54 9 11 1234-5678"
-                      className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
-                      required
-                    />
-                  </div>
-                </div>
+                  <div className="space-y-3.5">
+                    {/* Full Name & Phone with Country selector */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                          Nombre y Apellido {req.full_name ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                        </label>
+                        <input
+                          type="text"
+                          value={patientName}
+                          onChange={e => setPatientName(e.target.value)}
+                          placeholder="Ej. Lucas Ferrari"
+                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                          required={req.full_name}
+                        />
+                      </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                      DNI (opcional para ficha)
-                    </label>
-                    <input
-                      type="text"
-                      value={patientDni}
-                      onChange={e => setPatientDni(e.target.value)}
-                      placeholder="Ej. 39.120.400"
-                      className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                      Correo Electrónico
-                    </label>
-                    <input
-                      type="email"
-                      value={patientEmail}
-                      onChange={e => setPatientEmail(e.target.value)}
-                      placeholder="lucas@ejemplo.com"
-                      className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                          WhatsApp / Celular {req.phone ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                        </label>
+                        <PhoneInputWithCountry
+                          value={patientPhone}
+                          onChange={(phone, valid) => {
+                            setPatientPhone(phone);
+                            setIsPhoneValid(valid);
+                          }}
+                          required={req.phone}
+                          placeholder="3425123123"
+                        />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                    Motivo de consulta o comentarios
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={patientNotes}
-                    onChange={e => setPatientNotes(e.target.value)}
-                    placeholder="Contanos si tienes alguna duda, dolor puntual o preferencia..."
-                    className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
+                    {/* DNI & Email */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                          DNI / Documento {req.dni ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                        </label>
+                        <input
+                          type="text"
+                          value={patientDni}
+                          onChange={e => setPatientDni(e.target.value)}
+                          placeholder="Ej. 39.120.400"
+                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                          required={req.dni}
+                        />
+                      </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-neutral-200">
-                  <button
-                    type="button"
-                    onClick={() => setStep(2)}
-                    className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-800"
-                  >
-                    ← Volver a horarios
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-6 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors inline-flex items-center gap-2"
-                  >
-                    <CheckCircle className="w-4 h-4" /> Confirmar Reserva de Turno
-                  </button>
-                </div>
-              </form>
-            )}
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                          Correo Electrónico {req.email ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                        </label>
+                        <input
+                          type="email"
+                          value={patientEmail}
+                          onChange={e => setPatientEmail(e.target.value)}
+                          placeholder="lucas@ejemplo.com"
+                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                          required={req.email}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Obra Social / Cobertura & Domicilio */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                          Obra Social o Prepaga {req.insurance ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                        </label>
+                        <input
+                          type="text"
+                          value={patientInsurance}
+                          onChange={e => setPatientInsurance(e.target.value)}
+                          placeholder="Ej. OSDE 210, Swiss Medical, Particular..."
+                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                          required={req.insurance}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                          Domicilio o Localidad {req.address ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                        </label>
+                        <input
+                          type="text"
+                          value={patientAddress}
+                          onChange={e => setPatientAddress(e.target.value)}
+                          placeholder="Ej. Ciudad de Santa Fe, Bv. Gálvez 1200"
+                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                          required={req.address}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Motivo de consulta */}
+                    <div>
+                      <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                        Motivo de consulta o comentarios {req.reason ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={patientNotes}
+                        onChange={e => setPatientNotes(e.target.value)}
+                        placeholder="Contanos si tienes alguna duda, molestia específica o preferencia..."
+                        className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                        required={req.reason}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-4 border-t border-neutral-200">
+                    <button
+                      type="button"
+                      onClick={() => setStep(2)}
+                      className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-800 cursor-pointer"
+                    >
+                      ← Volver a horarios
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <CheckCircle className="w-4 h-4" /> Confirmar Reserva de Turno
+                    </button>
+                  </div>
+                </form>
+              );
+            })()}
 
             {/* Step 5: Confirmation Success Screen */}
             {step === 5 && (

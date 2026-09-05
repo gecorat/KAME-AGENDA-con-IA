@@ -74,9 +74,9 @@ export const AvailabilityView: React.FC = () => {
           return (
             <div
               key={day.day_of_week}
-              className={`p-4 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${day.enabled ? 'bg-white' : 'bg-neutral-50/70 opacity-65'}`}
+              className={`p-3.5 sm:p-4 transition-colors flex flex-col md:flex-row items-start md:items-center justify-between gap-3 md:gap-4 ${day.enabled ? 'bg-white' : 'bg-neutral-50/70 opacity-65'}`}
             >
-              <div className="flex items-center gap-3 w-40">
+              <div className="flex items-center gap-3 w-full md:w-36 shrink-0">
                 <input
                   type="checkbox"
                   checked={day.enabled}
@@ -89,9 +89,9 @@ export const AvailabilityView: React.FC = () => {
               </div>
 
               {day.enabled ? (
-                <div className="flex flex-wrap items-center gap-3 text-xs flex-1">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs w-full md:flex-1">
                   {/* Working hours */}
-                  <div className="flex items-center gap-1.5 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-200">
+                  <div className="flex items-center gap-1.5 bg-neutral-50 px-2.5 sm:px-3 py-1.5 rounded-xl border border-neutral-200 shrink-0">
                     <span className="text-neutral-500 font-medium">Atención:</span>
                     <input
                       type="time"
@@ -109,7 +109,7 @@ export const AvailabilityView: React.FC = () => {
                   </div>
 
                   {/* Lunch break */}
-                  <div className="flex items-center gap-1.5 bg-neutral-50 px-3 py-1.5 rounded-xl border border-neutral-200">
+                  <div className="flex items-center gap-1.5 bg-neutral-50 px-2.5 sm:px-3 py-1.5 rounded-xl border border-neutral-200 shrink-0">
                     <Coffee className="w-3.5 h-3.5 text-amber-600" />
                     <span className="text-neutral-500 font-medium">Pausa:</span>
                     <input

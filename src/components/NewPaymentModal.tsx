@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { X, DollarSign, User, FileText, CreditCard, Landmark, QrCode, Shield, Check, Calendar } from 'lucide-react';
-import { PaymentRecord, PaymentMethod, Appointment } from '../types';
+import { PaymentRecord, PaymentMethod, Appointment, Patient } from '../types';
 import { useAgendaStore } from '../lib/store';
 
 interface NewPaymentModalProps {
   isOpen: boolean;
   onClose: () => void;
   preselectedAppointment?: Appointment | null;
+  preselectedPatient?: Patient | null;
   onPaymentSuccess?: (payment: PaymentRecord) => void;
 }
 
@@ -14,6 +15,7 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
   isOpen,
   onClose,
   preselectedAppointment,
+  preselectedPatient,
   onPaymentSuccess
 }) => {
   const { patients, services, appointments, addPayment } = useAgendaStore();
@@ -31,7 +33,7 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
   const [copayAmount, setCopayAmount] = useState<number>(0);
   const [notes, setNotes] = useState<string>('');
 
-  // When preselectedAppointment changes
+  // When preselectedAppointment or preselectedPatient changes
   useEffect(() => {
     if (preselectedAppointment) {
       setAppointmentId(preselectedAppointment.id);
@@ -44,6 +46,17 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
 
       const p = patients.find(pat => pat.id === preselectedAppointment.patient_id);
       if (p?.dni) setPatientDni(p.dni);
+    } else if (preselectedPatient) {
+      setAppointmentId('');
+      setPatientId(preselectedPatient.id);
+      setPatientName(`${preselectedPatient.first_name} ${preselectedPatient.last_name}`.trim());
+      setPatientPhone(preselectedPatient.phone || '');
+      setPatientDni(preselectedPatient.dni || '');
+      if (services.length > 0 && !concept) {
+        setConcept(services[0].name);
+        setServiceName(services[0].name);
+        setAmount(services[0].price);
+      }
     } else if (isOpen) {
       if (patients.length > 0 && !patientId) {
         const firstP = patients[0];
@@ -58,7 +71,7 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
         setAmount(services[0].price);
       }
     }
-  }, [preselectedAppointment, isOpen, patients, services]);
+  }, [preselectedAppointment, preselectedPatient, isOpen, patients, services]);
 
   if (!isOpen) return null;
 

@@ -21,11 +21,20 @@ import {
   ArrowRight,
   Upload,
   RefreshCw,
-  Globe
+  Globe,
+  Share2,
+  Pencil,
+  Lock,
+  MessageCircle,
+  X,
+  QrCode,
+  Mail,
+  CheckSquare
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { PracticeSettings } from '../types';
+import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
 
 interface PublicPageEditorViewProps {
   onNavigateToTab?: (tab: string) => void;
@@ -37,6 +46,11 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
   // Local form state for immediate responsive live editing
   const [handleInput, setHandleInput] = useState<string>(practiceSettings.handle || 'consultorio-medico');
   const [handleSavedToast, setHandleSavedToast] = useState(false);
+  // Lock/Edit state for unique handle: default to locked (false) so it doesn't get accidentally overwritten
+  const [isEditingHandle, setIsEditingHandle] = useState<boolean>(false);
+  const [showShareModal, setShowShareModal] = useState<boolean>(false);
+  const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
+  const [copiedBioSnippet, setCopiedBioSnippet] = useState<boolean>(false);
   const [themePreset, setThemePreset] = useState<string>(
     practiceSettings.public_theme_preset || 'minimal-slate'
   );
@@ -67,7 +81,7 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
 
   // Preview device toggle
   const [previewDevice, setPreviewDevice] = useState<'mobile' | 'desktop'>('desktop');
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'theme' | 'photo' | 'content'>('theme');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'theme' | 'photo' | 'content' | 'fields'>('theme');
   const [copiedLink, setCopiedLink] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -186,6 +200,36 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const handleSaveHandle = () => {
+    updatePracticeSettings({ handle: cleanHandle });
+    setIsEditingHandle(false);
+    setHandleSavedToast(true);
+    setTimeout(() => setHandleSavedToast(false), 2500);
+  };
+
+  const handleCancelEditHandle = () => {
+    setHandleInput(practiceSettings.handle || 'consultorio-medico');
+    setIsEditingHandle(false);
+  };
+
+  const handleShare = async () => {
+    const shareData = {
+      title: `${practiceSettings.practice_name || 'Consultorio Médico'} - Turnos Online`,
+      text: `Agenda tu turno online con ${practiceSettings.professional_name || 'nosotros'} ingresando a:`,
+      url: publicUrl,
+    };
+
+    if (navigator.share && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    setShowShareModal(true);
+  };
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Top Header Bar */}
@@ -207,6 +251,16 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleShare}
+            className="px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
+            title="Compartir enlace de reservas por WhatsApp, correo o redes"
+          >
+            <Share2 className="w-4 h-4 text-emerald-600" />
+            <span>Compartir</span>
+          </button>
+
           <button
             onClick={copyPublicLink}
             className="px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1.5"
@@ -264,11 +318,21 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
             </h3>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleShare}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              title="Compartir link por WhatsApp, correo o redes sociales"
+            >
+              <Share2 className="w-4 h-4 text-emerald-100" />
+              <span>Compartir</span>
+            </button>
+
             <button
               type="button"
               onClick={copyPublicLink}
-              className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm active:scale-95"
+              className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
             >
               {copiedLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
               <span>{copiedLink ? '¡Enlace copiado!' : 'Copiar Enlace'}</span>
@@ -286,50 +350,98 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
           </div>
         </div>
 
-        {/* Interactive URL Form Field */}
+        {/* Interactive URL Form Field with Lock & Edit Protection */}
         <div className="bg-slate-950/80 border border-slate-700/80 rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 font-mono text-xs sm:text-sm text-slate-200 focus-within:ring-2 focus-within:ring-sky-500">
-            <span className="text-slate-500 select-none">https://agendapro.ai/u/</span>
+          <div
+            className={`flex-1 flex items-center rounded-lg px-3 py-2 font-mono text-xs sm:text-sm transition-all ${
+              isEditingHandle
+                ? 'bg-slate-900 border-2 border-sky-500 text-white ring-2 ring-sky-500/20'
+                : 'bg-slate-900/90 border border-slate-700/90 text-slate-300'
+            }`}
+          >
+            <span className="text-slate-500 select-none shrink-0">https://agendapro.ai/u/</span>
             <input
               type="text"
               value={handleInput}
+              readOnly={!isEditingHandle}
+              disabled={!isEditingHandle}
               onChange={(e) => {
                 const val = e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
                 setHandleInput(val);
               }}
               placeholder="consultorio-medico"
-              className="bg-transparent text-sky-400 font-bold focus:outline-none flex-1 ml-0.5"
+              className={`bg-transparent font-bold flex-1 ml-0.5 min-w-0 transition-colors ${
+                isEditingHandle
+                  ? 'text-sky-300 focus:outline-none'
+                  : 'text-slate-300 cursor-not-allowed select-all'
+              }`}
             />
+
+            {/* Lock / Protected Status indicator */}
+            {!isEditingHandle ? (
+              <span
+                className="shrink-0 ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-slate-800/90 text-emerald-400 border border-slate-700 select-none"
+                title="Este enlace está guardado y protegido contra sobreescrituras accidentales"
+              >
+                <Lock className="w-3 h-3 text-emerald-400" />
+                <span>Bloqueado</span>
+              </span>
+            ) : (
+              <span
+                className="shrink-0 ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-sky-950 text-sky-300 border border-sky-700/60 select-none"
+                title="Modo edición activo. Modifica el nombre y haz clic en Guardar Link"
+              >
+                <Pencil className="w-3 h-3 text-sky-400" />
+                <span>Editando</span>
+              </span>
+            )}
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              updatePracticeSettings({ handle: cleanHandle });
-              setHandleSavedToast(true);
-              setTimeout(() => setHandleSavedToast(false), 2500);
-            }}
-            className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold rounded-lg transition shrink-0"
-          >
-            {handleSavedToast ? '¡Link Guardado!' : 'Guardar Link'}
-          </button>
+          {/* Action Buttons: Unlock with Pencil OR Save / Cancel */}
+          {!isEditingHandle ? (
+            <button
+              type="button"
+              onClick={() => setIsEditingHandle(true)}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white text-xs font-semibold rounded-lg transition shrink-0 flex items-center justify-center gap-1.5 border border-slate-700 active:scale-95 cursor-pointer shadow-xs"
+              title="Haz clic para desbloquear y editar el enlace único"
+            >
+              <Pencil className="w-3.5 h-3.5 text-sky-400" />
+              <span>Editar link</span>
+            </button>
+          ) : (
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleSaveHandle}
+                className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>{handleSavedToast ? '¡Guardado!' : 'Guardar Link'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEditHandle}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-lg transition border border-slate-700/80 cursor-pointer"
+              >
+                Cancelar
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Quick Suggestions Chips */}
+        {/* Quick Suggestions Chips (Purely Informational Suggestions, NOT Clickable to overwrite) */}
         <div className="flex items-center gap-2 flex-wrap text-xs text-slate-400 pt-1">
-          <span className="text-[11px] font-medium text-slate-400">Ejemplos sugeridos:</span>
+          <span className="text-[11px] font-medium text-slate-400">
+            Formatos de referencia sugeridos (solo de ejemplo, no modifican tu link):
+          </span>
           {['consultorio-medico', 'dr-gonzalez', 'odontologia-integral', 'clinica-dental', 'salud-bienestar'].map(slug => (
-            <button
+            <span
               key={slug}
-              type="button"
-              onClick={() => {
-                setHandleInput(slug);
-                updatePracticeSettings({ handle: slug });
-              }}
-              className="px-2.5 py-1 rounded-md bg-slate-800/80 hover:bg-sky-900/60 hover:text-sky-300 text-slate-300 border border-slate-700 text-[11px] font-mono transition"
+              className="px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-300 border border-slate-700/80 text-[11px] font-mono select-none cursor-default"
+              title="Formato de ejemplo recomendado"
             >
               {slug}
-            </button>
+            </span>
           ))}
         </div>
       </div>
@@ -368,6 +480,16 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
             >
               <Type className="w-3.5 h-3.5" />
               <span>Bio & Badges</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSettingsTab('fields')}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition flex items-center justify-center gap-1.5 ${
+                activeSettingsTab === 'fields' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>Campos</span>
             </button>
           </div>
 
@@ -625,6 +747,13 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
               </div>
             </div>
           )}
+
+          {/* TAB 4: CAMPOS OBLIGATORIOS */}
+          {activeSettingsTab === 'fields' && (
+            <div className="space-y-4">
+              <RequiredFieldsSettings />
+            </div>
+          )}
         </div>
 
         {/* Right Column: Live Simulator (7 cols) */}
@@ -847,6 +976,171 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
           </div>
         </div>
       </div>
+
+      {/* Share Modal Dialog */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-neutral-200 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center shrink-0">
+                  <Share2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-neutral-900 font-display">
+                    Compartir Enlace de Reservas
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    Tus pacientes pueden agendar su turno las 24 hs de forma autónoma.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="p-1.5 rounded-lg text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Direct Link Box with Copy Button */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-neutral-700 flex items-center justify-between">
+                <span>Tu Enlace Público Oficial</span>
+                <span className="text-[11px] text-emerald-600 font-medium">Listo para compartir</span>
+              </label>
+              <div className="flex items-center gap-2 p-2.5 rounded-xl bg-neutral-50 border border-neutral-200">
+                <Globe className="w-4 h-4 text-sky-600 shrink-0 ml-1" />
+                <input
+                  type="text"
+                  readOnly
+                  value={publicUrl}
+                  className="bg-transparent text-xs font-mono text-neutral-800 flex-1 focus:outline-none select-all truncate"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(publicUrl);
+                    setCopiedShareLink(true);
+                    setTimeout(() => setCopiedShareLink(false), 2000);
+                  }}
+                  className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg transition flex items-center gap-1.5 shrink-0 shadow-2xs cursor-pointer active:scale-95"
+                >
+                  {copiedShareLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedShareLink ? '¡Copiado!' : 'Copiar'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Sharing Options */}
+            <div className="space-y-2">
+              <span className="text-xs font-semibold text-neutral-700 block">
+                Opciones directas de difusión:
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* WhatsApp */}
+                <a
+                  href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                    `¡Hola! Podés agendar tu turno médico online de manera rápida y directa con ${practiceSettings.professional_name || practiceSettings.practice_name || 'nosotros'} ingresando a este enlace:\n${publicUrl}`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-3 rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-900 flex items-center gap-3 transition group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                    <MessageCircle className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-xs font-bold truncate">Enviar por WhatsApp</div>
+                    <div className="text-[10px] text-emerald-700">Mensaje predeterminado</div>
+                  </div>
+                </a>
+
+                {/* Email */}
+                <a
+                  href={`mailto:?subject=${encodeURIComponent(
+                    `Reserva tu turno online - ${practiceSettings.practice_name || 'Consultorio'}`
+                  )}&body=${encodeURIComponent(
+                    `Hola,\n\nPodés agendar tu consulta médica online ingresando a nuestro portal oficial:\n${publicUrl}\n\n¡Esperamos tu visita!`
+                  )}`}
+                  className="p-3 rounded-xl border border-sky-200 bg-sky-50/70 hover:bg-sky-100/70 text-sky-900 flex items-center gap-3 transition group cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center shrink-0 shadow-2xs group-hover:scale-105 transition-transform">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <div className="text-xs font-bold truncate">Enviar por Email</div>
+                    <div className="text-[10px] text-sky-700">Para tus pacientes</div>
+                  </div>
+                </a>
+              </div>
+            </div>
+
+            {/* Instagram / Social Media Bio Text Snippet */}
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-neutral-800">
+                  Para tu biografía de Instagram o estado de WhatsApp:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`📅 Agendá tu turno online las 24 hs aquí 👉 ${publicUrl}`);
+                    setCopiedBioSnippet(true);
+                    setTimeout(() => setCopiedBioSnippet(false), 2000);
+                  }}
+                  className="text-[11px] font-semibold text-sky-700 hover:text-sky-800 flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedBioSnippet ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                  <span>{copiedBioSnippet ? '¡Texto copiado!' : 'Copiar texto'}</span>
+                </button>
+              </div>
+              <p className="text-[11px] font-mono text-neutral-600 bg-white p-2 rounded-lg border border-neutral-200 select-all">
+                📅 Agendá tu turno online las 24 hs aquí 👉 {publicUrl}
+              </p>
+            </div>
+
+            {/* QR Code section */}
+            <div className="flex items-center gap-3 p-3 bg-neutral-900 text-white rounded-xl">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(publicUrl)}`}
+                alt="Código QR del portal de turnos"
+                className="w-14 h-14 bg-white p-1 rounded-lg shrink-0"
+              />
+              <div className="space-y-1 flex-1 min-w-0">
+                <div className="text-xs font-bold flex items-center gap-1.5 text-neutral-100">
+                  <QrCode className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Código QR para Recepción</span>
+                </div>
+                <p className="text-[11px] text-neutral-400">
+                  Imprime este código y colócalo en el mostrador para que tus pacientes reserven escaneando con su celular.
+                </p>
+              </div>
+              <a
+                href={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(publicUrl)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-semibold shrink-0 transition border border-white/10"
+              >
+                Ver QR
+              </a>
+            </div>
+
+            {/* Close footer */}
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowShareModal(false)}
+                className="px-4 py-2 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 text-xs font-semibold rounded-xl transition cursor-pointer"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

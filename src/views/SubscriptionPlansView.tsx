@@ -72,36 +72,31 @@ export const SubscriptionPlansView: React.FC = () => {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
-      {/* 14-Day Trial Status Notification Banner */}
-      {isTrial && (
-        <div className="bg-white border border-neutral-200/90 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
-              <Sparkles className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-xs sm:text-sm font-bold text-neutral-900 font-display">
-                  Prueba Gratuita de 14 Días Activa (Plan Pro AI Completo)
-                </h3>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  {trialDaysLeft} días restantes
-                </span>
-              </div>
-              <p className="text-[11px] text-neutral-500 mt-0.5">
-                Tienes acceso total a todas las herramientas del <strong>Plan Pro AI</strong> (bot autónomo de WhatsApp, historias clínicas con IA y voz, agenda interactiva y portal de turnos).
-              </p>
-            </div>
+      {/* Plan Status Banner */}
+      <div className="bg-white border border-neutral-200/90 rounded-xl p-4 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
+            <Sparkles className="w-4 h-4 text-emerald-400" />
           </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-xs sm:text-sm font-bold text-neutral-900 font-display">
+                {currentPlan === 'pro' ? 'Plan Pro AI Activo' : 'Plan Básico Activo'}
+              </h3>
+              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                Suscripción Pagada
+              </span>
+            </div>
+            <p className="text-[11px] text-neutral-500 mt-0.5">
+              {currentPlan === 'pro'
+                ? 'Tienes acceso ilimitado a todas las herramientas: Bot de WhatsApp con IA, consultas médicas personalizadas, notas de voz, recetas y portal de reservas.'
+                : 'Acceso a gestión de turnos y recordatorios automáticos. Puedes actualizar a Pro AI en cualquier momento.'}
+            </p>
+          </div>
+        </div>
 
+        {currentPlan !== 'pro' && (
           <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
-            <button
-              type="button"
-              onClick={() => handleSelectPlan('basic')}
-              className="px-3 py-1.5 text-xs font-medium text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg transition-colors"
-            >
-              Confirmar Básico
-            </button>
             <button
               type="button"
               onClick={() => handleSelectPlan('pro')}
@@ -111,8 +106,8 @@ export const SubscriptionPlansView: React.FC = () => {
               <ArrowRight className="w-3 h-3" />
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Hero Header */}
       <div className="text-center space-y-2 pt-2">

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { X, Calendar, Clock, User, DollarSign, FileText, Video, Phone, MessageSquare, Mail, CheckCheck, Bell, Check, Receipt } from 'lucide-react';
-import { Appointment, AppointmentStatus, PaymentStatus, PaymentRecord } from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Calendar, Clock, User, DollarSign, FileText, Video, Phone, MessageSquare, Mail, CheckCheck, Bell, Check, Receipt, Search, Plus, UserPlus, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Appointment, AppointmentStatus, PaymentStatus, PaymentRecord, Patient } from '../types';
 import { useAgendaStore } from '../lib/store';
 import { ReceiptModal } from './ReceiptModal';
 import { NewPaymentModal } from './NewPaymentModal';
+import { PhoneInputWithCountry } from './PhoneInputWithCountry';
 
 interface AppointmentModalProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface AppointmentModalProps {
   appointmentToEdit?: Appointment | null;
   defaultDate?: string; // YYYY-MM-DD
   defaultTime?: string; // HH:mm
+  defaultPatientId?: string;
+  onOpenConsultation?: (patientId: string, appointmentId: string) => void;
 }
 
 export const AppointmentModal: React.FC<AppointmentModalProps> = ({
@@ -18,7 +21,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   onClose,
   appointmentToEdit,
   defaultDate,
-  defaultTime
+  defaultTime,
+  defaultPatientId,
+  onOpenConsultation
 }) => {
   const {
     patients,
@@ -34,6 +39,10 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   } = useAgendaStore();
 
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [patientSearchQuery, setPatientSearchQuery] = useState<string>('');
+  const [isPatientDropdownOpen, setIsPatientDropdownOpen] = useState<boolean>(false);
+  const patientDropdownRef = useRef<HTMLDivElement>(null);
+
   const [newPatientMode, setNewPatientMode] = useState(false);
   const [newPatientName, setNewPatientName] = useState('');
   const [newPatientPhone, setNewPatientPhone] = useState('');
@@ -58,11 +67,29 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     ? payments.find(p => p.appointment_id === appointmentToEdit.id && p.status === 'completed')
     : null;
 
+  // Close dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (patientDropdownRef.current && !patientDropdownRef.current.contains(event.target as Node)) {
+        setIsPatientDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   useEffect(() => {
     if (appointmentToEdit) {
       setSelectedPatientId(appointmentToEdit.patient_id);
       setSelectedServiceId(appointmentToEdit.service_id);
       
+      const found = patients.find(p => p.id === appointmentToEdit.patient_id);
+      if (found) {
+        setPatientSearchQuery(`${found.first_name} ${found.last_name}`.trim());
+      } else {
+        setPatientSearchQuery(appointmentToEdit.patient_name || '');
+      }
+
       const d = new Date(appointmentToEdit.start_datetime);
       setDate(d.toISOString().split('T')[0]);
       setTime(d.toTimeString().slice(0, 5));
@@ -74,7 +101,23 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setPatientConfirmed(!!appointmentToEdit.patient_confirmed);
       setNewPatientMode(false);
     } else {
-      setSelectedPatientId(patients[0]?.id || '');
+      const targetPatient = defaultPatientId 
+        ? patients.find(p => p.id === defaultPatientId) 
+        : (patients[0] || null);
+
+      if (targetPatient) {
+        setSelectedPatientId(targetPatient.id);
+        setPatientSearchQuery(`${targetPatient.first_name} ${targetPatient.last_name}`.trim());
+        setNewPatientMode(false);
+      } else if (patients.length > 0) {
+        setSelectedPatientId(patients[0]?.id || '');
+        setPatientSearchQuery(`${patients[0]?.first_name} ${patients[0]?.last_name}`.trim());
+        setNewPatientMode(false);
+      } else {
+        setSelectedPatientId('');
+        setPatientSearchQuery('');
+        setNewPatientMode(true);
+      }
       setSelectedServiceId(services[0]?.id || '');
       
       const today = defaultDate || new Date().toISOString().split('T')[0];
@@ -86,11 +129,42 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setNotes('');
       setIsTelemedicine(false);
       setPatientConfirmed(false);
-      setNewPatientMode(false);
+      setNewPatientName('');
+      setNewPatientPhone('');
+      setNewPatientDni('');
     }
-  }, [appointmentToEdit, isOpen, defaultDate, defaultTime, patients, services]);
+  }, [appointmentToEdit, isOpen, defaultDate, defaultTime, defaultPatientId, patients, services]);
 
   if (!isOpen) return null;
+
+  const selectedPatient = patients.find(p => p.id === selectedPatientId);
+
+  const filteredPatients = patients.filter(p => {
+    const q = patientSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
+    const phone = (p.phone || '').toLowerCase();
+    const dni = (p.dni || '').toLowerCase();
+    return fullName.includes(q) || phone.includes(q) || dni.includes(q);
+  });
+
+  const handleSelectExistingPatient = (patient: Patient) => {
+    setSelectedPatientId(patient.id);
+    setPatientSearchQuery(`${patient.first_name} ${patient.last_name}`.trim());
+    setNewPatientMode(false);
+    setIsPatientDropdownOpen(false);
+  };
+
+  const handleStartNewPatient = (namePrefill?: string) => {
+    setSelectedPatientId('');
+    setNewPatientMode(true);
+    if (namePrefill) {
+      setNewPatientName(namePrefill);
+    } else if (patientSearchQuery && !selectedPatient) {
+      setNewPatientName(patientSearchQuery);
+    }
+    setIsPatientDropdownOpen(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,6 +196,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       if (found) {
         targetPatientName = `${found.first_name} ${found.last_name}`.trim();
         targetPatientPhone = found.phone;
+      } else if (patientSearchQuery.trim()) {
+        targetPatientName = patientSearchQuery.trim();
+        targetPatientPhone = "+54 9 11 ...";
       } else {
         targetPatientName = "Paciente";
         targetPatientPhone = "+54 9 11 ...";
@@ -197,63 +274,223 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-          {/* Patient selection */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
+          {/* Quick link to consultation if editing */}
+          {appointmentToEdit && onOpenConsultation && (
+            <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-indigo-700" />
+                <div>
+                  <span className="text-xs font-bold text-indigo-950 block">Historia Clínica y Consulta</span>
+                  <span className="text-[11px] text-indigo-700">Registrar evolución médica, recetas y certificados</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenConsultation(appointmentToEdit.patient_id, appointmentToEdit.id);
+                }}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1 shrink-0"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Abrir Ficha</span>
+              </button>
+            </div>
+          )}
+
+          {/* Patient selection & smart search / creation */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
                 <User className="w-3.5 h-3.5 text-neutral-500" />
                 Paciente
               </label>
               <button
                 type="button"
-                onClick={() => setNewPatientMode(!newPatientMode)}
-                className="text-xs text-sky-600 hover:text-sky-700 font-medium"
+                onClick={() => {
+                  if (newPatientMode) {
+                    setNewPatientMode(false);
+                    if (patients.length > 0) {
+                      setSelectedPatientId(patients[0].id);
+                      setPatientSearchQuery(`${patients[0].first_name} ${patients[0].last_name}`.trim());
+                    }
+                  } else {
+                    handleStartNewPatient(patientSearchQuery);
+                  }
+                }}
+                className="text-xs text-sky-600 hover:text-sky-700 font-medium flex items-center gap-1 cursor-pointer"
               >
-                {newPatientMode ? '← Seleccionar existente' : '+ Nuevo paciente'}
+                {newPatientMode ? '← Buscar existente' : '+ Nuevo paciente'}
               </button>
             </div>
 
             {newPatientMode ? (
-              <div className="space-y-2 p-3 bg-sky-50/50 rounded-xl border border-sky-100">
-                <input
-                  type="text"
-                  placeholder="Nombre y Apellido *"
-                  value={newPatientName}
-                  onChange={e => setNewPatientName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  required
-                />
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="tel"
-                    placeholder="Teléfono (WhatsApp) *"
-                    value={newPatientPhone}
-                    onChange={e => setNewPatientPhone(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    required
-                  />
+              <div className="space-y-3 p-3.5 bg-sky-50/50 rounded-2xl border border-sky-100 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-xs text-sky-900 font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <UserPlus className="w-3.5 h-3.5 text-sky-600" />
+                    Registrar nuevo paciente
+                  </span>
+                  {patients.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setNewPatientMode(false)}
+                      className="text-[11px] text-sky-600 hover:underline"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+                <div>
                   <input
                     type="text"
-                    placeholder="DNI (opcional)"
+                    placeholder="Nombre y Apellido *"
+                    value={newPatientName}
+                    onChange={e => setNewPatientName(e.target.value)}
+                    className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    required
+                    autoFocus
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[11px] font-medium text-neutral-600 block">
+                    Teléfono WhatsApp (código de país y número local) *
+                  </label>
+                  <PhoneInputWithCountry
+                    value={newPatientPhone}
+                    onChange={(phone) => setNewPatientPhone(phone)}
+                    required
+                    placeholder="3425123123"
+                  />
+                </div>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="DNI o Documento (opcional)"
                     value={newPatientDni}
                     onChange={e => setNewPatientDni(e.target.value)}
-                    className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="w-full px-3 py-2 text-xs bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 h-[38px]"
                   />
                 </div>
               </div>
             ) : (
-              <select
-                value={selectedPatientId}
-                onChange={e => setSelectedPatientId(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                required
-              >
-                {patients.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.first_name} {p.last_name} ({p.phone}) {p.dni ? `- DNI ${p.dni}` : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={patientDropdownRef}>
+                {/* Search & Combobox Input */}
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400">
+                    <Search className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={patientSearchQuery}
+                    onChange={(e) => {
+                      setPatientSearchQuery(e.target.value);
+                      setIsPatientDropdownOpen(true);
+                      if (selectedPatientId && `${selectedPatient?.first_name} ${selectedPatient?.last_name}`.trim() !== e.target.value) {
+                        setSelectedPatientId('');
+                      }
+                    }}
+                    onFocus={() => setIsPatientDropdownOpen(true)}
+                    placeholder="Buscar paciente por nombre, WhatsApp o DNI..."
+                    className="w-full pl-9 pr-8 py-2.5 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsPatientDropdownOpen(!isPatientDropdownOpen)}
+                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 hover:text-neutral-600"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isPatientDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+
+                {/* Selected patient preview card */}
+                {selectedPatient && !isPatientDropdownOpen && (
+                  <div className="mt-2 p-2.5 bg-emerald-50/60 border border-emerald-200/80 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                        {selectedPatient.first_name[0]}{selectedPatient.last_name[0] || ''}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                          {selectedPatient.first_name} {selectedPatient.last_name}
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        </div>
+                        <div className="text-[11px] text-emerald-700 font-medium flex items-center gap-2">
+                          <span>{selectedPatient.phone}</span>
+                          {selectedPatient.dni && <span>• DNI: {selectedPatient.dni}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedPatientId('');
+                        setPatientSearchQuery('');
+                        setIsPatientDropdownOpen(true);
+                      }}
+                      className="text-[11px] text-emerald-700 hover:text-emerald-900 font-semibold px-2 py-1 bg-white rounded-lg border border-emerald-200 hover:bg-emerald-50 transition"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                )}
+
+                {/* Dropdown Options List */}
+                {isPatientDropdownOpen && (
+                  <div className="absolute z-20 left-0 right-0 mt-1.5 bg-white rounded-2xl border border-neutral-200 shadow-lg max-h-56 overflow-y-auto divide-y divide-neutral-100 animate-in fade-in duration-100">
+                    {filteredPatients.length > 0 ? (
+                      filteredPatients.map(p => {
+                        const isChosen = p.id === selectedPatientId;
+                        return (
+                          <div
+                            key={p.id}
+                            onClick={() => handleSelectExistingPatient(p)}
+                            className={`p-2.5 hover:bg-neutral-50 cursor-pointer flex items-center justify-between transition ${isChosen ? 'bg-sky-50/70' : ''}`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-full bg-neutral-100 text-neutral-700 flex items-center justify-center text-xs font-bold">
+                                {p.first_name[0]}{p.last_name[0] || ''}
+                              </div>
+                              <div>
+                                <div className="text-xs font-bold text-neutral-900">
+                                  {p.first_name} {p.last_name}
+                                </div>
+                                <div className="text-[11px] text-neutral-500 flex items-center gap-1.5">
+                                  <span>{p.phone}</span>
+                                  {p.dni && <span>• DNI: {p.dni}</span>}
+                                  {p.total_appointments ? (
+                                    <span className="text-[10px] bg-neutral-100 px-1.5 py-0.2 rounded text-neutral-600">
+                                      {p.total_appointments} turnos
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                            {isChosen && <Check className="w-4 h-4 text-sky-600" />}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 text-center text-xs text-neutral-500">
+                        No se encontró ningún paciente con "{patientSearchQuery}".
+                      </div>
+                    )}
+
+                    {/* Option to create a new patient with typed query */}
+                    <div
+                      onClick={() => handleStartNewPatient(patientSearchQuery)}
+                      className="p-2.5 bg-sky-50/40 hover:bg-sky-50 text-sky-700 cursor-pointer flex items-center gap-2 text-xs font-semibold transition"
+                    >
+                      <Plus className="w-4 h-4 text-sky-600" />
+                      <span>
+                        {patientSearchQuery.trim()
+                          ? `Crear nuevo paciente: "${patientSearchQuery.trim()}"`
+                          : '+ Registrar un nuevo paciente'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -266,7 +503,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             <select
               value={selectedServiceId}
               onChange={e => setSelectedServiceId(e.target.value)}
-              className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
               {services.map(s => (
                 <option key={s.id} value={s.id}>

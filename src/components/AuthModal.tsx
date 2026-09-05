@@ -100,7 +100,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 {mode === 'login' ? 'Iniciar Sesión en AgendaPro' : 'Crear Cuenta Profesional'}
               </h3>
               <p className="text-xs text-neutral-500">
-                {mode === 'login' ? 'Accede a tu panel médico y agenda' : 'Comienza tu prueba gratis de 14 días'}
+                {mode === 'login' ? 'Accede a tu panel médico y agenda' : 'Comienza a gestionar tu consultorio con IA'}
               </p>
             </div>
           </div>
@@ -277,7 +277,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </>
               ) : (
                 <>
-                  <span>Crear Cuenta y Activar 14 Días Gratis</span>
+                  <span>Crear Cuenta Profesional</span>
                   <Sparkles className="w-3.5 h-3.5" />
                 </>
               )}

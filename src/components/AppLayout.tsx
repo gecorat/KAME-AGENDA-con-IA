@@ -29,11 +29,13 @@ import {
   User
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
+import { NotificationCenter } from './NotificationCenter';
 
 interface AppLayoutProps {
   activeTab: string;
   onSelectTab: (tab: string) => void;
   onOpenNewAppointment: () => void;
+  onOpenAppointment?: (appointmentId: string) => void;
   children: React.ReactNode;
 }
 
@@ -41,6 +43,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   activeTab,
   onSelectTab,
   onOpenNewAppointment,
+  onOpenAppointment,
   children
 }) => {
   const { practiceSettings, waitlist, appointments, services, availability, currentUser, logout } = useAgendaStore();
@@ -172,14 +175,14 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const activeItem = ALL_NAV_ITEMS.find(item => item.id === activeTab || (activeTab === 'asistente' && item.id === 'chats'));
 
   return (
-    <div className="min-h-screen bg-[#fafafa] text-neutral-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#fafafa] text-neutral-900 flex flex-col font-sans max-w-full overflow-x-hidden">
       {/* Mobile Top Header */}
-      <header className="sticky top-0 z-40 bg-white border-b border-neutral-200/80 lg:hidden">
-        <div className="px-4 h-14 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
+      <header className="sticky top-0 z-40 bg-white border-b border-neutral-200/80 md:hidden w-full max-w-full">
+        <div className="px-3 sm:px-4 h-14 flex items-center justify-between gap-2 max-w-full">
+          <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={() => setMobileMenuOpen(true)}
-              className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100"
+              className="p-1.5 rounded-lg text-neutral-600 hover:bg-neutral-100 shrink-0"
               aria-label="Abrir menú de navegación"
             >
               <Menu className="w-5 h-5" />
@@ -187,32 +190,26 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
             <div
               onClick={() => onSelectTab('dashboard')}
-              className="flex items-center gap-2 cursor-pointer"
+              className="flex items-center gap-1.5 cursor-pointer min-w-0"
             >
-              <div className="w-7 h-7 rounded-md bg-neutral-900 text-white flex items-center justify-center font-bold text-xs">
+              <div className="w-7 h-7 rounded-md bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
                 K
               </div>
-              <span className="font-bold text-sm tracking-tight text-neutral-900 font-display">
+              <span className="font-bold text-sm tracking-tight text-neutral-900 font-display truncate">
                 AgendaPro <span className="text-neutral-500 font-normal">AI</span>
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => onSelectTab('portal')}
-              className="px-2.5 py-1 text-xs font-medium rounded-lg border border-neutral-200 text-neutral-700 bg-white hover:bg-neutral-50 flex items-center gap-1"
-            >
-              <Globe className="w-3.5 h-3.5 text-neutral-500" />
-              <span className="hidden sm:inline">Portal</span>
-            </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <NotificationCenter onSelectTab={onSelectTab} onOpenAppointment={onOpenAppointment} />
 
             <button
               onClick={onOpenNewAppointment}
-              className="px-3 py-1 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg shadow-2xs flex items-center gap-1"
+              className="px-2.5 sm:px-3 py-1 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg shadow-2xs flex items-center gap-1 shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
-              <span>Turno</span>
+              <span className="hidden xs:inline">Turno</span>
             </button>
           </div>
         </div>
@@ -221,7 +218,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       {/* Mobile Drawer Backdrop */}
       {mobileMenuOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs lg:hidden transition-opacity"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs md:hidden transition-opacity"
           onClick={() => setMobileMenuOpen(false)}
         />
       )}
@@ -230,7 +227,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       <aside
         id="main-sidebar-panel"
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-neutral-200/80 flex flex-col transform transition-transform duration-200 ease-in-out ${
-          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
         }`}
       >
         {/* Brand Header at top of sidebar */}
@@ -257,7 +254,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
           <button
             onClick={() => setMobileMenuOpen(false)}
-            className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 lg:hidden"
+            className="p-1 rounded-md text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 md:hidden"
           >
             <X className="w-4 h-4" />
           </button>
@@ -335,27 +332,29 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
         {/* Sidebar Footer */}
         <div className="p-3 border-t border-neutral-200/80 space-y-2 bg-neutral-50/50">
-          {/* Landing Page Button */}
-          <button
-            type="button"
-            onClick={() => {
-              onSelectTab('landing');
-              setMobileMenuOpen(false);
-            }}
-            className={`w-full px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center justify-between ${
-              activeTab === 'landing'
-                ? 'bg-neutral-900 text-white border-neutral-900'
-                : 'bg-white hover:bg-neutral-100 text-neutral-800 border-neutral-200'
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Rocket className="w-3.5 h-3.5 text-amber-500" />
-              <span>Landing Page Web</span>
-            </div>
-            <ExternalLink className="w-3 h-3 text-neutral-400" />
-          </button>
+          {/* Landing Page Button (Only for Super Admin) */}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              onClick={() => {
+                onSelectTab('landing');
+                setMobileMenuOpen(false);
+              }}
+              className={`w-full px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center justify-between ${
+                activeTab === 'landing'
+                  ? 'bg-neutral-900 text-white border-neutral-900'
+                  : 'bg-white hover:bg-neutral-100 text-neutral-800 border-neutral-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <Rocket className="w-3.5 h-3.5 text-amber-500" />
+                <span>Landing Page Web</span>
+              </div>
+              <ExternalLink className="w-3 h-3 text-neutral-400" />
+            </button>
+          )}
 
-          {/* Public Patient Portal Button */}
+          {/* Public Patient Booking Page Button -> Tu Página */}
           <button
             type="button"
             id="sidebar-btn-portal"
@@ -363,15 +362,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               onSelectTab('portal');
               setMobileMenuOpen(false);
             }}
-            className={`w-full px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center justify-between ${
+            className={`w-full px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center justify-between ${
               activeTab === 'portal'
                 ? 'bg-neutral-900 text-white border-neutral-900'
-                : 'bg-white hover:bg-neutral-100 text-neutral-700 border-neutral-200'
+                : 'bg-white hover:bg-neutral-100 text-neutral-800 border-neutral-200'
             }`}
+            title="Ver tu página pública de reservas de turnos"
           >
             <div className="flex items-center gap-2">
-              <Globe className="w-3.5 h-3.5 text-neutral-500" />
-              <span>Portal Pacientes</span>
+              <Globe className="w-3.5 h-3.5 text-sky-600" />
+              <span>Tu Página</span>
             </div>
             <ExternalLink className="w-3 h-3 text-neutral-400" />
           </button>
@@ -405,7 +405,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 id="btn-logout-sidebar"
                 onClick={async () => {
                   await logout();
-                  onSelectTab('landing');
+                  onSelectTab(isSuperAdmin ? 'landing' : 'portal');
                   setMobileMenuOpen(false);
                 }}
                 className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-neutral-200 rounded-lg transition-colors shrink-0"
@@ -439,36 +439,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       </aside>
 
       {/* Main Content Area (offset by sidebar width on desktop) */}
-      <div className="lg:pl-64 flex flex-col flex-1 min-w-0">
-        {/* 14-Day Trial Notification Bar */}
-        {isTrial && (
-          <div className="bg-neutral-900 text-white px-4 sm:px-6 py-2 border-b border-neutral-800 flex items-center justify-between gap-3 text-xs">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-              <span className="font-semibold text-neutral-200 truncate">
-                Prueba gratuita de 14 días activa (Plan Pro AI)
-              </span>
-              <span className="text-neutral-400 hidden md:inline">
-                — Tienes acceso total a todas las herramientas del consultorio con IA
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-neutral-800 text-neutral-300 border border-neutral-700">
-                {trialDaysLeft} días restantes
-              </span>
-              <button
-                type="button"
-                onClick={() => onSelectTab('suscripcion')}
-                className="px-2.5 py-1 rounded bg-white hover:bg-neutral-100 text-neutral-900 text-[11px] font-semibold transition-colors shadow-2xs"
-              >
-                Elegir Plan
-              </button>
-            </div>
-          </div>
-        )}
-
+      <div className="md:pl-64 flex flex-col flex-1 min-w-0">
         {/* Desktop Top Header Bar with Context & Quick Info */}
-        <header className="hidden lg:flex sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-neutral-200/80 px-6 h-14 items-center justify-between shadow-2xs">
+        <header className="hidden md:flex sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-neutral-200/80 px-6 h-14 items-center justify-between shadow-2xs">
           <div className="flex items-center gap-2">
             <span className="text-xs text-neutral-400 font-medium">Panel</span>
             <span className="text-xs text-neutral-300">/</span>
@@ -492,31 +465,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               </span>
             </div>
 
-            <button
-              onClick={() => onSelectTab('landing')}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors flex items-center gap-1.5 ${
-                activeTab === 'landing'
-                  ? 'bg-neutral-900 text-white border-neutral-900'
-                  : 'bg-white hover:bg-neutral-50 text-neutral-800 border-neutral-200'
-              }`}
-              title="Ver Landing Page ultra profesional"
-            >
-              <Rocket className="w-3.5 h-3.5 text-amber-500" />
-              <span>Landing Page</span>
-            </button>
-
-            <button
-              onClick={() => onSelectTab('portal')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors flex items-center gap-1.5 ${
-                activeTab === 'portal'
-                  ? 'bg-neutral-900 text-white border-neutral-900'
-                  : 'bg-white hover:bg-neutral-50 text-neutral-700 border-neutral-200'
-              }`}
-              title="Probar portal de turnos para pacientes"
-            >
-              <Globe className="w-3.5 h-3.5 text-neutral-500" />
-              <span>Portal Online</span>
-            </button>
+            {/* Notification Center */}
+            <NotificationCenter onSelectTab={onSelectTab} onOpenAppointment={onOpenAppointment} />
 
             <button
               onClick={onOpenNewAppointment}
@@ -532,7 +482,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               id="btn-logout-header"
               onClick={async () => {
                 await logout();
-                onSelectTab('landing');
+                onSelectTab(isSuperAdmin ? 'landing' : 'portal');
               }}
               className="p-1.5 text-neutral-500 hover:text-rose-600 hover:bg-neutral-100 rounded-lg transition-colors"
               title="Cerrar sesión"
@@ -543,7 +493,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         </header>
 
         {/* Main Application Container */}
-        <main className="flex-1 w-full max-w-7xl mx-auto p-4 sm:p-6">
+        <main className="flex-1 w-full max-w-7xl mx-auto p-3 sm:p-6 min-w-0 overflow-x-hidden">
           {children}
         </main>
 

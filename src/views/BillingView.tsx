@@ -434,8 +434,8 @@ export const BillingView: React.FC = () => {
             </div>
 
             {/* Payments Table */}
-            <div className="border border-neutral-200 rounded-xl overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="border border-neutral-200 rounded-xl overflow-x-auto w-full">
+              <table className="w-full text-left text-xs min-w-[750px]">
                 <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                   <tr>
                     <th className="py-3 px-4">N° Recibo</th>
@@ -632,8 +632,8 @@ export const BillingView: React.FC = () => {
                 </button>
               </div>
 
-              <div className="border border-neutral-200 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-xs">
+              <div className="border border-neutral-200 rounded-xl overflow-x-auto">
+                <table className="w-full text-left text-xs min-w-[550px]">
                   <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                     <tr>
                       <th className="py-2.5 px-4">Hora</th>
@@ -704,8 +704,8 @@ export const BillingView: React.FC = () => {
               </div>
             </div>
 
-            <div className="border border-neutral-200 rounded-xl overflow-hidden">
-              <table className="w-full text-left text-xs">
+            <div className="border border-neutral-200 rounded-xl overflow-x-auto">
+              <table className="w-full text-left text-xs min-w-[550px]">
                 <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                   <tr>
                     <th className="py-3 px-4">Fecha & Hora</th>
@@ -808,11 +808,11 @@ export const BillingView: React.FC = () => {
               </div>
             </div>
 
-            <div className="border border-neutral-200 rounded-xl overflow-hidden">
+            <div className="border border-neutral-200 rounded-xl overflow-x-auto w-full">
               <div className="p-3 bg-neutral-50 border-b border-neutral-200 font-semibold text-xs text-neutral-700">
                 Detalle de Bonos y Copagos de Pacientes
               </div>
-              <table className="w-full text-left text-xs">
+              <table className="w-full text-left text-xs min-w-[640px]">
                 <thead className="bg-neutral-100 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                   <tr>
                     <th className="py-2.5 px-4">Fecha</th>

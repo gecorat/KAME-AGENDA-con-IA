@@ -21,8 +21,17 @@ import {
   MedicalPrescriptionItem,
   UserSession,
   UserRole,
-  SaasTenantUser
+  SaasTenantUser,
+  AppNotification
 } from '../types';
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  playNotificationSound,
+  sendBrowserNotification,
+  NotificationPermissionStatus
+} from './browser-notifications';
 import {
   INITIAL_PRACTICE_SETTINGS,
   INITIAL_SERVICES,
@@ -56,6 +65,7 @@ import {
   updateUserInFirestore,
   deleteUserFromFirestore,
   cleanupDuplicateUsers,
+  cleanupDuplicatePatientsInFirestore,
   subscribeToAppointments,
   subscribeToPatients,
   subscribeToServices,
@@ -154,6 +164,22 @@ interface AgendaStoreContextType {
   extendUserTrial: (id: string, daysToAdd: number) => Promise<boolean>;
   grantUserPlan: (id: string, plan: 'basic' | 'pro', isPermanent: boolean, days?: number) => Promise<boolean>;
 
+  // Browser & App Notifications
+  notifications: AppNotification[];
+  unreadNotificationsCount: number;
+  notificationPermission: NotificationPermissionStatus;
+  activeToastNotification: AppNotification | null;
+  requestBrowserNotificationPermission: () => Promise<NotificationPermissionStatus>;
+  testBrowserNotification: () => Promise<void>;
+  markNotificationAsRead: (id: string) => void;
+  markNotificationAsUnread: (id: string) => void;
+  markAllNotificationsAsRead: () => void;
+  deleteNotification: (id: string) => void;
+  clearReadNotifications: () => void;
+  clearNotifications: () => void;
+  dismissToastNotification: () => void;
+  triggerNotification: (notif: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => void;
+
   // Utilities
   resetToDemoData: () => void;
 }
@@ -216,8 +242,101 @@ const STORAGE_KEYS = {
   PAYMENTS: 'agendapro_payments_v1',
   CASH_REGISTER: 'agendapro_cash_register_v1',
   CASH_MOVEMENTS: 'agendapro_cash_movements_v1',
-  CONSULTATIONS: 'agendapro_consultations_v1'
+  CONSULTATIONS: 'agendapro_consultations_v1',
+  NOTIFICATIONS: 'agendapro_notifications_v1'
 };
+
+// Helper functions for normalization and deduplication
+export function normalizeText(str?: string): string {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function normalizePhoneDigits(phone?: string): string {
+  if (!phone) return '';
+  return phone.replace(/\D/g, '');
+}
+
+export function normalizeDniString(dni?: string): string {
+  if (!dni) return '';
+  return dni.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
+}
+
+export function deduplicatePatientRecords(patientList: Patient[]): {
+  canonicalList: Patient[];
+  removedIds: string[];
+  idMap: Record<string, string>;
+} {
+  const canonicalList: Patient[] = [];
+  const removedIds: string[] = [];
+  const idMap: Record<string, string> = {};
+
+  for (const patient of patientList) {
+    const normPh = normalizePhoneDigits(patient.phone);
+    const normD = normalizeDniString(patient.dni);
+    const normNm = normalizeText(`${patient.first_name} ${patient.last_name}`);
+
+    const matchIdx = canonicalList.findIndex(existing => {
+      if (existing.id === patient.id) return true;
+
+      const exPh = normalizePhoneDigits(existing.phone);
+      if (normPh && exPh && normPh.length >= 7 && exPh.length >= 7) {
+        if (normPh === exPh || normPh.endsWith(exPh) || exPh.endsWith(normPh)) {
+          return true;
+        }
+      }
+
+      const exD = normalizeDniString(existing.dni);
+      if (normD && exD && normD.length >= 6 && normD === exD) {
+        return true;
+      }
+
+      const exNm = normalizeText(`${existing.first_name} ${existing.last_name}`);
+      if (normNm && exNm && normNm.length >= 5 && normNm === exNm) {
+        return true;
+      }
+
+      return false;
+    });
+
+    if (matchIdx >= 0) {
+      const canonical = canonicalList[matchIdx];
+      idMap[patient.id] = canonical.id;
+      if (patient.id !== canonical.id) {
+        removedIds.push(patient.id);
+      }
+
+      // Merge enriched details
+      canonical.first_name = canonical.first_name || patient.first_name;
+      canonical.last_name = canonical.last_name || patient.last_name;
+      canonical.phone = canonical.phone || patient.phone;
+      canonical.email = canonical.email || patient.email;
+      canonical.dni = canonical.dni || patient.dni;
+      canonical.birth_date = canonical.birth_date || patient.birth_date;
+      canonical.insurance_provider = canonical.insurance_provider || patient.insurance_provider;
+      canonical.insurance_number = canonical.insurance_number || patient.insurance_number;
+      if (patient.notes && canonical.notes && !canonical.notes.includes(patient.notes)) {
+        canonical.notes = `${canonical.notes} | ${patient.notes}`;
+      } else if (patient.notes && !canonical.notes) {
+        canonical.notes = patient.notes;
+      }
+      if (patient.tags && patient.tags.length > 0) {
+        canonical.tags = Array.from(new Set([...(canonical.tags || []), ...patient.tags]));
+      }
+      canonical.total_appointments = Math.max(canonical.total_appointments || 0, patient.total_appointments || 0);
+    } else {
+      canonicalList.push({ ...patient });
+      idMap[patient.id] = patient.id;
+    }
+  }
+
+  return { canonicalList, removedIds, idMap };
+}
 
 export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [practiceSettings, setPracticeSettings] = useState<PracticeSettings>(() => {
@@ -317,6 +436,22 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [consultations, setConsultations] = useState<ConsultationRecord[]>(() => {
     return getCleanStorageList<ConsultationRecord>(STORAGE_KEYS.CONSULTATIONS);
   });
+
+  // Real-time Browser & App Notifications
+  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermissionStatus>(() => {
+    return getNotificationPermission();
+  });
+
+  const [activeToastNotification, setActiveToastNotification] = useState<AppNotification | null>(null);
 
   // Current User Session & Role (Unauthenticated by default)
   const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
@@ -733,15 +868,174 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     localStorage.setItem(STORAGE_KEYS.CASH_MOVEMENTS, JSON.stringify(cashMovements));
   }, [cashMovements]);
 
-  // Real-time synchronization with Firestore
+  // Save notifications to localStorage
   useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(notifications.slice(0, 50)));
+    } catch {}
+  }, [notifications]);
+
+  // Request browser desktop notification permission
+  const requestBrowserNotificationPermission = async (): Promise<NotificationPermissionStatus> => {
+    const status = await requestNotificationPermission();
+    setNotificationPermission(status);
+    if (status === 'granted') {
+      setPracticeSettings(prev => {
+        const updated = { ...prev, notify_browser_enabled: true };
+        try {
+          localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
+    }
+    return status;
+  };
+
+  // Dispatch browser desktop + in-app notification
+  const triggerNotification = (notifData: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => {
+    const newNotif: AppNotification = {
+      ...notifData,
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      created_at: new Date().toISOString(),
+      read: false
+    };
+
+    setNotifications(prev => [newNotif, ...prev.slice(0, 49)]);
+    setActiveToastNotification(newNotif);
+
+    // Audio chime synthesis
+    if (practiceSettings.notify_sound_enabled !== false) {
+      playNotificationSound();
+    }
+
+    // Native browser notification
+    if (practiceSettings.notify_browser_enabled !== false) {
+      sendBrowserNotification({
+        title: newNotif.title,
+        body: newNotif.message,
+        onClick: () => {
+          try {
+            window.focus();
+          } catch {}
+        }
+      });
+    }
+
+    // Auto-dismiss in-app toast after 7 seconds
+    setTimeout(() => {
+      setActiveToastNotification(current => (current?.id === newNotif.id ? null : current));
+    }, 7000);
+  };
+
+  const testBrowserNotification = async () => {
+    if (notificationPermission === 'default') {
+      await requestBrowserNotificationPermission();
+    }
+
+    triggerNotification({
+      type: 'test',
+      title: '🔔 Notificación de Prueba - AgendaPro AI',
+      message: '¡Excelente! Las alertas del navegador están activas para nuevos turnos y confirmaciones.',
+      patient_name: 'Dr/a. Notificaciones Activas',
+      service_name: 'Alerta del Sistema'
+    });
+  };
+
+  const markNotificationAsRead = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  };
+
+  const markNotificationAsUnread = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: false } : n));
+  };
+
+  const markAllNotificationsAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const deleteNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  // Keep appointment notifications that are for upcoming/today's appointments
+  const clearReadNotifications = () => {
+    setNotifications(prev => prev.filter(n => {
+      if (!n.read) return true;
+      const aptTimeStr = n.datetime || appointments.find(a => a.id === n.appointment_id)?.start_datetime;
+      if (aptTimeStr) {
+        const aptTime = new Date(aptTimeStr).getTime();
+        const now = Date.now();
+        // If appointment time is in the future or within the last 2 hours, keep notification so doctor doesn't miss it
+        if (!isNaN(aptTime) && aptTime > now - 1000 * 60 * 60 * 2) {
+          return true;
+        }
+      }
+      return false;
+    }));
+  };
+
+  const clearNotifications = () => {
+    setNotifications([]);
+  };
+
+  const dismissToastNotification = () => {
+    setActiveToastNotification(null);
+  };
+
+  // Real-time synchronization with Firestore and initial deduplication sweep
+  useEffect(() => {
+    // Initial cleanup of duplicates in Firestore in background
+    cleanupDuplicatePatientsInFirestore();
+
     const unsubAppointments = subscribeToAppointments((remoteAppointments) => {
       if (remoteAppointments && remoteAppointments.length > 0) {
         setAppointments(prev => {
+          // Detect newly added remote appointments from bot or public booking
+          if (prev.length > 0) {
+            const existingIds = new Set(prev.map(a => a.id));
+            remoteAppointments.forEach(remoteApt => {
+              if (!existingIds.has(remoteApt.id) && (remoteApt.origin === 'bot_whatsapp' || remoteApt.origin === 'public_booking')) {
+                if (practiceSettings.notify_bot_bookings !== false) {
+                  const aptDate = new Date(remoteApt.start_datetime);
+                  const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+                  const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+                  triggerNotification({
+                    type: remoteApt.origin === 'bot_whatsapp' ? 'bot_booking' : 'public_booking',
+                    title: remoteApt.origin === 'bot_whatsapp' ? '🤖 ¡Nuevo turno agendado por el Bot!' : '🌐 Nueva reserva online recibida',
+                    message: `${remoteApt.patient_name} reservó "${remoteApt.service_name}" para el ${dateStr} a las ${timeStr} hs.`,
+                    appointment_id: remoteApt.id,
+                    patient_name: remoteApt.patient_name,
+                    service_name: remoteApt.service_name,
+                    datetime: remoteApt.start_datetime
+                  });
+                }
+              }
+            });
+          }
+
           const map = new Map<string, Appointment>();
           prev.forEach(a => map.set(a.id, a));
           remoteAppointments.forEach(a => map.set(a.id, a));
           return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubPatients = subscribeToPatients((remotePatients) => {
+      if (remotePatients && remotePatients.length > 0) {
+        setPatients(prev => {
+          const map = new Map<string, Patient>();
+          prev.forEach(p => map.set(p.id, p));
+          remotePatients.forEach(p => map.set(p.id, p));
+          
+          const rawList = Array.from(map.values());
+          const { canonicalList, removedIds } = deduplicatePatientRecords(rawList);
+          
+          // Delete ghost duplicates from Firestore
+          if (removedIds.length > 0) {
+            removedIds.forEach(id => deletePatientFromFirestore(id));
+          }
+          return canonicalList;
         });
       }
     });
@@ -754,9 +1048,74 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     return () => {
       unsubAppointments();
+      unsubPatients();
       unsubSettings();
     };
   }, []);
+
+  // Backfill patients from appointments if any exist without a patient record, with strict deduplication
+  useEffect(() => {
+    if (appointments.length > 0) {
+      setPatients(prev => {
+        const { canonicalList, removedIds } = deduplicatePatientRecords(prev);
+        if (removedIds.length > 0) {
+          removedIds.forEach(id => deletePatientFromFirestore(id));
+        }
+
+        const phoneMap = new Map<string, Patient>();
+        const nameMap = new Map<string, Patient>();
+        const idMap = new Map<string, Patient>();
+
+        canonicalList.forEach(p => {
+          const np = normalizePhoneDigits(p.phone);
+          const nm = normalizeText(`${p.first_name} ${p.last_name}`);
+          if (np && np.length >= 7) phoneMap.set(np, p);
+          if (nm && nm.length >= 5) nameMap.set(nm, p);
+          idMap.set(p.id, p);
+        });
+
+        const toAdd: Patient[] = [];
+        appointments.forEach(apt => {
+          const normPhone = normalizePhoneDigits(apt.patient_phone);
+          const normName = normalizeText(apt.patient_name);
+
+          const exists = 
+            idMap.has(apt.patient_id) ||
+            (normPhone && normPhone.length >= 7 && phoneMap.has(normPhone)) ||
+            (normName && normName.length >= 5 && nameMap.has(normName));
+
+          if (!exists && apt.patient_name) {
+            const nameParts = apt.patient_name.trim().split(' ');
+            const firstName = nameParts[0] || 'Paciente';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            const newPatId = apt.patient_id && !apt.patient_id.startsWith('pat-web-') && !apt.patient_id.startsWith('pat-bot-')
+              ? apt.patient_id
+              : `pat-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+            
+            const newPat: Patient = {
+              id: newPatId,
+              first_name: firstName,
+              last_name: lastName,
+              phone: apt.patient_phone || '',
+              email: apt.patient_email || undefined,
+              total_appointments: appointments.filter(a => a.patient_phone === apt.patient_phone || a.patient_name === apt.patient_name).length,
+              created_at: new Date().toISOString()
+            };
+            toAdd.push(newPat);
+            if (normPhone && normPhone.length >= 7) phoneMap.set(normPhone, newPat);
+            if (normName && normName.length >= 5) nameMap.set(normName, newPat);
+            idMap.set(newPatId, newPat);
+          }
+        });
+
+        if (toAdd.length > 0) {
+          toAdd.forEach(p => savePatientToFirestore(p));
+          return [...canonicalList, ...toAdd];
+        }
+        return canonicalList;
+      });
+    }
+  }, [appointments.length]);
 
   // Appointment Handlers
   const addAppointment = (data: Omit<Appointment, 'id'>): Appointment => {
@@ -768,13 +1127,82 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // Save to Firestore in background
     saveAppointmentToFirestore(newApt);
 
-    // Update patient's appointment count
-    setPatients(prev => prev.map(p => {
-      if (p.id === data.patient_id) {
-        return { ...p, total_appointments: (p.total_appointments || 0) + 1 };
+    // Ensure the patient is registered in the patients list and update total appointments without creating duplicates
+    setPatients(prev => {
+      const normPhone = normalizePhoneDigits(data.patient_phone);
+      const normName = normalizeText(data.patient_name);
+
+      const existingIdx = prev.findIndex(p => {
+        if (data.patient_id && p.id === data.patient_id) return true;
+        const pNormPhone = normalizePhoneDigits(p.phone);
+        if (normPhone && pNormPhone && normPhone.length >= 7 && (normPhone === pNormPhone || normPhone.endsWith(pNormPhone) || pNormPhone.endsWith(normPhone))) return true;
+        const pNormName = normalizeText(`${p.first_name} ${p.last_name}`);
+        if (normName && pNormName && normName.length >= 5 && normName === pNormName) return true;
+        return false;
+      });
+
+      if (existingIdx >= 0) {
+        const existing = prev[existingIdx];
+        const updatedPatient: Patient = {
+          ...existing,
+          total_appointments: (existing.total_appointments || 0) + 1,
+          phone: existing.phone || data.patient_phone || '',
+          email: existing.email || data.patient_email || undefined
+        };
+        savePatientToFirestore(updatedPatient);
+        const next = [...prev];
+        next[existingIdx] = updatedPatient;
+        return next;
+      } else {
+        const nameParts = (data.patient_name || 'Paciente').trim().split(' ');
+        const firstName = nameParts[0] || 'Paciente';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        const newPatientId = data.patient_id && !data.patient_id.startsWith('pat-web-') && !data.patient_id.startsWith('pat-bot-')
+          ? data.patient_id
+          : `pat-${Date.now()}`;
+
+        const newPatient: Patient = {
+          id: newPatientId,
+          first_name: firstName,
+          last_name: lastName,
+          phone: data.patient_phone || '',
+          email: data.patient_email || undefined,
+          total_appointments: 1,
+          created_at: new Date().toISOString()
+        };
+        savePatientToFirestore(newPatient);
+        return [newPatient, ...prev];
       }
-      return p;
-    }));
+    });
+
+    // Trigger browser & app notification on Bot or Public Booking
+    if (data.origin === 'bot_whatsapp' && practiceSettings.notify_bot_bookings !== false) {
+      const aptDate = new Date(data.start_datetime);
+      const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+      const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      triggerNotification({
+        type: 'bot_booking',
+        title: '🤖 ¡Nuevo turno agendado por el Bot!',
+        message: `${data.patient_name} agendó "${data.service_name}" para el ${dateStr} a las ${timeStr} hs.`,
+        appointment_id: id,
+        patient_name: data.patient_name,
+        service_name: data.service_name,
+        datetime: data.start_datetime
+      });
+    } else if (data.origin === 'public_booking' && practiceSettings.notify_bot_bookings !== false) {
+      const aptDate = new Date(data.start_datetime);
+      const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+      const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      triggerNotification({
+        type: 'public_booking',
+        title: '🌐 Nueva reserva online recibida',
+        message: `${data.patient_name} reservó "${data.service_name}" para el ${dateStr} a las ${timeStr} hs desde el portal web.`,
+        appointment_id: id,
+        patient_name: data.patient_name,
+        service_name: data.service_name,
+        datetime: data.start_datetime
+      });
+    }
 
     return newApt;
   };
@@ -800,6 +1228,65 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Patient Handlers
   const addPatient = (data: Omit<Patient, 'id' | 'created_at' | 'total_appointments'>): Patient => {
+    const normPhone = normalizePhoneDigits(data.phone);
+    const normDni = normalizeDniString(data.dni);
+    const normName = normalizeText(`${data.first_name} ${data.last_name}`);
+
+    // Check if patient already exists in local state
+    let matchedPatient: Patient | null = null;
+    let matchedIndex = -1;
+
+    for (let i = 0; i < patients.length; i++) {
+      const p = patients[i];
+      const pNormPhone = normalizePhoneDigits(p.phone);
+      const pNormDni = normalizeDniString(p.dni);
+      const pNormName = normalizeText(`${p.first_name} ${p.last_name}`);
+
+      if (normPhone && pNormPhone && normPhone.length >= 7 && (normPhone === pNormPhone || normPhone.endsWith(pNormPhone) || pNormPhone.endsWith(normPhone))) {
+        matchedPatient = p;
+        matchedIndex = i;
+        break;
+      }
+      if (normDni && pNormDni && normDni.length >= 6 && normDni === pNormDni) {
+        matchedPatient = p;
+        matchedIndex = i;
+        break;
+      }
+      if (normName && pNormName && normName.length >= 5 && normName === pNormName) {
+        matchedPatient = p;
+        matchedIndex = i;
+        break;
+      }
+    }
+
+    if (matchedPatient && matchedIndex >= 0) {
+      // Update existing patient with new data and merge
+      const updated: Patient = {
+        ...matchedPatient,
+        ...data,
+        id: matchedPatient.id,
+        created_at: matchedPatient.created_at,
+        total_appointments: matchedPatient.total_appointments || 0,
+        phone: data.phone || matchedPatient.phone,
+        email: data.email || matchedPatient.email,
+        dni: data.dni || matchedPatient.dni,
+        birth_date: data.birth_date || matchedPatient.birth_date,
+        insurance_provider: data.insurance_provider || matchedPatient.insurance_provider,
+        insurance_number: data.insurance_number || matchedPatient.insurance_number,
+        notes: data.notes
+          ? (matchedPatient.notes && !matchedPatient.notes.includes(data.notes) ? `${matchedPatient.notes} | ${data.notes}` : data.notes)
+          : matchedPatient.notes,
+        tags: Array.from(new Set([...(matchedPatient.tags || []), ...(data.tags || [])]))
+      };
+      setPatients(prev => {
+        const next = [...prev];
+        next[matchedIndex] = updated;
+        return next;
+      });
+      savePatientToFirestore(updated);
+      return updated;
+    }
+
     const id = `pat-${Date.now()}`;
     const newPatient: Patient = {
       ...data,
@@ -1064,6 +1551,8 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const confirmAppointmentByPatient = (appointmentId: string) => {
     const nowIso = new Date().toISOString();
+    const apt = appointments.find(a => a.id === appointmentId);
+
     setAppointments(prev => prev.map(a => {
       if (a.id === appointmentId) {
         return {
@@ -1082,6 +1571,22 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
       return l;
     }));
+
+    // Trigger browser & app notification on patient confirmation
+    if (apt && practiceSettings.notify_patient_confirmations !== false) {
+      const aptDate = new Date(apt.start_datetime);
+      const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+      const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      triggerNotification({
+        type: 'patient_confirm',
+        title: '✅ Turno confirmado por el paciente',
+        message: `${apt.patient_name} confirmó su asistencia para "${apt.service_name}" (${dateStr} ${timeStr} hs).`,
+        appointment_id: apt.id,
+        patient_name: apt.patient_name,
+        service_name: apt.service_name,
+        datetime: apt.start_datetime
+      });
+    }
   };
 
   const runAutomatedRemindersScan = () => {
@@ -1408,6 +1913,21 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       deleteSaasTenant,
       extendUserTrial,
       grantUserPlan,
+      // Notifications
+      notifications,
+      unreadNotificationsCount: notifications.filter(n => !n.read).length,
+      notificationPermission,
+      activeToastNotification,
+      requestBrowserNotificationPermission,
+      testBrowserNotification,
+      markNotificationAsRead,
+      markNotificationAsUnread,
+      markAllNotificationsAsRead,
+      deleteNotification,
+      clearReadNotifications,
+      clearNotifications,
+      dismissToastNotification,
+      triggerNotification,
       resetToDemoData
     }}>
       {children}

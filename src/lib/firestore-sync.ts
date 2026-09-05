@@ -405,6 +405,7 @@ export const subscribeToAppointments = (
 
 /**
  * Subscribe to real-time patients from Firestore
+ * Automatically deduplicates and unifies records
  */
 export const subscribeToPatients = (
   onData: (patients: Patient[]) => void,
@@ -425,6 +426,68 @@ export const subscribeToPatients = (
       if (onError) onError(err);
     }
   );
+};
+
+/**
+ * Cleanup duplicate patients in Firestore
+ */
+export const cleanupDuplicatePatientsInFirestore = async (): Promise<void> => {
+  try {
+    const colRef = collection(db, COLLECTIONS.PATIENTS);
+    const snap = await getDocs(colRef);
+    const patients: Patient[] = [];
+    snap.forEach(d => {
+      patients.push({ id: d.id, ...(d.data() as any) } as Patient);
+    });
+
+    const phoneMap = new Map<string, Patient>();
+    const dniMap = new Map<string, Patient>();
+    const nameMap = new Map<string, Patient>();
+
+    for (const p of patients) {
+      const normPhone = p.phone ? p.phone.replace(/\D/g, '') : '';
+      const normDni = p.dni ? p.dni.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim() : '';
+      const normName = `${p.first_name || ''} ${p.last_name || ''}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      let duplicateOf: Patient | undefined;
+
+      if (normPhone && normPhone.length >= 7 && phoneMap.has(normPhone)) {
+        duplicateOf = phoneMap.get(normPhone);
+      } else if (normDni && normDni.length >= 6 && dniMap.has(normDni)) {
+        duplicateOf = dniMap.get(normDni);
+      } else if (normName && normName.length >= 5 && nameMap.has(normName)) {
+        duplicateOf = nameMap.get(normName);
+      }
+
+      if (duplicateOf && duplicateOf.id !== p.id) {
+        // Merge richer fields into duplicateOf
+        const updatedCanonical: Patient = {
+          ...duplicateOf,
+          phone: duplicateOf.phone || p.phone,
+          email: duplicateOf.email || p.email,
+          dni: duplicateOf.dni || p.dni,
+          birth_date: duplicateOf.birth_date || p.birth_date,
+          insurance_provider: duplicateOf.insurance_provider || p.insurance_provider,
+          insurance_number: duplicateOf.insurance_number || p.insurance_number,
+          notes: duplicateOf.notes || p.notes,
+          total_appointments: Math.max(duplicateOf.total_appointments || 0, p.total_appointments || 0)
+        };
+        await setDoc(doc(db, COLLECTIONS.PATIENTS, duplicateOf.id), updatedCanonical, { merge: true });
+        await deleteDoc(doc(db, COLLECTIONS.PATIENTS, p.id)).catch(() => {});
+      } else {
+        if (normPhone && normPhone.length >= 7) phoneMap.set(normPhone, p);
+        if (normDni && normDni.length >= 6) dniMap.set(normDni, p);
+        if (normName && normName.length >= 5) nameMap.set(normName, p);
+      }
+    }
+  } catch (error) {
+    console.warn('Notice during patient cleanup in Firestore:', error);
+  }
 };
 
 /**

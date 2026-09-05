@@ -253,10 +253,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               onClick={handleOpenRegister}
               className="relative inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-bold shadow-sm transition-all hover:shadow-md cursor-pointer active:scale-98"
             >
-              <span>Crear Cuenta Gratis</span>
+              <span>Comenzar Ahora</span>
               <ArrowRight className="w-3.5 h-3.5 text-neutral-300" />
               <span className="hidden lg:inline-block text-[10px] text-emerald-400 font-normal pl-1 border-l border-neutral-700">
-                14 días sin tarjeta
+                Planes Básico & Pro AI
               </span>
             </button>
           </div>
@@ -295,7 +295,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
                   className="w-full sm:w-auto px-7 py-4 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
                 >
                   <Sparkles className="w-4 h-4 text-emerald-400" />
-                  <span>Comenzar Prueba Gratuita de 14 Días</span>
+                  <span>Registrar Mi Consultorio</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
 
@@ -520,7 +520,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               Crea tu cuenta en 30 segundos
             </h3>
             <p className="text-xs text-neutral-600 leading-relaxed">
-              Solo ingresas tu nombre y especialidad. No necesitas tarjeta de crédito ni llamadas de ventas aburridas para empezar tus 14 días.
+              Solo ingresas tu nombre y especialidad. Sin configuraciones complejas para comenzar a atender con IA.
             </p>
             <div className="pt-2 text-[11px] font-semibold text-emerald-700 flex items-center gap-1.5">
               <Check className="w-3.5 h-3.5" /> Acceso inmediato al sistema
@@ -785,7 +785,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
             Preguntas Frecuentes
           </h2>
           <p className="text-xs sm:text-sm text-neutral-500">
-            Todo lo que necesitas saber antes de iniciar tus 14 días de prueba gratuita.
+            Todo lo que necesitas saber sobre el servicio y los planes de suscripción.
           </p>
         </div>
 
@@ -804,8 +804,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               a: 'La inteligencia artificial habla en lenguaje natural de WhatsApp, exactamente como si hablara con una secretaria humana. No requiere instalar ninguna app ni entrar a páginas complicadas.'
             },
             {
-              q: '¿Qué sucede cuando terminan los 14 días de prueba gratuita?',
-              a: 'No se realiza ningún cargo automático porque no solicitamos tarjeta de crédito para registrarte. Al finalizar, podrás elegir si deseas continuar con el Plan Pro o el Plan Básico.'
+              q: '¿Cómo elijo entre el Plan Básico y el Plan Pro AI?',
+              a: 'El Plan Básico incluye recordatorios automáticos por WhatsApp y agenda online. El Plan Pro AI añade el Bot conversacional inteligente 24/7, cobro de señas por Alias/Mercado Pago e historias clínicas con IA.'
             },
             {
               q: '¿Se sincroniza con mi Google Calendar?',
@@ -859,7 +859,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               onClick={handleOpenRegister}
               className="w-full sm:w-auto px-8 py-4 bg-white text-neutral-950 font-bold text-xs sm:text-sm rounded-xl hover:bg-neutral-100 transition shadow-lg cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>Comenzar Prueba Gratuita (14 Días)</span>
+              <span>Comenzar con AgendaPro AI</span>
               <ArrowRight className="w-4 h-4" />
             </button>
             <button
@@ -912,7 +912,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               <div className="w-11 h-11 rounded-2xl bg-neutral-950 text-white flex items-center justify-center mx-auto mb-2 shadow-xs">
                 <Sparkles className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="text-xl font-bold text-neutral-950">Comienza tu Prueba de 14 Días</h3>
+              <h3 className="text-xl font-bold text-neutral-950">Comienza con tu Consultorio</h3>
               <p className="text-xs text-neutral-500">
                 Acceso completo e instantáneo al sistema y al bot de WhatsApp.
               </p>
@@ -1000,7 +1000,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
                     type="submit"
                     className="w-full py-3.5 bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center gap-2"
                   >
-                    <span>Activar Mis 14 Días Gratis</span>
+                    <span>Activar Mi Consultorio</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>

@@ -699,7 +699,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                               setTrialDaysToAdd(14);
                             }}
                             className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer"
-                            title="Extender días de prueba gratuita"
+                            title="Extender días de acceso o gracia"
                           >
                             <Clock className="w-3 h-3 text-amber-700" />
                             Trial

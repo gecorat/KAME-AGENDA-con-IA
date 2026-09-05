@@ -26,6 +26,7 @@ export interface Patient {
   allergies?: string[];
   blood_type?: string;
   insurance_company?: string;
+  insurance_provider?: string;
   insurance_number?: string;
   emergency_contact?: {
     name: string;
@@ -36,12 +37,24 @@ export interface Patient {
   created_at: string;
 }
 
+export interface BookingRequiredFields {
+  full_name: boolean; // default: true (fixed/required)
+  phone: boolean;     // default: true (fixed/required)
+  dni: boolean;       // default: false (optional toggle)
+  email: boolean;     // default: false (optional toggle)
+  insurance: boolean; // default: false (optional toggle: Obra Social o Cobertura)
+  reason: boolean;    // default: false (optional toggle: Motivo de consulta)
+  address?: boolean;  // default: false (optional toggle: Domicilio)
+}
+
 export interface Appointment {
   id: string;
   patient_id: string;
   patient_name: string;
   patient_phone: string;
   patient_email?: string;
+  patient_dni?: string;
+  patient_insurance?: string;
   service_id: string;
   service_name: string;
   service_price: number;
@@ -143,6 +156,27 @@ export interface PracticeSettings {
   public_bio?: string;
   public_show_reviews?: boolean;
   public_custom_accent?: string;
+  // Browser Notifications (Alerts for Bot Bookings & Patient Confirmations)
+  notify_browser_enabled?: boolean;
+  notify_bot_bookings?: boolean;
+  notify_patient_confirmations?: boolean;
+  notify_sound_enabled?: boolean;
+  // Configurable Required Fields for Booking & Bot
+  booking_required_fields?: BookingRequiredFields;
+  bot_required_fields?: BookingRequiredFields;
+}
+
+export interface AppNotification {
+  id: string;
+  type: 'bot_booking' | 'patient_confirm' | 'public_booking' | 'test';
+  title: string;
+  message: string;
+  appointment_id?: string;
+  patient_name: string;
+  service_name?: string;
+  datetime?: string;
+  created_at: string;
+  read: boolean;
 }
 
 export interface SaasTenantUser {

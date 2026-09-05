@@ -87,6 +87,26 @@ async function startServer() {
         timeZone: "America/Argentina/Buenos_Aires"
       });
 
+      const botReq = practiceSettings.bot_required_fields || {
+        full_name: true,
+        phone: true,
+        dni: false,
+        email: false,
+        insurance: false,
+        reason: false,
+        address: false
+      };
+
+      const requiredFieldsDescriptions = [
+        botReq.full_name ? "- Nombre y Apellido completo" : null,
+        botReq.phone ? "- Número de WhatsApp / Celular (con código de país ej +54 9 y código de área)" : null,
+        botReq.dni ? "- DNI o documento de identidad (obligatorio para la ficha médica)" : null,
+        botReq.email ? "- Correo electrónico" : null,
+        botReq.insurance ? "- Obra social o Prepaga (o indicar Particular)" : null,
+        botReq.reason ? "- Motivo de consulta o afección" : null,
+        botReq.address ? "- Domicilio o localidad de residencia" : null,
+      ].filter(Boolean).join("\n");
+
       const systemInstruction = `Eres ${assistantName}, la asistente virtual inteligente de "${practiceName}".
 Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro y amigable, con emojis sutiles, de forma conversacional y concisa como en WhatsApp.
 
@@ -105,8 +125,10 @@ ${bookedList}
 OBJETIVOS:
 1. Responder preguntas sobre servicios, precios, duración y cómo reservar.
 2. Ayudar al paciente a elegir un horario disponible. Recuerda verificar que el día y horario solicitado esté dentro de los horarios de atención y NO coincida con turnos ya reservados.
-3. Pedir datos necesarios para agendar: Nombre completo, Teléfono y Servicio. Si ya los dio, confirmarle con un resumen claro.
-4. Si el paciente confirma explícitamente un día, hora y servicio disponible, indica en tu respuesta una confirmación cálida e incluye el bloque JSON estructurado al final con los datos del turno.
+3. DATOS OBLIGATORIOS QUE DEBES PEDIR Y RECOLECTAR ANTES DE CONFIRMAR LA CITA:
+${requiredFieldsDescriptions}
+No cierres ni confirmes la reserva hasta que el paciente te haya proporcionado TODOS estos datos obligatorios. Si falta alguno, pídeselo amablemente.
+4. Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos obligatorios solicitados, indícale una confirmación cálida con el resumen y emite el bloque JSON estructurado al final con tag 'json_action'.
 
 FORMATO DE RESPUESTA:
 Provee tu mensaje amigable para el paciente.
@@ -122,7 +144,7 @@ Si se concreta o confirma una reserva, agrega al final un bloque de código mark
   "notes": "Notas adicionales"
 }
 \`\`\`
-Si aún falta definir algún dato o no se confirmó, NO incluyas el bloque 'json_action'.`;
+Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el bloque 'json_action'.`;
 
       if (ai) {
         // Prepare conversation

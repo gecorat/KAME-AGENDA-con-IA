@@ -22,7 +22,9 @@ import {
   ArrowRight,
   Compass,
   Copy,
-  Check
+  Check,
+  Share2,
+  Globe
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment } from '../types';
@@ -49,6 +51,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     navigator.clipboard?.writeText?.(url);
     setCopiedPortal(true);
     setTimeout(() => setCopiedPortal(false), 2500);
+  };
+
+  const handleSharePortal = async () => {
+    const handle = practiceSettings.handle || 'consultorio-medico';
+    const url = typeof window !== 'undefined'
+      ? `${window.location.origin}/u/${handle}`
+      : `https://agendapro.ai/u/${handle}`;
+    const shareData = {
+      title: `${practiceSettings.practice_name || 'Consultorio Médico'} - Reservas Online`,
+      text: `Agenda tu turno online con ${practiceSettings.professional_name || 'nosotros'} ingresando a:`,
+      url,
+    };
+    if (navigator.share && typeof navigator.canShare === 'function' && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
+    onNavigateToTab('pagina-publica');
   };
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -98,56 +121,68 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Quick Actions - Sleek, borderless minimalist architecture */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-neutral-200/80">
-        <div>
-          <div className="flex items-center gap-2.5 flex-wrap">
+      {/* Top Header & Quick Actions - Sleek, responsive minimalist architecture */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-neutral-200/80">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold tracking-tight text-neutral-900 font-display">
               {practiceSettings.practice_name}
             </h1>
-            <span className="text-xs text-neutral-500 font-medium px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200/60">
+            <span className="text-xs text-neutral-500 font-medium px-2 py-0.5 rounded-md bg-neutral-100 border border-neutral-200/60 shrink-0">
               {practiceSettings.specialty}
             </span>
           </div>
-          <div className="flex items-center gap-2 mt-1 text-xs text-neutral-500 flex-wrap">
-            <span>Portal público:</span>
+
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mt-2 text-xs text-neutral-500">
+            <span className="shrink-0 font-medium">Portal público:</span>
             <button
               onClick={() => onNavigateToTab('portal')}
-              className="text-neutral-800 hover:text-sky-600 font-medium inline-flex items-center gap-1 transition-colors hover:underline cursor-pointer"
+              className="text-neutral-800 hover:text-sky-600 font-medium inline-flex items-center gap-1 transition-colors hover:underline cursor-pointer max-w-full sm:max-w-xs truncate"
             >
-              <span>agendapro.ai/u/{practiceSettings.handle || 'consultorio-medico'}</span>
-              <ExternalLink className="w-3 h-3 text-neutral-400" />
+              <span className="truncate">agendapro.ai/u/{practiceSettings.handle || 'consultorio-medico'}</span>
+              <ExternalLink className="w-3 h-3 text-neutral-400 shrink-0" />
             </button>
-            <button
-              onClick={handleCopyPortal}
-              className="px-2 py-0.5 text-[11px] font-semibold rounded bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition flex items-center gap-1 cursor-pointer"
-              title="Copiar link directo para compartir"
-            >
-              {copiedPortal ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-neutral-500" />}
-              <span>{copiedPortal ? '¡Copiado!' : 'Copiar'}</span>
-            </button>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                onClick={handleCopyPortal}
+                className="px-2 py-1 text-[11px] font-semibold rounded-md bg-neutral-100 hover:bg-neutral-200 text-neutral-700 transition flex items-center gap-1 cursor-pointer shrink-0"
+                title="Copiar link directo para compartir"
+              >
+                {copiedPortal ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-neutral-500" />}
+                <span>{copiedPortal ? '¡Copiado!' : 'Copiar'}</span>
+              </button>
+              <button
+                onClick={handleSharePortal}
+                className="px-2 py-1 text-[11px] font-semibold rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 transition flex items-center gap-1 cursor-pointer shrink-0 border border-emerald-200/60"
+                title="Compartir link por WhatsApp, redes o correo"
+              >
+                <Share2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                <span>Compartir</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
+        <div className="flex items-center gap-2 flex-wrap w-full md:w-auto">
           <button
             onClick={() => onNavigateToTab('guia')}
-            className="px-3 py-2 text-xs font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+            className="flex-1 md:flex-initial px-3 py-2 text-xs font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5"
             title="Ver pasos de puesta en marcha"
           >
-            <Compass className="w-3.5 h-3.5 text-neutral-500" />
-            <span className="hidden sm:inline">Guía de Inicio</span>
+            <Compass className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+            <span>Guía de Inicio</span>
           </button>
           <button
             onClick={() => onNavigateToTab('portal')}
-            className="px-3.5 py-2 text-xs font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
+            className="flex-1 md:flex-initial px-3.5 py-2 text-xs font-semibold text-neutral-700 bg-white hover:bg-neutral-50 border border-neutral-200 rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5"
+            title="Ver tu página pública de reservas"
           >
-            <ExternalLink className="w-3.5 h-3.5 text-neutral-400" />
-            <span>Portal Pacientes</span>
+            <Globe className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+            <span>Tu Página</span>
           </button>
           <button
             onClick={onOpenNewAppointment}
-            className="px-4 py-2 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 active:scale-[0.99] rounded-lg shadow-2xs transition-all flex items-center gap-1.5"
+            className="w-full sm:w-auto px-4 py-2 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 active:scale-[0.99] rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 shrink-0"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Turno</span>
@@ -175,8 +210,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* Metrics Row - Minimalist, refined cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+      {/* Metrics Row - Responsive minimalist cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
         <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors">
           <div className="flex items-center justify-between text-neutral-500 mb-2">
             <span className="text-xs font-medium tracking-tight">Turnos de Hoy</span>
@@ -225,7 +260,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <span className="text-xs font-medium tracking-tight">Asistente IA WhatsApp</span>
             <Sparkles className="w-4 h-4 text-neutral-400" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 tracking-tight flex items-center gap-2 font-display">
+          <div className="text-2xl font-bold text-neutral-900 tracking-tight flex items-center gap-2 flex-wrap font-display">
             <span>24/7</span>
             <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
               Activo
