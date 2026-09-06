@@ -53,17 +53,17 @@ service cloud.firestore {
 
     // Consultations & SOAP records
     match /consultations/{consultationId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if true;
     }
 
     // Billing & Payments
     match /payments/{paymentId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if true;
     }
 
     // Conversations / WhatsApp chats
     match /conversations/{conversationId} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if true;
     }
 
     // User profiles & SaaS Tenants

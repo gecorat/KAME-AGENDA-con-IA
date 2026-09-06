@@ -290,7 +290,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onScheduleForPatient(selectedPatient)}
-                    className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                    className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
                     title="Agendar nuevo turno para este paciente"
                   >
                     <Calendar className="w-3.5 h-3.5 shrink-0" />
@@ -303,7 +303,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                       setConsultationToEdit(null);
                       setIsConsultationModalOpen(true);
                     }}
-                    className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                    className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
                     title="Crear nueva consulta clínica / evolución"
                   >
                     <Stethoscope className="w-3.5 h-3.5 shrink-0" />
@@ -313,7 +313,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsPaymentModalOpen(true)}
-                    className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
+                    className="flex-1 sm:flex-initial px-2.5 sm:px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
                     title="Registrar cobro y emitir recibo"
                   >
                     <DollarSign className="w-3.5 h-3.5 shrink-0" />

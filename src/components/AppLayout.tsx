@@ -26,7 +26,8 @@ import {
   Palette,
   Rocket,
   LogOut,
-  User
+  User,
+  Key
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { NotificationCenter } from './NotificationCenter';
@@ -163,6 +164,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             id: 'superadmin-analytics',
             label: 'Estadísticas SaaS & Cobros',
             icon: TrendingUp,
+            badge: 'Admin',
+            badgeColor: 'bg-amber-400 text-neutral-950 font-bold'
+          },
+          {
+            id: 'superadmin-apis',
+            label: 'APIs & Webhooks SaaS',
+            icon: Key,
             badge: 'Admin',
             badgeColor: 'bg-amber-400 text-neutral-950 font-bold'
           }

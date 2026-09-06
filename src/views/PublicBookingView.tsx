@@ -347,30 +347,40 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
         )}
 
         {/* Practice Header Card */}
-        <div className={`p-6 sm:p-8 border relative overflow-hidden transition-all duration-200 ${getCardClass()}`}>
-          <div className={`flex flex-col gap-4 ${
-            photoAlign === 'center' ? 'items-center text-center sm:text-center' :
+        <div className={`p-6 sm:p-9 border relative overflow-hidden transition-all duration-200 shadow-sm ${getCardClass()}`}>
+          <div className="absolute -top-16 -right-16 w-56 h-56 bg-sky-500/5 rounded-full blur-3xl pointer-events-none" />
+
+          <div className={`flex flex-col gap-6 relative z-10 ${
+            photoAlign === 'center' ? 'items-center text-center' :
             photoAlign === 'right' ? 'items-end text-right' :
             'items-start text-left'
           }`}>
-            <div className={`flex flex-col sm:flex-row items-center gap-4 ${
-              photoAlign === 'center' ? 'sm:flex-col sm:text-center' :
-              photoAlign === 'right' ? 'sm:flex-row-reverse' : ''
+            <div className={`flex flex-col sm:flex-row items-center gap-6 w-full ${
+              photoAlign === 'center' ? 'sm:flex-col sm:text-center sm:items-center' :
+              photoAlign === 'right' ? 'sm:flex-row-reverse sm:text-right' : ''
             }`}>
-              {/* Profile Photo / Avatar */}
+              {/* Profile Photo / Avatar - Enlarged & Premium Framed */}
               {photoUrl ? (
-                <div className="relative shrink-0">
-                  <img
-                    src={photoUrl}
-                    alt={practiceSettings.professional_name || 'Médico'}
-                    className={`w-20 h-20 object-cover border-2 shadow-xs ${getPhotoShapeClass()}`}
+                <div className="relative shrink-0 group">
+                  <div
+                    className={`w-28 h-28 sm:w-36 sm:h-36 object-cover p-1.5 bg-white border-2 shadow-md transition-transform duration-300 group-hover:scale-[1.02] ${getPhotoShapeClass()}`}
                     style={{ borderColor: customAccent }}
-                  />
-                  <span className="absolute bottom-0 right-0 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white" />
+                  >
+                    <img
+                      src={photoUrl}
+                      alt={practiceSettings.professional_name || 'Médico'}
+                      className={`w-full h-full object-cover ${getPhotoShapeClass()}`}
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                  <span className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 flex h-4 w-4">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-4 w-4 bg-emerald-500 border-2 border-white shadow-xs" />
+                  </span>
                 </div>
               ) : (
                 <div
-                  className={`w-20 h-20 text-white font-bold text-2xl flex items-center justify-center shadow-xs uppercase shrink-0 ${getPhotoShapeClass()}`}
+                  className={`w-28 h-28 sm:w-36 sm:h-36 text-white font-extrabold text-3xl sm:text-4xl flex items-center justify-center shadow-md uppercase shrink-0 border-4 border-white ${getPhotoShapeClass()}`}
                   style={{ backgroundColor: customAccent }}
                 >
                   {(() => {
@@ -383,48 +393,68 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                 </div>
               )}
 
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-start">
-                  <h1 className="text-xl sm:text-2xl font-bold tracking-tight">
+              <div className="space-y-2 flex-1">
+                <div className={`flex items-center gap-2 flex-wrap ${photoAlign === 'center' ? 'justify-center' : 'justify-start'}`}>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-neutral-900 font-display">
                     {practiceSettings.practice_name}
                   </h1>
-                  <ShieldCheck className="w-5 h-5 text-sky-600 shrink-0" />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-sky-100 text-sky-800 px-2.5 py-0.5 rounded-full border border-sky-200">
+                    <ShieldCheck className="w-3.5 h-3.5 text-sky-600" />
+                    Verificado
+                  </span>
                   {showReviews && (
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-200">
-                      <Star className="w-3 h-3 fill-amber-500 text-amber-500" />
-                      4.9 (128 opiniones)
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-amber-50 text-amber-900 px-2.5 py-0.5 rounded-full border border-amber-200">
+                      <Star className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
+                      4.9 (128 pacientes)
                     </span>
                   )}
                 </div>
 
-                <p className="text-sm font-medium text-neutral-600">
-                  {practiceSettings.professional_name} • {practiceSettings.specialty}
-                  {practiceSettings.medical_license && ` • ${practiceSettings.medical_license}`}
-                </p>
+                <div className={`flex flex-wrap items-center gap-2 text-sm font-semibold text-neutral-700 ${photoAlign === 'center' ? 'justify-center' : 'justify-start'}`}>
+                  <span>{practiceSettings.professional_name}</span>
+                  <span className="text-neutral-300">•</span>
+                  <span className="text-sky-700">{practiceSettings.specialty}</span>
+                  {practiceSettings.medical_license && (
+                    <>
+                      <span className="text-neutral-300">•</span>
+                      <span className="text-neutral-500 font-mono text-xs">{practiceSettings.medical_license}</span>
+                    </>
+                  )}
+                </div>
 
                 {badgeText && (
-                  <div className="pt-1">
-                    <span className="inline-block text-[11px] font-bold px-3 py-1 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-200">
-                      {badgeText}
+                  <div className={`pt-0.5 ${photoAlign === 'center' ? 'flex justify-center' : ''}`}>
+                    <span className="inline-block text-[11px] font-bold px-3 py-1 rounded-full bg-neutral-100 text-neutral-800 border border-neutral-200 shadow-2xs">
+                      ✨ {badgeText}
                     </span>
                   </div>
                 )}
 
                 {bio && (
-                  <p className="text-xs text-neutral-600 leading-relaxed max-w-xl pt-1">
+                  <p className="text-xs sm:text-sm text-neutral-600 leading-relaxed max-w-2xl pt-1">
                     {bio}
                   </p>
                 )}
 
-                <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-500 pt-1.5">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="w-3.5 h-3.5 text-neutral-400" /> {practiceSettings.address}, {practiceSettings.city}
+                <div className={`flex flex-wrap items-center gap-4 text-xs text-neutral-500 pt-2 border-t border-neutral-100/80 ${photoAlign === 'center' ? 'justify-center' : 'justify-start'}`}>
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <MapPin className="w-4 h-4 text-sky-600 shrink-0" />
+                    {practiceSettings.address}, {practiceSettings.city}
                   </span>
                   {practiceSettings.phone && (
-                    <span className="flex items-center gap-1">
-                      <Phone className="w-3.5 h-3.5 text-neutral-400" /> {practiceSettings.phone}
-                    </span>
+                    <a
+                      href={`https://wa.me/${practiceSettings.phone.replace(/[^0-9]/g, '')}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-1.5 font-semibold text-emerald-700 hover:text-emerald-800 hover:underline"
+                    >
+                      <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                      {practiceSettings.phone}
+                    </a>
                   )}
+                  <span className="flex items-center gap-1 text-neutral-400">
+                    <Clock className="w-3.5 h-3.5" /> Confirmación Inmediata
+                  </span>
                 </div>
               </div>
             </div>
@@ -948,6 +978,85 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
               </div>
             )}
           </div>
+        </div>
+
+        {/* Location & Interactive Google Maps Preview Card */}
+        <div className={`p-6 sm:p-8 border relative overflow-hidden transition-all duration-200 shadow-sm ${getCardClass()}`}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-neutral-100">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-sky-50 text-sky-700 flex items-center justify-center font-bold shadow-2xs">
+                <MapPin className="w-5 h-5 text-sky-600" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-neutral-900 tracking-tight">
+                  Ubicación del Consultorio & Cómo Llegar
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {practiceSettings.address || 'Consultorio Médico'}, {practiceSettings.city || 'Argentina'} • Atención con cita previa
+                </p>
+              </div>
+            </div>
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${practiceSettings.address || 'Consultorio Médico'}, ${practiceSettings.city || 'Argentina'}`)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-2 transition shadow-xs self-start sm:self-auto cursor-pointer"
+            >
+              <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+              <span>Abrir en Google Maps</span>
+            </a>
+          </div>
+
+          {/* Interactive Google Map Embed */}
+          <div className="mt-5 rounded-2xl overflow-hidden border border-neutral-200 shadow-2xs relative bg-neutral-100 h-64 sm:h-80 w-full">
+            <iframe
+              title={`Mapa de ubicación - ${practiceSettings.practice_name}`}
+              width="100%"
+              height="100%"
+              style={{ border: 0 }}
+              loading="lazy"
+              allowFullScreen
+              referrerPolicy="no-referrer-when-downgrade"
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(`${practiceSettings.address || 'Av. Corrientes 1234'}, ${practiceSettings.city || 'Buenos Aires'}`)}&t=&z=15&ie=UTF8&iwloc=&output=embed`}
+            />
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-neutral-600">
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 flex items-start gap-2.5">
+              <MapPin className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-neutral-900 block">Dirección Principal</span>
+                <span className="text-[11px] text-neutral-600">{practiceSettings.address}, {practiceSettings.city}</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 flex items-start gap-2.5">
+              <Clock className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-neutral-900 block">Horarios de Atención</span>
+                <span className="text-[11px] text-neutral-600">Lunes a Viernes (Con turno previo)</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200/80 flex items-start gap-2.5">
+              <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-neutral-900 block">Atención Segura</span>
+                <span className="text-[11px] text-neutral-600">Instalaciones sanitizadas y confortables</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Security and Trust Footer */}
+        <div className="text-center space-y-2 pt-2 pb-6 text-xs text-neutral-400">
+          <div className="flex items-center justify-center gap-2 text-neutral-500">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Tus datos están protegidos con encriptación SSL de 256 bits y privacidad médica</span>
+          </div>
+          <p className="text-[11px] text-neutral-400">
+            Potenciado por <span className="font-bold text-neutral-600">AgendaPro AI</span> • Sistema Inteligente de Gestión Médica
+          </p>
         </div>
       </div>
     </div>

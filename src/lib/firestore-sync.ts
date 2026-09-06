@@ -77,6 +77,33 @@ export const COLLECTIONS = {
 };
 
 /**
+ * Recursively strips undefined keys and normalizes values so Firestore setDoc / updateDoc never encounters unsupported 'undefined' fields.
+ */
+export function cleanObjectForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as any;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => cleanObjectForFirestore(item)) as any;
+  }
+  if (typeof data === 'object') {
+    if (data instanceof Date) {
+      return data.toISOString() as any;
+    }
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanObjectForFirestore(value);
+      }
+    }
+    return cleaned;
+  }
+  return data;
+}
+
+/**
  * Save or update a SaaS user profile in Firestore
  */
 export const saveUserToFirestore = async (user: Partial<SaasTenantUser> & { id: string }): Promise<boolean> => {
@@ -85,19 +112,17 @@ export const saveUserToFirestore = async (user: Partial<SaasTenantUser> & { id: 
     const emailLower = (user.email || '').toLowerCase();
     const isSuper = emailLower === 'gonzalocorat@gmail.com';
 
-    await setDoc(
-      docRef,
-      {
-        ...user,
-        amount_monthly_ars: isSuper ? 0 : (user.amount_monthly_ars || 0),
-        last_payment_amount: isSuper ? 0 : (user.last_payment_amount || 0),
-        total_paid_ars: isSuper ? 0 : (user.total_paid_ars || 0),
-        is_permanent: isSuper ? true : (user.is_permanent ?? false),
-        status: isSuper ? 'active' : (user.status || 'trial'),
-        last_active_at: new Date().toISOString()
-      },
-      { merge: true }
-    );
+    const payload = cleanObjectForFirestore({
+      ...user,
+      amount_monthly_ars: isSuper ? 0 : (user.amount_monthly_ars || 0),
+      last_payment_amount: isSuper ? 0 : (user.last_payment_amount || 0),
+      total_paid_ars: isSuper ? 0 : (user.total_paid_ars || 0),
+      is_permanent: isSuper ? true : (user.is_permanent ?? false),
+      status: isSuper ? 'active' : (user.status || 'trial'),
+      last_active_at: new Date().toISOString()
+    });
+
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving user to Firestore:', error);
@@ -184,7 +209,8 @@ export const subscribeToUsers = (
 export const updateUserInFirestore = async (userId: string, updates: Partial<SaasTenantUser>): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.USERS, userId);
-    await updateDoc(docRef, updates);
+    const payload = cleanObjectForFirestore(updates);
+    await updateDoc(docRef, payload);
     return true;
   } catch (error) {
     console.error('Error updating user in Firestore:', error);
@@ -245,7 +271,8 @@ export const cleanupDuplicateUsers = async (): Promise<void> => {
 export const saveAppointmentToFirestore = async (appointment: Appointment): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.APPOINTMENTS, appointment.id);
-    await setDoc(docRef, appointment, { merge: true });
+    const payload = cleanObjectForFirestore(appointment);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving appointment to Firestore:', error);
@@ -273,7 +300,8 @@ export const deleteAppointmentFromFirestore = async (appointmentId: string): Pro
 export const savePatientToFirestore = async (patient: Patient): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.PATIENTS, patient.id);
-    await setDoc(docRef, patient, { merge: true });
+    const payload = cleanObjectForFirestore(patient);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving patient to Firestore:', error);
@@ -301,7 +329,8 @@ export const deletePatientFromFirestore = async (patientId: string): Promise<boo
 export const saveServiceToFirestore = async (service: Service): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SERVICES, service.id);
-    await setDoc(docRef, service, { merge: true });
+    const payload = cleanObjectForFirestore(service);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving service to Firestore:', error);
@@ -329,10 +358,25 @@ export const deleteServiceFromFirestore = async (serviceId: string): Promise<boo
 export const saveConsultationToFirestore = async (consultation: ConsultationRecord): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.CONSULTATIONS, consultation.id);
-    await setDoc(docRef, consultation, { merge: true });
+    const payload = cleanObjectForFirestore(consultation);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving consultation to Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete a consultation from Firestore
+ */
+export const deleteConsultationFromFirestore = async (consultationId: string): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.CONSULTATIONS, consultationId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error('Error deleting consultation from Firestore:', error);
     return false;
   }
 };
@@ -343,10 +387,25 @@ export const saveConsultationToFirestore = async (consultation: ConsultationReco
 export const savePaymentToFirestore = async (payment: PaymentRecord): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.PAYMENTS, payment.id);
-    await setDoc(docRef, payment, { merge: true });
+    const payload = cleanObjectForFirestore(payment);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving payment to Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete a payment from Firestore
+ */
+export const deletePaymentFromFirestore = async (paymentId: string): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.PAYMENTS, paymentId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error('Error deleting payment from Firestore:', error);
     return false;
   }
 };
@@ -357,7 +416,8 @@ export const savePaymentToFirestore = async (payment: PaymentRecord): Promise<bo
 export const saveSettingsToFirestore = async (settings: PracticeSettings): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SETTINGS, 'practice_config');
-    await setDoc(docRef, settings, { merge: true });
+    const payload = cleanObjectForFirestore(settings);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving settings to Firestore:', error);
@@ -371,10 +431,25 @@ export const saveSettingsToFirestore = async (settings: PracticeSettings): Promi
 export const saveWaitlistToFirestore = async (entry: WaitlistEntry): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.WAITLIST, entry.id);
-    await setDoc(docRef, entry, { merge: true });
+    const payload = cleanObjectForFirestore(entry);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving waitlist to Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete waitlist entry from Firestore
+ */
+export const deleteWaitlistFromFirestore = async (entryId: string): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.WAITLIST, entryId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error('Error deleting waitlist entry from Firestore:', error);
     return false;
   }
 };
@@ -531,3 +606,76 @@ export const subscribeToSettings = (
     (err) => console.warn('Firestore settings listener notice:', err)
   );
 };
+
+/**
+ * Subscribe to real-time payments from Firestore
+ */
+export const subscribeToPayments = (
+  onData: (payments: PaymentRecord[]) => void,
+  onError?: (err: Error) => void
+) => {
+  const colRef = collection(db, COLLECTIONS.PAYMENTS);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: PaymentRecord[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...(d.data() as any) } as PaymentRecord);
+      });
+      onData(items);
+    },
+    (err) => {
+      console.warn('Firestore payments listener notice:', err);
+      if (onError) onError(err);
+    }
+  );
+};
+
+/**
+ * Subscribe to real-time consultations from Firestore
+ */
+export const subscribeToConsultations = (
+  onData: (consultations: ConsultationRecord[]) => void,
+  onError?: (err: Error) => void
+) => {
+  const colRef = collection(db, COLLECTIONS.CONSULTATIONS);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: ConsultationRecord[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...(d.data() as any) } as ConsultationRecord);
+      });
+      onData(items);
+    },
+    (err) => {
+      console.warn('Firestore consultations listener notice:', err);
+      if (onError) onError(err);
+    }
+  );
+};
+
+/**
+ * Subscribe to real-time waitlist from Firestore
+ */
+export const subscribeToWaitlist = (
+  onData: (entries: WaitlistEntry[]) => void,
+  onError?: (err: Error) => void
+) => {
+  const colRef = collection(db, COLLECTIONS.WAITLIST);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: WaitlistEntry[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...(d.data() as any) } as WaitlistEntry);
+      });
+      onData(items);
+    },
+    (err) => {
+      console.warn('Firestore waitlist listener notice:', err);
+      if (onError) onError(err);
+    }
+  );
+};
+

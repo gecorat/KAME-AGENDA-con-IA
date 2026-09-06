@@ -70,6 +70,9 @@ import {
   subscribeToPatients,
   subscribeToServices,
   subscribeToSettings,
+  subscribeToPayments,
+  subscribeToConsultations,
+  subscribeToWaitlist,
   auth,
   googleProvider,
   signInWithPopup,
@@ -623,7 +626,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         status: isSuper ? 'active' : 'trial',
         subscription_started_at: new Date().toISOString(),
         next_billing_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
-        amount_monthly_ars: 34000,
+        amount_monthly_ars: 49000,
         payment_method: 'mercadopago',
         last_payment_date: '-',
         last_payment_amount: 0,
@@ -807,7 +810,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       trial_active: false,
       is_permanent: isPermanent,
       access_expires_at: expiresAt,
-      amount_monthly_ars: plan === 'pro' ? 34000 : 19000,
+      amount_monthly_ars: plan === 'pro' ? 49000 : 29000,
       next_billing_date: nextBilling
     };
 
@@ -1046,10 +1049,58 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    const unsubServices = subscribeToServices((remoteServices) => {
+      if (remoteServices && remoteServices.length > 0) {
+        setServices(prev => {
+          const map = new Map<string, Service>();
+          prev.forEach(s => map.set(s.id, s));
+          remoteServices.forEach(s => map.set(s.id, s));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubPayments = subscribeToPayments((remotePayments) => {
+      if (remotePayments && remotePayments.length > 0) {
+        setPayments(prev => {
+          const map = new Map<string, PaymentRecord>();
+          prev.forEach(p => map.set(p.id, p));
+          remotePayments.forEach(p => map.set(p.id, p));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubWaitlist = subscribeToWaitlist((remoteWaitlist) => {
+      if (remoteWaitlist && remoteWaitlist.length > 0) {
+        setWaitlist(prev => {
+          const map = new Map<string, WaitlistEntry>();
+          prev.forEach(w => map.set(w.id, w));
+          remoteWaitlist.forEach(w => map.set(w.id, w));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    const unsubConsultations = subscribeToConsultations((remoteConsultations) => {
+      if (remoteConsultations && remoteConsultations.length > 0) {
+        setConsultations(prev => {
+          const map = new Map<string, ConsultationRecord>();
+          prev.forEach(c => map.set(c.id, c));
+          remoteConsultations.forEach(c => map.set(c.id, c));
+          return Array.from(map.values());
+        });
+      }
+    });
+
     return () => {
       unsubAppointments();
       unsubPatients();
       unsubSettings();
+      unsubServices();
+      unsubPayments();
+      unsubWaitlist();
+      unsubConsultations();
     };
   }, []);
 
@@ -1731,11 +1782,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           setCashMovements(curr => [voidMov, ...curr]);
         }
 
-        return {
+        const updatedPayment: PaymentRecord = {
           ...p,
           status: 'voided',
           notes: `${p.notes || ''} [Anulado: ${reason || 'Sin motivo especificado'}]`.trim()
         };
+        savePaymentToFirestore(updatedPayment);
+        return updatedPayment;
       }
       return p;
     }));

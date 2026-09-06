@@ -20,6 +20,7 @@ import { WhatsAppChatsView } from './views/WhatsAppChatsView';
 import { OnboardingGuideView } from './views/OnboardingGuideView';
 import { PublicPageEditorView } from './views/PublicPageEditorView';
 import { SuperAdminAnalyticsView } from './views/SuperAdminAnalyticsView';
+import { SuperAdminApisView } from './views/SuperAdminApisView';
 import { LandingPageView } from './views/LandingPageView';
 import { AuthModal } from './components/AuthModal';
 import { ProFeatureGate } from './components/ProFeatureGate';
@@ -54,7 +55,7 @@ function MainApp() {
   const VALID_TABS = [
     'guia', 'dashboard', 'agenda', 'pacientes', 'consultas', 'chats', 'asistente',
     'espera', 'recordatorios', 'cobros', 'servicios', 'horarios', 'metricas',
-    'suscripcion', 'google-sync', 'editor-pagina', 'configuracion', 'superadmin-analytics'
+    'suscripcion', 'google-sync', 'editor-pagina', 'configuracion', 'superadmin-analytics', 'superadmin-apis'
   ];
 
   const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
@@ -80,8 +81,8 @@ function MainApp() {
   };
 
   const handleSelectTab = (tab: string) => {
-    // Superadmin tab is strictly protected
-    if (tab === 'superadmin-analytics' && !isSuperAdmin) {
+    // Superadmin tabs are strictly protected
+    if ((tab === 'superadmin-analytics' || tab === 'superadmin-apis') && !isSuperAdmin) {
       tab = 'dashboard';
     }
 
@@ -116,7 +117,7 @@ function MainApp() {
 
   const handleAuthSuccess = () => {
     const destination = pendingProtectedTab || 'dashboard';
-    const finalDest = (destination === 'superadmin-analytics' && !isSuperAdmin) ? 'dashboard' : destination;
+    const finalDest = ((destination === 'superadmin-analytics' || destination === 'superadmin-apis') && !isSuperAdmin) ? 'dashboard' : destination;
     setPendingProtectedTab(null);
     setTabHistory(prev => [...prev, finalDest]);
     setActiveTab(finalDest);
@@ -555,7 +556,34 @@ function MainApp() {
             <button
               type="button"
               onClick={() => handleSelectTab('dashboard')}
-              className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2"
+              className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Volver a Mi Panel Principal</span>
+            </button>
+          </div>
+        )
+      )}
+
+      {/* Role-Protected: Super Admin APIs & Webhooks (Gonzalo) */}
+      {activeTab === 'superadmin-apis' && (
+        isSuperAdmin ? (
+          <SuperAdminApisView />
+        ) : (
+          <div className="max-w-xl mx-auto py-16 px-4 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4 border border-amber-200">
+              <ShieldAlert className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl font-bold text-neutral-900 mb-2">
+              Acceso Restringido a Super Administrador
+            </h3>
+            <p className="text-xs sm:text-sm text-neutral-600 mb-6 leading-relaxed">
+              Esta sección de credenciales maestras y webhooks está reservada para el administrador de la plataforma.
+            </p>
+            <button
+              type="button"
+              onClick={() => handleSelectTab('dashboard')}
+              className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-xl inline-flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
               <span>Volver a Mi Panel Principal</span>

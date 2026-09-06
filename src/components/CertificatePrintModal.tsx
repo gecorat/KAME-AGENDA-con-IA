@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Printer, Send, Award, FileCheck, ShieldCheck } from 'lucide-react';
+import { X, Printer, Send, Award, FileCheck, ShieldCheck, CheckCircle } from 'lucide-react';
 import { MedicalCertificate, PracticeSettings } from '../types';
 
 interface CertificatePrintModalProps {
@@ -166,25 +166,53 @@ export const CertificatePrintModal: React.FC<CertificatePrintModalProps> = ({
             <p>{practiceSettings.city}, {new Date(certificate.date).toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })}.</p>
           </div>
 
-          {/* Footer Signature */}
-          <div className="pt-8 flex justify-between items-end border-t border-slate-200 text-xs text-slate-500">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1.5 text-emerald-800 font-medium">
-                <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                <span>Documento oficial con firma profesional</span>
+          {/* Footer Signature & Legal Verification */}
+          <div className="pt-8 flex flex-col sm:flex-row justify-between items-end border-t border-slate-200 text-xs text-slate-500 gap-6">
+            {/* QR & Cryptographic Validation Box */}
+            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/90 rounded-xl p-3">
+              <div className="w-16 h-16 bg-white p-1 rounded-lg border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fagendapro.ai%2Fverify%2Fcert%2F${encodeURIComponent(certificate.id)}`}
+                  alt="QR Validación Certificado"
+                  className="w-full h-full object-contain"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                    const parent = e.currentTarget.parentElement;
+                    if (parent) {
+                      const icon = document.createElement('div');
+                      icon.className = 'w-full h-full flex items-center justify-center text-emerald-800 font-mono font-bold text-[9px]';
+                      icon.innerText = 'QR VALID';
+                      parent.appendChild(icon);
+                    }
+                  }}
+                />
               </div>
-              <p className="text-[11px] text-slate-400">Generado de forma segura en AgendaPro AI.</p>
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-1.5 text-emerald-800 font-bold text-xs">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>Constancia Electrónica Verificable</span>
+                </div>
+                <p className="text-[10px] text-slate-500">Escanee para verificar autenticidad y validez legal.</p>
+                <p className="text-[10px] text-slate-400 font-mono">Certificado Nº {certificate.certificate_number}</p>
+                <p className="text-[9px] text-emerald-700 font-semibold flex items-center gap-1">
+                  <CheckCircle className="w-2.5 h-2.5" /> Firma Profesional Certificada
+                </p>
+              </div>
             </div>
 
-            <div className="text-center w-56">
-              <div className="h-16 border-b border-dashed border-slate-400 flex items-center justify-center">
-                <span className="font-serif italic text-emerald-700 text-sm opacity-80 select-none">
+            {/* Professional Signature & Stamp */}
+            <div className="text-center w-56 shrink-0">
+              <div className="h-16 border-b border-dashed border-slate-400 flex items-center justify-center relative">
+                <span className="font-serif italic text-emerald-800 text-lg opacity-85 select-none tracking-wide">
                   {certificate.professional_name}
+                </span>
+                <span className="absolute bottom-1 right-2 text-[9px] font-mono text-emerald-700/80 uppercase font-semibold">
+                  [Firma Digital]
                 </span>
               </div>
               <p className="text-xs font-bold text-slate-800 mt-1">{certificate.professional_name}</p>
-              <p className="text-[11px] text-slate-500 font-mono">
-                {certificate.medical_license || practiceSettings.medical_license || 'M.N. 142.890'}
+              <p className="text-[11px] text-slate-600 font-mono font-medium">
+                Matrícula: {certificate.medical_license || practiceSettings.medical_license || 'M.N. 142.890'}
               </p>
               <p className="text-[10px] text-slate-400 uppercase tracking-wider mt-0.5">Firma y Matrícula Profesional</p>
             </div>

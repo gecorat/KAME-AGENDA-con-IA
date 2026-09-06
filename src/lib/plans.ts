@@ -85,7 +85,7 @@ export const PLAN_COMPARISON_MATRIX: PlanComparisonRow[] = [
     category: 'WhatsApp & Automatización',
     feature: 'Recordatorios por WhatsApp',
     basic: 'Manual con 1 clic',
-    pro: 'Automáticos programados (48h y 24h)',
+    pro: 'Automáticos programados (24h y 2h)',
     highlight: true
   },
   {

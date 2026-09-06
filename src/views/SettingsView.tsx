@@ -20,7 +20,6 @@ import {
 import { useAgendaStore } from '../lib/store';
 import { PracticeSettings } from '../types';
 import { PatientDepositSettings } from '../components/settings/PatientDepositSettings';
-import { SuperAdminApiSettings } from '../components/settings/SuperAdminApiSettings';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
 
@@ -36,7 +35,7 @@ export const SettingsView: React.FC = () => {
   const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
   const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'required-fields' | 'notifications' | 'deposits' | 'apis' | 'workspace'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'required-fields' | 'notifications' | 'deposits' | 'workspace'>('general');
   const [savedNotice, setSavedNotice] = useState(false);
 
   const handleChange = (field: keyof PracticeSettings, value: any) => {
@@ -54,9 +53,7 @@ export const SettingsView: React.FC = () => {
     if (!isGonzalo) return;
     if (isSuperAdmin) {
       switchUserRole('professional');
-      if (activeTab === 'apis') {
-        setActiveTab('general');
-      }
+      setActiveTab('general');
     } else {
       switchUserRole('superadmin');
     }
@@ -176,25 +173,6 @@ export const SettingsView: React.FC = () => {
             Alias / MP
           </span>
         </button>
-
-        {/* RESTRICTED: APIs Tab ONLY for Super Admin gonzalocorat@gmail.com */}
-        {isSuperAdmin && (
-          <button
-            type="button"
-            onClick={() => setActiveTab('apis')}
-            className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
-              activeTab === 'apis'
-                ? 'bg-neutral-900 text-white shadow-2xs font-semibold'
-                : 'text-neutral-700 hover:text-neutral-900'
-            }`}
-          >
-            <Key className="w-3.5 h-3.5 text-amber-400" />
-            <span>Super Admin: APIs SaaS</span>
-            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-400 text-neutral-950 font-mono">
-              Admin
-            </span>
-          </button>
-        )}
 
         <button
           type="button"
@@ -421,11 +399,6 @@ export const SettingsView: React.FC = () => {
         {/* TAB 2: PATIENT DEPOSIT SETTINGS (ALIAS / CBU & MERCADO PAGO CONNECT) */}
         {activeTab === 'deposits' && (
           <PatientDepositSettings formData={formData} onChange={handleChange} />
-        )}
-
-        {/* TAB 3: SUPER ADMIN INFRASTRUCTURE (RESTRICTED TO GONZALO) */}
-        {activeTab === 'apis' && isSuperAdmin && (
-          <SuperAdminApiSettings formData={formData} onChange={handleChange} />
         )}
 
         {/* TAB 4: GOOGLE WORKSPACE */}

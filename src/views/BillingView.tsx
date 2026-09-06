@@ -192,27 +192,27 @@ export const BillingView: React.FC = () => {
           {cashRegister.status === 'open' ? (
             <button
               onClick={() => setCashModalMode('close_box')}
-              className="px-3.5 py-2 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
+              className="px-3 py-1.5 text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
             >
-              <Lock className="w-3.5 h-3.5 text-amber-700" />
-              Arqueo & Cierre de Caja
+              <Lock className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+              <span>Arqueo & Cierre</span>
             </button>
           ) : (
             <button
               onClick={() => setCashModalMode('open_box')}
-              className="px-3.5 py-2 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
+              className="px-3 py-1.5 text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
             >
-              <Unlock className="w-3.5 h-3.5 text-emerald-700" />
-              Abrir Caja Diaria
+              <Unlock className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+              <span>Abrir Caja</span>
             </button>
           )}
 
           <button
             onClick={() => setCashModalMode('add_movement')}
-            className="px-3.5 py-2 text-xs font-semibold bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-xl transition-colors flex items-center gap-1.5 shadow-2xs"
+            className="px-3 py-1.5 text-xs font-semibold bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
           >
-            <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500" />
-            Movimiento de Caja
+            <ArrowUpRight className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+            <span>Movimiento</span>
           </button>
 
           <button
@@ -220,10 +220,10 @@ export const BillingView: React.FC = () => {
               setPreselectedAppointment(null);
               setIsNewPaymentModalOpen(true);
             }}
-            className="px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-colors flex items-center gap-1.5 shadow-xs"
+            className="px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors flex items-center gap-1.5 shadow-xs whitespace-nowrap"
           >
-            <Plus className="w-4 h-4" />
-            Registrar Cobro
+            <Plus className="w-4 h-4 shrink-0" />
+            <span>Registrar Cobro</span>
           </button>
         </div>
       </div>

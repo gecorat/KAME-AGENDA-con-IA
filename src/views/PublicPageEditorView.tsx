@@ -231,135 +231,95 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12">
+    <div className="space-y-4 max-w-7xl mx-auto pb-12">
       {/* Top Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="p-2 rounded-xl bg-neutral-900 text-white">
-              <Palette className="w-5 h-5" />
-            </span>
-            <div>
-              <h1 className="text-xl font-bold text-neutral-900 tracking-tight">
-                Editor de Página Pública & Portal
-              </h1>
-              <p className="text-xs text-neutral-500">
-                Personaliza la estética, foto de perfil, bordes y modelo de diseño que verán tus pacientes al reservar.
-              </p>
-            </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white px-5 py-3.5 rounded-xl border border-neutral-200 shadow-2xs">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <span className="p-1.5 rounded-lg bg-neutral-900 text-white shrink-0">
+            <Palette className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-base font-bold text-neutral-900 tracking-tight leading-snug truncate">
+              Editor de Página Pública & Portal
+            </h1>
+            <p className="text-[11px] text-neutral-500 truncate hidden sm:block">
+              Diseño, foto de perfil, bordes y modelo visual de tus turnos online.
+            </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap shrink-0">
           <button
             type="button"
             onClick={handleShare}
-            className="px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-2xs"
-            title="Compartir enlace de reservas por WhatsApp, correo o redes"
+            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs whitespace-nowrap"
+            title="Compartir enlace de reservas"
           >
-            <Share2 className="w-4 h-4 text-emerald-600" />
+            <Share2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
             <span>Compartir</span>
           </button>
 
           <button
+            type="button"
             onClick={copyPublicLink}
-            className="px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1.5"
+            className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1 whitespace-nowrap"
             title="Copiar enlace de reserva"
           >
-            {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-neutral-500" />}
-            <span>{copiedLink ? '¡Enlace copiado!' : 'Copiar Enlace'}</span>
+            {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> : <Copy className="w-3.5 h-3.5 text-neutral-500 shrink-0" />}
+            <span>{copiedLink ? '¡Copiado!' : 'Copiar'}</span>
           </button>
 
           {onNavigateToTab && (
             <button
+              type="button"
               onClick={() => {
                 handleSave();
                 onNavigateToTab('portal');
               }}
-              className="px-3 py-2 text-xs font-semibold rounded-xl border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1.5"
+              className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-neutral-200 hover:bg-neutral-50 text-neutral-700 transition flex items-center gap-1 whitespace-nowrap"
+              title="Ver cómo ven los pacientes"
             >
-              <Eye className="w-4 h-4 text-neutral-500" />
-              <span>Ver Pantalla Completa</span>
+              <Eye className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+              <span>Ver Portal</span>
             </button>
           )}
 
           <button
+            type="button"
             onClick={handleSave}
-            className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+            className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-bold rounded-lg shadow-2xs transition flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
           >
             {saveSuccess ? (
               <>
-                <CheckCircle className="w-4 h-4 text-emerald-400" />
-                <span>¡Diseño Guardado!</span>
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>¡Guardado!</span>
               </>
             ) : (
               <>
-                <Save className="w-4 h-4" />
-                <span>Guardar Cambios</span>
+                <Save className="w-3.5 h-3.5 shrink-0" />
+                <span>Guardar</span>
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* Featured Unique Public Link Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-sky-950 to-slate-900 text-white rounded-2xl p-6 border border-sky-800/80 shadow-md space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/20 text-sky-300 border border-sky-400/30 flex items-center gap-1">
-                <Globe className="w-3 h-3" />
-                Enlace Público Único de Reservas
-              </span>
-              <span className="text-xs text-slate-300 hidden sm:inline">Tus pacientes ingresan directamente a este link para agendar turnos</span>
-            </div>
-            <h3 className="text-base sm:text-lg font-bold text-white">
-              Personaliza tu URL pública oficial
-            </h3>
+      {/* Compact URL Customization Top Bar */}
+      <div className="bg-slate-900 text-white rounded-xl px-4 py-2.5 border border-slate-800 shadow-2xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+          {/* Title & Status */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="p-1 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20">
+              <Globe className="w-3.5 h-3.5" />
+            </span>
+            <span className="text-xs font-bold text-white whitespace-nowrap">
+              Personaliza tu URL:
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              type="button"
-              onClick={handleShare}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-              title="Compartir link por WhatsApp, correo o redes sociales"
-            >
-              <Share2 className="w-4 h-4 text-emerald-100" />
-              <span>Compartir</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={copyPublicLink}
-              className="px-3.5 py-2 bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-            >
-              {copiedLink ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
-              <span>{copiedLink ? '¡Enlace copiado!' : 'Copiar Enlace'}</span>
-            </button>
-
-            <a
-              href={`/u/${cleanHandle}`}
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition flex items-center gap-1.5 border border-slate-700"
-            >
-              <ExternalLink className="w-4 h-4 text-sky-400" />
-              <span>Abrir Página Pública</span>
-            </a>
-          </div>
-        </div>
-
-        {/* Interactive URL Form Field with Lock & Edit Protection */}
-        <div className="bg-slate-950/80 border border-slate-700/80 rounded-xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-          <div
-            className={`flex-1 flex items-center rounded-lg px-3 py-2 font-mono text-xs sm:text-sm transition-all ${
-              isEditingHandle
-                ? 'bg-slate-900 border-2 border-sky-500 text-white ring-2 ring-sky-500/20'
-                : 'bg-slate-900/90 border border-slate-700/90 text-slate-300'
-            }`}
-          >
-            <span className="text-slate-500 select-none shrink-0">https://agendapro.ai/u/</span>
+          {/* Compact Input & Lock Bar */}
+          <div className="flex-1 flex items-center min-w-0 max-w-2xl bg-slate-950/80 border border-slate-700/70 rounded-lg px-2.5 py-1 font-mono text-xs">
+            <span className="text-slate-500 select-none shrink-0 text-[11px]">https://agendapro.ai/u/</span>
             <input
               type="text"
               value={handleInput}
@@ -370,79 +330,101 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
                 setHandleInput(val);
               }}
               placeholder="consultorio-medico"
-              className={`bg-transparent font-bold flex-1 ml-0.5 min-w-0 transition-colors ${
+              className={`bg-transparent font-bold flex-1 ml-0.5 min-w-0 text-xs transition-colors ${
                 isEditingHandle
-                  ? 'text-sky-300 focus:outline-none'
+                  ? 'text-sky-300 focus:outline-hidden'
                   : 'text-slate-300 cursor-not-allowed select-all'
               }`}
             />
 
-            {/* Lock / Protected Status indicator */}
             {!isEditingHandle ? (
               <span
-                className="shrink-0 ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-slate-800/90 text-emerald-400 border border-slate-700 select-none"
-                title="Este enlace está guardado y protegido contra sobreescrituras accidentales"
+                className="shrink-0 ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-slate-800 text-emerald-400 border border-slate-700 select-none whitespace-nowrap"
+                title="Protegido contra cambios accidentales"
               >
-                <Lock className="w-3 h-3 text-emerald-400" />
-                <span>Bloqueado</span>
+                <Lock className="w-2.5 h-2.5 text-emerald-400" />
+                <span className="hidden sm:inline">Protegido</span>
               </span>
             ) : (
               <span
-                className="shrink-0 ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-sans font-semibold bg-sky-950 text-sky-300 border border-sky-700/60 select-none"
-                title="Modo edición activo. Modifica el nombre y haz clic en Guardar Link"
+                className="shrink-0 ml-1.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-sans font-semibold bg-sky-950 text-sky-300 border border-sky-700/60 select-none whitespace-nowrap"
               >
-                <Pencil className="w-3 h-3 text-sky-400" />
+                <Pencil className="w-2.5 h-2.5 text-sky-400" />
                 <span>Editando</span>
               </span>
             )}
           </div>
 
-          {/* Action Buttons: Unlock with Pencil OR Save / Cancel */}
-          {!isEditingHandle ? (
+          {/* Action Buttons: Minimal & Compact Icons */}
+          <div className="flex items-center gap-1.5 shrink-0 self-end md:self-auto">
+            {!isEditingHandle ? (
+              <button
+                type="button"
+                onClick={() => setIsEditingHandle(true)}
+                className="p-1.5 sm:px-2.5 sm:py-1 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white text-xs font-semibold rounded-md transition flex items-center gap-1 border border-slate-700 cursor-pointer whitespace-nowrap"
+                title="Editar enlace"
+              >
+                <Pencil className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span className="hidden sm:inline text-[11px]">Editar</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleSaveHandle}
+                  className="px-2 py-1 bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold rounded-md transition flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                >
+                  <Check className="w-3 h-3 shrink-0" />
+                  <span className="text-[11px]">{handleSavedToast ? '¡Guardado!' : 'Guardar'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelEditHandle}
+                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-md transition border border-slate-700 text-[11px] cursor-pointer whitespace-nowrap"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={() => setIsEditingHandle(true)}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-sky-300 hover:text-white text-xs font-semibold rounded-lg transition shrink-0 flex items-center justify-center gap-1.5 border border-slate-700 active:scale-95 cursor-pointer shadow-xs"
-              title="Haz clic para desbloquear y editar el enlace único"
+              onClick={copyPublicLink}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-md transition border border-slate-700 cursor-pointer"
+              title="Copiar URL pública"
             >
-              <Pencil className="w-3.5 h-3.5 text-sky-400" />
-              <span>Editar link</span>
+              {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
-          ) : (
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={handleSaveHandle}
-                className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
-              >
-                <Check className="w-4 h-4" />
-                <span>{handleSavedToast ? '¡Guardado!' : 'Guardar Link'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleCancelEditHandle}
-                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-lg transition border border-slate-700/80 cursor-pointer"
-              >
-                Cancelar
-              </button>
-            </div>
-          )}
+
+            <button
+              type="button"
+              onClick={handleShare}
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 rounded-md transition border border-slate-700 cursor-pointer"
+              title="Compartir link"
+            >
+              <Share2 className="w-3.5 h-3.5" />
+            </button>
+
+            <a
+              href={`/u/${cleanHandle}`}
+              target="_blank"
+              rel="noreferrer"
+              className="p-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 hover:text-sky-300 rounded-md transition border border-slate-700 inline-flex items-center"
+              title="Abrir página pública en pestaña nueva"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
         </div>
 
-        {/* Quick Suggestions Chips (Purely Informational Suggestions, NOT Clickable to overwrite) */}
-        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-400 pt-1">
-          <span className="text-[11px] font-medium text-slate-400">
-            Formatos de referencia sugeridos (solo de ejemplo, no modifican tu link):
+        {/* Discreet Subtitle Note with Suggestions */}
+        <div className="mt-1.5 pt-1.5 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] text-slate-400">
+          <span className="font-mono truncate">
+            Sugerencias: <span className="text-slate-500">consultorio-medico, dr-gonzalez, clinica-dental, odontologia-integral</span>
           </span>
-          {['consultorio-medico', 'dr-gonzalez', 'odontologia-integral', 'clinica-dental', 'salud-bienestar'].map(slug => (
-            <span
-              key={slug}
-              className="px-2.5 py-1 rounded-md bg-slate-800/80 text-slate-300 border border-slate-700/80 text-[11px] font-mono select-none cursor-default"
-              title="Formato de ejemplo recomendado"
-            >
-              {slug}
-            </span>
-          ))}
+          <span className="text-slate-500 hidden md:inline shrink-0">
+            Tus pacientes acceden a esta dirección para reservar.
+          </span>
         </div>
       </div>
 
@@ -860,12 +842,10 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
                         : 'items-start text-left'
                     }`}
                   >
-                    {/* Profile Photo */}
+                    {/* Profile Photo - Enlarged in Simulator */}
                     <div className="relative">
-                      <img
-                        src={photoUrl}
-                        alt="Foto Profesional"
-                        className={`w-16 h-16 object-cover border-2 shadow-xs ${
+                      <div
+                        className={`w-20 h-20 sm:w-24 sm:h-24 object-cover p-1 bg-white border-2 shadow-md ${
                           photoShape === 'square'
                             ? 'rounded-none'
                             : photoShape === 'rounded-smooth'
@@ -873,8 +853,21 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
                             : 'rounded-full'
                         }`}
                         style={{ borderColor: customAccent }}
-                      />
-                      <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white" />
+                      >
+                        <img
+                          src={photoUrl}
+                          alt="Foto Profesional"
+                          className={`w-full h-full object-cover ${
+                            photoShape === 'square'
+                              ? 'rounded-none'
+                              : photoShape === 'rounded-smooth'
+                              ? 'rounded-xl'
+                              : 'rounded-full'
+                          }`}
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                      <span className="absolute bottom-1 right-1 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white shadow-xs" />
                     </div>
 
                     {/* Titles */}
@@ -970,6 +963,42 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
                     <span>Continuar a Selección de Fecha & Hora</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
+                </div>
+
+                {/* Simulated Location & Map Card */}
+                <div
+                  className={`p-4 mt-3 transition-all duration-200 border shadow-xs space-y-2.5 ${
+                    currentThemeObj.cardClass
+                  } ${
+                    cardBorderStyle === 'square'
+                      ? 'rounded-lg'
+                      : cardBorderStyle === 'rounded-smooth'
+                      ? 'rounded-2xl'
+                      : 'rounded-3xl'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5 text-sky-600" />
+                      <span className="text-xs font-bold text-neutral-900">Ubicación & Consultorio</span>
+                    </div>
+                    <span className="text-[10px] text-neutral-500 font-medium">Google Maps</span>
+                  </div>
+
+                  <div className="rounded-xl overflow-hidden border border-neutral-200 h-28 w-full bg-neutral-100 relative">
+                    <iframe
+                      title="Mapa Consultorio"
+                      width="100%"
+                      height="100%"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      src={`https://maps.google.com/maps?q=${encodeURIComponent(`${practiceSettings.address || 'Av. Santa Fe 3200'}, ${practiceSettings.city || 'Buenos Aires'}`)}&t=&z=14&ie=UTF8&iwloc=&output=embed`}
+                    />
+                  </div>
+
+                  <p className="text-[11px] text-neutral-600">
+                    {practiceSettings.address || 'Av. Santa Fe 3200'}, {practiceSettings.city || 'Buenos Aires'}
+                  </p>
                 </div>
               </div>
             </div>
