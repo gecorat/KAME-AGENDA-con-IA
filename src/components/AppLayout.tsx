@@ -27,10 +27,19 @@ import {
   Rocket,
   LogOut,
   User,
-  Key
+  Key,
+  Scale,
+  Brain,
+  Zap,
+  Apple,
+  BookOpen,
+  Heart,
+  Smile,
+  Briefcase
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { NotificationCenter } from './NotificationCenter';
+import { getClientTerm, getProfessionInfo } from '../lib/terminology';
 
 interface AppLayoutProps {
   activeTab: string;
@@ -73,6 +82,23 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   if (isBotTested) completedStepsCount++;
   if (isPortalTested) completedStepsCount++;
 
+  const professionInfo = getProfessionInfo(practiceSettings);
+  const clientTermPlural = getClientTerm(practiceSettings, { plural: true, capitalize: true });
+
+  const getHistoryIcon = () => {
+    switch (professionInfo.id) {
+      case 'legal_contable': return Scale;
+      case 'psicologia': return Brain;
+      case 'kinesiologia': return Zap;
+      case 'nutricion': return Apple;
+      case 'educacion_clases': return BookOpen;
+      case 'estetica_belleza': return Sparkles;
+      case 'veterinaria': return Heart;
+      case 'odontologia': return Smile;
+      default: return Stethoscope;
+    }
+  };
+
   const NAV_SECTIONS = [
     {
       title: 'Principal',
@@ -86,7 +112,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         },
         { id: 'dashboard', label: 'Panel', icon: LayoutDashboard },
         { id: 'agenda', label: 'Agenda', icon: Calendar },
-        { id: 'pacientes', label: 'Pacientes', icon: Users }
+        { id: 'pacientes', label: clientTermPlural, icon: professionInfo.id === 'legal_contable' ? Scale : Users }
       ]
     },
     {
@@ -120,16 +146,16 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       items: [
         {
           id: 'cobros',
-          label: 'Cobros & Caja',
+          label: professionInfo.id === 'legal_contable' ? 'Honorarios & Caja' : 'Cobros & Caja',
           icon: Receipt,
           badge: pendingPaymentsCount > 0 ? `${pendingPaymentsCount}` : undefined,
           badgeColor: 'bg-amber-100 text-amber-800'
         },
         {
           id: 'consultas',
-          label: 'Historias Clínicas',
-          icon: Stethoscope,
-          badge: 'SOAP',
+          label: professionInfo.historyTabTitle,
+          icon: getHistoryIcon(),
+          badge: professionInfo.badgeWorkflow,
           badgeColor: 'bg-neutral-100 text-neutral-700'
         },
         { id: 'metricas', label: 'Métricas', icon: TrendingUp }
@@ -201,10 +227,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
               className="flex items-center gap-1.5 cursor-pointer min-w-0"
             >
               <div className="w-7 h-7 rounded-md bg-neutral-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
-                K
+                A
               </div>
               <span className="font-bold text-sm tracking-tight text-neutral-900 font-display truncate">
-                AgendaPro <span className="text-neutral-500 font-normal">AI</span>
+                Agenfacil
               </span>
             </div>
           </div>
@@ -248,11 +274,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             className="flex items-center gap-2.5 cursor-pointer select-none"
           >
             <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white flex items-center justify-center font-bold text-xs flex-shrink-0">
-              K
+              A
             </div>
             <div className="overflow-hidden">
               <span className="font-bold text-sm tracking-tight text-neutral-900 block leading-tight font-display">
-                AgendaPro <span className="text-neutral-500 font-normal">AI</span>
+                Agenfacil
               </span>
               <span className="text-[11px] text-neutral-500 font-medium truncate block leading-tight">
                 {practiceSettings.practice_name}
@@ -454,7 +480,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             <span className="text-xs text-neutral-400 font-medium">Panel</span>
             <span className="text-xs text-neutral-300">/</span>
             <h2 className="text-xs font-semibold text-neutral-800 font-display">
-              {activeItem?.label || 'AgendaPro'}
+              {activeItem?.label || 'Agenfacil'}
             </h2>
             {activeItem?.badge && (
               <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-neutral-100 text-neutral-600 border border-neutral-200/60">
@@ -507,7 +533,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
         {/* Footer */}
         <footer className="border-t border-neutral-200/60 bg-transparent py-4 px-6 text-center text-xs text-neutral-400">
-          AgendaPro AI • Gestión clínica integral, turnos automatizados y atención médica con Inteligencia Artificial
+          Agenfacil • Gestión clínica integral, turnos automatizados y atención médica inteligente
         </footer>
       </div>
     </div>

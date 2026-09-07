@@ -47,7 +47,7 @@ export const CertificatePrintModal: React.FC<CertificatePrintModalProps> = ({
       `📝 *Constancia:* "${certificate.content}"\n\n` +
       `👨‍⚕️ *Profesional:* ${certificate.professional_name}\n` +
       `📜 *Matrícula:* ${certificate.medical_license || practiceSettings.medical_license || 'En trámite'}\n\n` +
-      `_Emitido electrónicamente vía AgendaPro AI._`;
+      `_Emitido electrónicamente vía Agenfacil._`;
 
     const cleanPhone = patientPhone.replace(/\D/g, '');
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
@@ -172,7 +172,7 @@ export const CertificatePrintModal: React.FC<CertificatePrintModalProps> = ({
             <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/90 rounded-xl p-3">
               <div className="w-16 h-16 bg-white p-1 rounded-lg border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs">
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fagendapro.ai%2Fverify%2Fcert%2F${encodeURIComponent(certificate.id)}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fagenfacil.com%2Fverify%2Fcert%2F${encodeURIComponent(certificate.id)}`}
                   alt="QR Validación Certificado"
                   className="w-full h-full object-contain"
                   onError={(e) => {

@@ -103,7 +103,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
         },
         {
           sender: 'bot',
-          text: '¡Excelente! Para confirmar la reserva solicitamos una seña de *$5.000* (se descuenta del total). Podés transferir al Alias: *consultorio.dra.gomez* o pagar con Mercado Pago: agendapro.ai/pay/m-gomez',
+          text: '¡Excelente! Para confirmar la reserva solicitamos una seña de *$5.000* (se descuenta del total). Podés transferir al Alias: *consultorio.dra.gomez* o pagar con Mercado Pago: agenfacil.com/pay/m-gomez',
           time: '23:16',
           actionBadge: 'Link de pago generado'
         },
@@ -221,12 +221,12 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
             className="flex items-center gap-3 cursor-pointer group"
           >
             <div className="w-9 h-9 rounded-xl bg-neutral-950 text-white flex items-center justify-center font-extrabold text-sm shadow-sm group-hover:scale-105 transition-transform">
-              AP
+              AF
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1.5">
                 <span className="font-extrabold text-base tracking-tight text-neutral-950">
-                  AgendaPro AI
+                  Agenfacil
                 </span>
                 <span className="hidden sm:inline-block text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-200/60">
                   Consultorios & Salud
@@ -613,10 +613,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               </ul>
             </div>
 
-            {/* With AgendaPro */}
+            {/* With Agenfacil */}
             <div className="p-7 rounded-3xl bg-neutral-950 text-white shadow-xl space-y-4 border border-neutral-800 relative overflow-hidden">
               <div className="inline-flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider bg-emerald-950 px-3 py-1 rounded-full border border-emerald-800">
-                <span>✓ Con AgendaPro AI</span>
+                <span>✓ Con Agenfacil</span>
               </div>
               <ul className="space-y-3 text-xs text-neutral-200">
                 <li className="flex items-start gap-2.5">
@@ -713,7 +713,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
                 ))}
               </div>
               <p className="text-xs text-neutral-700 italic leading-relaxed">
-                "Antes perdía hasta 3 turnos por semana de pacientes que simplemente no venían. Con las señas por Alias en AgendaPro, las inasistencias cayeron a cero."
+                "Antes perdía hasta 3 turnos por semana de pacientes que simplemente no venían. Con las señas por Alias en Agenfacil, las inasistencias cayeron a cero."
               </p>
               <div className="pt-2 border-t border-neutral-100 flex items-center gap-3">
                 <img
@@ -797,7 +797,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
             },
             {
               q: '¿Cómo recibo el dinero de las señas?',
-              a: 'Directamente en tu cuenta bancaria o billetera virtual. Configuras tu propio Alias (CBU/CVU) o tu cuenta de Mercado Pago. AgendaPro AI no retiene tu dinero ni cobra comisiones por transacción.'
+              a: 'Directamente en tu cuenta bancaria o billetera virtual. Configuras tu propio Alias (CBU/CVU) o tu cuenta de Mercado Pago. Agenfacil no retiene tu dinero ni cobra comisiones por transacción.'
             },
             {
               q: '¿Qué pasa si a un paciente mayor le cuesta usar tecnología?',
@@ -859,7 +859,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
               onClick={handleOpenRegister}
               className="w-full sm:w-auto px-8 py-4 bg-white text-neutral-950 font-bold text-xs sm:text-sm rounded-xl hover:bg-neutral-100 transition shadow-lg cursor-pointer flex items-center justify-center gap-2"
             >
-              <span>Comenzar con AgendaPro AI</span>
+              <span>Comenzar con Agenfacil</span>
               <ArrowRight className="w-4 h-4" />
             </button>
             <button
@@ -878,9 +878,9 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-lg bg-neutral-950 text-white flex items-center justify-center font-bold text-xs">
-              AP
+              AF
             </div>
-            <span className="font-bold text-neutral-950">AgendaPro AI</span>
+            <span className="font-bold text-neutral-950">Agenfacil</span>
             <span>• Automatización Médica Inteligente</span>
           </div>
 
@@ -891,7 +891,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
             <button onClick={onEnterApp} className="hover:text-neutral-950 transition cursor-pointer">
               Panel de Control
             </button>
-            <span>© {new Date().getFullYear()} AgendaPro AI. Hecho con orgullo en Argentina.</span>
+            <span>© {new Date().getFullYear()} Agenfacil. Hecho con orgullo en Argentina.</span>
           </div>
         </div>
       </footer>

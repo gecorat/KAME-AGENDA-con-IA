@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Sparkles, Plus, Edit2, Trash2, Clock, DollarSign, Check, X } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Service } from '../types';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 interface ServicesViewProps {
   onOpenNewService: () => void;
@@ -13,6 +14,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
   onEditService
 }) => {
   const { services, deleteService, updateService } = useAgendaStore();
+  const [serviceToDelete, setServiceToDelete] = useState<Service | null>(null);
 
   return (
     <div className="space-y-4">
@@ -64,11 +66,7 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
                     <Edit2 className="w-3.5 h-3.5" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`¿Eliminar ${srv.name}?`)) {
-                        deleteService(srv.id);
-                      }
-                    }}
+                    onClick={() => setServiceToDelete(srv)}
                     className="p-1 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50"
                     title="Eliminar"
                   >
@@ -108,6 +106,22 @@ export const ServicesView: React.FC<ServicesViewProps> = ({
           </div>
         ))}
       </div>
+
+      {/* Confirmation Dialog for Service Deletion */}
+      <ConfirmModal
+        isOpen={!!serviceToDelete}
+        onClose={() => setServiceToDelete(null)}
+        onConfirm={() => {
+          if (serviceToDelete) {
+            deleteService(serviceToDelete.id);
+            setServiceToDelete(null);
+          }
+        }}
+        title={`¿Eliminar Servicio "${serviceToDelete?.name}"?`}
+        message={`¿Está seguro de que desea eliminar este servicio de aranceles? Esta acción no se puede deshacer.`}
+        confirmText="Sí, Eliminar Servicio"
+        variant="danger"
+      />
     </div>
   );
 };

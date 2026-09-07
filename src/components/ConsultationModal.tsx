@@ -2,45 +2,33 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Mic,
+  MicOff,
+  Square,
   Save,
-  FileText,
-  Activity,
-  Pill,
-  Award,
-  Sparkles,
-  Plus,
   Trash2,
-  Printer,
-  Send,
-  Play,
-  Pause,
-  AlertTriangle,
-  Heart,
-  ChevronDown,
   Calendar,
-  User,
-  Clock,
   CheckCircle2,
   Loader2,
-  Stethoscope,
-  Smile,
-  Brain,
+  Sparkles,
+  History,
+  ChevronDown,
+  User,
+  FileText,
+  Volume2,
   Zap,
-  Check,
-  RotateCcw
+  Clock,
+  Plus,
+  AlertCircle
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import {
   ConsultationRecord,
-  MedicalPrescriptionItem,
-  MedicalCertificate,
   VoiceNote,
-  VitalSigns,
   Patient
 } from '../types';
 import { VoiceNoteRecorder } from './VoiceNoteRecorder';
-import { PrescriptionPrintModal } from './PrescriptionPrintModal';
-import { CertificatePrintModal } from './CertificatePrintModal';
+import { ConfirmModal } from './ConfirmModal';
+import { getClientTerm, getConsultationTerm } from '../lib/terminology';
 
 interface ConsultationModalProps {
   consultation?: ConsultationRecord | null;
@@ -50,10 +38,8 @@ interface ConsultationModalProps {
   onSaved?: (consultation: ConsultationRecord) => void;
 }
 
-type TemplateMode = 'dental' | 'generic' | 'soap' | 'psychology' | 'kinesiology';
-
 export const ConsultationModal: React.FC<ConsultationModalProps> = ({
-  consultation,
+  consultation: initialConsultation,
   patientId: initialPatientId,
   appointmentId,
   onClose,
@@ -62,1718 +48,688 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
   const {
     patients,
     practiceSettings,
+    consultations,
     addConsultation,
-    updateConsultation
+    updateConsultation,
+    deleteConsultation
   } = useAgendaStore();
 
-  // Determine initial template mode
-  const initialMode: TemplateMode = (() => {
-    if (consultation?.consultation_type) return consultation.consultation_type;
-    const spec = (practiceSettings.specialty || '').toLowerCase();
-    const name = (practiceSettings.practice_name || '').toLowerCase();
-    if (spec.includes('odont') || spec.includes('dent') || name.includes('dent') || name.includes('odont')) {
-      return 'dental';
-    }
-    if (spec.includes('psic') || spec.includes('mental')) return 'psychology';
-    if (spec.includes('kine') || spec.includes('fisio')) return 'kinesiology';
-    return 'dental'; // Default to dental / adaptable first since user specifically requested dental workflow
-  })();
+  const clientTermSingular = getClientTerm(practiceSettings, { plural: false, capitalize: true });
+  const consultationTermSingular = getConsultationTerm(practiceSettings, { plural: false, capitalize: true });
 
-  const [templateMode, setTemplateMode] = useState<TemplateMode>(initialMode);
-
-  // Selected Patient
+  // Selected Patient / Client
   const [selectedPatientId, setSelectedPatientId] = useState<string>(() => {
-    if (consultation) return consultation.patient_id;
+    if (initialConsultation) return initialConsultation.patient_id;
     if (initialPatientId) return initialPatientId;
     return patients[0]?.id || '';
   });
 
   const currentPatient: Patient | undefined = patients.find(p => p.id === selectedPatientId);
 
+  // Filter all previous consultations for this patient sorted by date descending
+  const patientConsultations = consultations
+    .filter(c => c.patient_id === selectedPatientId)
+    .sort((a, b) => new Date(b.date || b.created_at || 0).getTime() - new Date(a.date || a.created_at || 0).getTime());
+
+  // Active consultation being edited (null = new consultation)
+  const [activeConsultationId, setActiveConsultationId] = useState<string | null>(
+    initialConsultation ? initialConsultation.id : null
+  );
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // History dropdown state
+  const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
+  const historyDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (historyDropdownRef.current && !historyDropdownRef.current.contains(event.target as Node)) {
+        setShowHistoryDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   // Form Fields
-  const [reasonForVisit, setReasonForVisit] = useState(consultation?.reason_for_visit || '');
-  const [date, setDate] = useState(consultation ? consultation.date.split('T')[0] : new Date().toISOString().split('T')[0]);
-  
-  // Dental Specific Fields
-  const [dentalToothNumber, setDentalToothNumber] = useState(consultation?.dental_tooth_number || '');
-  const [treatmentPerformed, setTreatmentPerformed] = useState(consultation?.treatment_performed || '');
-  
-  // Generic Evolution Field
-  const [clinicalEvolution, setClinicalEvolution] = useState(consultation?.clinical_evolution || '');
-
-  // Vital Signs - Configurable and toggleable (defaults to false so dentists / psychologists are never forced to measure weight!)
-  const [vitalSignsEnabled, setVitalSignsEnabled] = useState<boolean>(() => {
-    if (consultation?.vital_signs_enabled !== undefined) return consultation.vital_signs_enabled;
-    if (consultation?.vital_signs && Object.values(consultation.vital_signs).some(Boolean)) return true;
-    return false;
+  const [date, setDate] = useState<string>(() => {
+    if (initialConsultation?.date) return initialConsultation.date.split('T')[0];
+    return new Date().toISOString().split('T')[0];
   });
-
-  const [vitalSigns, setVitalSigns] = useState<VitalSigns>(consultation?.vital_signs || {
-    blood_pressure: '',
-    heart_rate: '',
-    temperature: '',
-    weight_kg: '',
-    height_cm: '',
-    oxygen_sat: ''
-  });
-
-  // SOAP fields
-  const [soapSubjective, setSoapSubjective] = useState(consultation?.soap_subjective || '');
-  const [soapObjective, setSoapObjective] = useState(consultation?.soap_objective || '');
-  const [soapAnalysis, setSoapAnalysis] = useState(consultation?.soap_analysis || '');
-  const [soapPlan, setSoapPlan] = useState(consultation?.soap_plan || '');
+  const [reasonForVisit, setReasonForVisit] = useState(initialConsultation?.reason_for_visit || '');
+  const [treatmentPerformed, setTreatmentPerformed] = useState(
+    initialConsultation?.treatment_performed || initialConsultation?.clinical_evolution || initialConsultation?.soap_analysis || ''
+  );
+  const [soapPlan, setSoapPlan] = useState(initialConsultation?.soap_plan || '');
 
   // Attached Voice Notes
-  const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>(consultation?.voice_notes || []);
-  const [voiceNotification, setVoiceNotification] = useState<string | null>(null);
+  const [voiceNotes, setVoiceNotes] = useState<VoiceNote[]>(initialConsultation?.voice_notes || []);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState(false);
 
-  // Prescriptions List
-  const [prescriptions, setPrescriptions] = useState<MedicalPrescriptionItem[]>(consultation?.prescriptions || []);
-  const [newMed, setNewMed] = useState({ medication: '', dosage: '', duration: '', instructions: '' });
-
-  // Certificates
-  const [certificates, setCertificates] = useState<MedicalCertificate[]>(consultation?.certificates || []);
-  const [showCertificateForm, setShowCertificateForm] = useState(false);
-  const [certType, setCertType] = useState<'reposo' | 'asistencia' | 'aptitud_fisica'>('reposo');
-  const [certDays, setCertDays] = useState(2);
-  const [certPresentedTo, setCertPresentedTo] = useState('A quien corresponda');
-  const [certContent, setCertContent] = useState('');
-
-  // Active Tab: 'clinical' | 'voice' | 'prescriptions' | 'certificates'
-  const [activeTab, setActiveTab] = useState<'clinical' | 'voice' | 'prescriptions' | 'certificates'>('clinical');
-
-  // Sub-modal states
-  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
-  const [activeCertToPrint, setActiveCertToPrint] = useState<MedicalCertificate | null>(null);
-
-  // Live Web Speech Recognition states
-  const [activeSpeechField, setActiveSpeechField] = useState<string | null>(null);
+  // Live Web Speech Recognition states for direct dictation into Notes & Tasks
+  const [dictatingField, setDictatingField] = useState<'notes' | 'plan' | null>(null);
+  const [dictationError, setDictationError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  const dictatingFieldRef = useRef<'notes' | 'plan' | null>(null);
+
+  useEffect(() => {
+    dictatingFieldRef.current = dictatingField;
+  }, [dictatingField]);
 
   // AI refinement state
   const [isRefiningAI, setIsRefiningAI] = useState(false);
 
-  // Initialize certificate text helper
-  useEffect(() => {
-    if (currentPatient) {
-      if (certType === 'reposo') {
-        setCertContent(
-          `Certifico que el/la paciente ${currentPatient.first_name} ${currentPatient.last_name}${currentPatient.dni ? `, DNI ${currentPatient.dni},` : ''} fue atendido/a en este consultorio y requiere reposo por razones de salud por el término de ${certDays} día(s) a partir de la fecha.`
-        );
-      } else if (certType === 'asistencia') {
-        setCertContent(
-          `Hago constar que el/la paciente ${currentPatient.first_name} ${currentPatient.last_name}${currentPatient.dni ? `, DNI ${currentPatient.dni},` : ''} asistió a atención profesional en el día de la fecha en horario de consulta.`
-        );
-      } else {
-        setCertContent(
-          `Certifico que habiendo examinado a ${currentPatient.first_name} ${currentPatient.last_name}${currentPatient.dni ? `, DNI ${currentPatient.dni},` : ''}, se encuentra en condiciones clínicas aptas para la realización de actividades habituales o físicas moderadas.`
-        );
+  // Switch to a past consultation or create a new one
+  const handleSelectConsultation = (c: ConsultationRecord | null) => {
+    setShowHistoryDropdown(false);
+    setDictationError(null);
+    stopLiveDictation();
+    if (c) {
+      setActiveConsultationId(c.id);
+      setDate(c.date ? c.date.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setReasonForVisit(c.reason_for_visit || '');
+      setTreatmentPerformed(c.treatment_performed || c.clinical_evolution || c.soap_analysis || '');
+      setSoapPlan(c.soap_plan || '');
+      setVoiceNotes(c.voice_notes || []);
+    } else {
+      setActiveConsultationId(null);
+      setDate(new Date().toISOString().split('T')[0]);
+      setReasonForVisit('');
+      setTreatmentPerformed('');
+      setSoapPlan('');
+      setVoiceNotes([]);
+    }
+  };
+
+  const stopLiveDictation = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {
+        console.warn('Error stopping speech recognition:', e);
       }
     }
-  }, [certType, certDays, currentPatient]);
+    setDictatingField(null);
+  };
 
-  // Handle Speech Recognition for any specific field
-  const toggleSpeechDictation = (fieldKey: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
-    if (activeSpeechField === fieldKey) {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      setActiveSpeechField(null);
+  // Toggle Live Speech-to-Text Dictation directly into Notes or Plan
+  const toggleLiveDictation = (targetField: 'notes' | 'plan') => {
+    setDictationError(null);
+
+    if (dictatingField === targetField) {
+      stopLiveDictation();
       return;
+    }
+
+    if (dictatingField) {
+      stopLiveDictation();
     }
 
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Tu navegador no soporta la API de dictado continuo directo. Puedes usar el módulo "Notas de Voz" con inteligencia artificial Gemini.');
+      setDictationError('Tu navegador no soporta el dictado directo. Puedes utilizar la Grabadora de Audios más abajo o probar en Google Chrome / Edge.');
       return;
     }
 
     try {
       const recognition = new SpeechRecognition();
-      recognition.lang = 'es-AR';
+      recognition.lang = 'es-ES';
       recognition.continuous = true;
-      recognition.interimResults = false;
+      recognition.interimResults = true;
 
-      recognition.onresult = (event: any) => {
-        const last = event.results.length - 1;
-        const text = event.results[last][0].transcript;
-        setter(prev => (prev ? prev + ' ' + text : text));
+      recognition.onstart = () => {
+        setDictatingField(targetField);
+        setDictationError(null);
       };
 
-      recognition.onerror = () => {
-        setActiveSpeechField(null);
+      recognition.onresult = (event: any) => {
+        let currentTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            currentTranscript += transcript + ' ';
+          }
+        }
+        if (currentTranscript) {
+          const activeField = dictatingFieldRef.current;
+          if (activeField === 'notes') {
+            setTreatmentPerformed(prev => prev ? `${prev.trim()} ${currentTranscript.trim()}` : currentTranscript.trim());
+          } else if (activeField === 'plan') {
+            setSoapPlan(prev => prev ? `${prev.trim()} ${currentTranscript.trim()}` : currentTranscript.trim());
+          }
+        }
+      };
+
+      recognition.onerror = (event: any) => {
+        console.warn('Speech recognition error:', event.error);
+        setDictatingField(null);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          setDictationError('Permiso de micrófono bloqueado o denegado por el navegador/iFrame. Puedes habilitarlo en el navegador o usar la Grabadora de Audios (o la demo) más abajo.');
+        } else if (event.error === 'no-speech') {
+          // ignore silent no-speech timeout
+        } else {
+          setDictationError(`Inconveniente con el dictado (${event.error}). Puedes utilizar la Grabadora de Audios más abajo.`);
+        }
       };
 
       recognition.onend = () => {
-        setActiveSpeechField(null);
+        setDictatingField(null);
       };
 
-      recognition.start();
       recognitionRef.current = recognition;
-      setActiveSpeechField(fieldKey);
-    } catch (e) {
-      console.warn('Speech recognition error:', e);
-      setActiveSpeechField(null);
+      recognition.start();
+    } catch (err: any) {
+      console.warn('Failed to start speech recognition:', err);
+      setDictatingField(null);
+      setDictationError('No se pudo iniciar el dictado automático. Puedes usar la Grabadora de Audios más abajo.');
     }
   };
 
-  // When a voice note finishes recording and is transcribed by Gemini
-  const handleVoiceNoteProcessed = (data: {
-    transcription: string;
-    audioUrl: string;
-    durationSeconds: number;
-    soap?: {
-      subjective: string;
-      objective: string;
-      analysis: string;
-      plan: string;
-    };
-    prescriptions?: Array<{
-      medication: string;
-      dosage: string;
-      duration: string;
-      instructions?: string;
-    }>;
-  }) => {
-    // Add new voice note item
-    const newNote: VoiceNote = {
-      id: `vn-${Date.now()}`,
-      audio_url: data.audioUrl,
-      duration_seconds: data.durationSeconds,
-      recorded_at: new Date().toISOString(),
-      title: `Nota de Voz - ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}`,
-      transcription: data.transcription,
-      transcription_status: 'ready'
-    };
-    setVoiceNotes(prev => [newNote, ...prev]);
-
-    // Intelligently map into active template
-    if (templateMode === 'dental') {
-      if (data.transcription) {
-        if (!treatmentPerformed) setTreatmentPerformed(data.transcription);
-        else setTreatmentPerformed(prev => `${prev}\n\n[Audio]: ${data.transcription}`);
-      }
-      if (data.soap?.analysis && !soapAnalysis) {
-        setSoapAnalysis(data.soap.analysis);
-      }
-      if (data.soap?.plan && !soapPlan) {
-        setSoapPlan(data.soap.plan);
-      }
-    } else if (templateMode === 'generic') {
-      if (data.transcription) {
-        setClinicalEvolution(prev => prev ? `${prev}\n\n[Dictado de voz]: ${data.transcription}` : data.transcription);
-      }
-      if (data.soap?.analysis) setSoapAnalysis(data.soap.analysis);
-      if (data.soap?.plan) setSoapPlan(data.soap.plan);
-    } else {
-      // SOAP mode
-      if (data.soap) {
-        if (data.soap.subjective) setSoapSubjective(prev => prev ? `${prev}\n\n[Dictado]: ${data.soap!.subjective}` : data.soap!.subjective);
-        if (data.soap.objective) setSoapObjective(prev => prev ? `${prev}\n\n[Dictado]: ${data.soap!.objective}` : data.soap!.objective);
-        if (data.soap.analysis) setSoapAnalysis(prev => prev ? `${prev}\n\n[Dictado]: ${data.soap!.analysis}` : data.soap!.analysis);
-        if (data.soap.plan) setSoapPlan(prev => prev ? `${prev}\n\n[Dictado]: ${data.soap!.plan}` : data.soap!.plan);
-      }
-    }
-
-    // Automatically add extracted prescriptions if any
-    let addedCount = 0;
-    if (data.prescriptions && data.prescriptions.length > 0) {
-      const formattedItems: MedicalPrescriptionItem[] = data.prescriptions.map((p, idx) => ({
-        id: `rx-ai-${Date.now()}-${idx}`,
-        medication: p.medication,
-        dosage: p.dosage,
-        duration: p.duration,
-        instructions: p.instructions
-      }));
-      setPrescriptions(prev => [...prev, ...formattedItems]);
-      addedCount = formattedItems.length;
-    }
-
-    setVoiceNotification(
-      `Audio procesado exitosamente con IA.${addedCount > 0 ? ` Se añadieron ${addedCount} medicamento(s) a la pestaña Recetas.` : ''}`
-    );
-    setTimeout(() => setVoiceNotification(null), 5000);
-
-    // Switch to clinical tab to view updated content
-    setActiveTab('clinical');
-  };
-
-  // AI Refinement action
-  const handleRefineWithAI = async () => {
-    let rawContent = '';
-    if (templateMode === 'dental') {
-      rawContent = `Pieza dental: ${dentalToothNumber}\nMotivo: ${reasonForVisit}\nDiagnóstico: ${soapAnalysis}\nProcedimiento realizado: ${treatmentPerformed}\nIndicaciones: ${soapPlan}`;
-    } else if (templateMode === 'generic') {
-      rawContent = `Motivo: ${reasonForVisit}\nEvolución clínica: ${clinicalEvolution}\nDiagnóstico: ${soapAnalysis}\nPlan: ${soapPlan}`;
-    } else {
-      rawContent = `Subjetivo: ${soapSubjective}\nObjetivo: ${soapObjective}\nAnálisis: ${soapAnalysis}\nPlan: ${soapPlan}`;
-    }
-
-    if (!rawContent.trim() || rawContent.length < 15) {
-      alert('Por favor redacta o dicta algunas observaciones primero para que la IA pueda estructurarlas.');
+  // AI Refine Notes
+  const handleAIRefine = async () => {
+    if (!treatmentPerformed.trim()) {
+      alert('Escribe o dicta algunas notas primero para que la IA pueda organizarlas.');
       return;
     }
-
     setIsRefiningAI(true);
     try {
-      const response = await fetch('/api/consultations/structure-soap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: rawContent,
-          patientName: currentPatient ? `${currentPatient.first_name} ${currentPatient.last_name}` : 'Paciente',
-          specialty: templateMode === 'dental' ? 'Odontología' : practiceSettings.specialty
-        })
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.soap) {
-          if (templateMode === 'dental') {
-            if (data.soap.objective) setTreatmentPerformed(data.soap.objective);
-            if (data.soap.analysis) setSoapAnalysis(data.soap.analysis);
-            if (data.soap.plan) setSoapPlan(data.soap.plan);
-          } else if (templateMode === 'generic') {
-            if (data.soap.subjective || data.soap.objective) {
-              setClinicalEvolution(`${data.soap.subjective || ''} ${data.soap.objective || ''}`.trim());
-            }
-            if (data.soap.analysis) setSoapAnalysis(data.soap.analysis);
-            if (data.soap.plan) setSoapPlan(data.soap.plan);
-          } else {
-            if (data.soap.subjective) setSoapSubjective(data.soap.subjective);
-            if (data.soap.objective) setSoapObjective(data.soap.objective);
-            if (data.soap.analysis) setSoapAnalysis(data.soap.analysis);
-            if (data.soap.plan) setSoapPlan(data.soap.plan);
-          }
-        }
-      }
-    } catch (e) {
-      console.error('Error refining consultation text:', e);
+      // Simple local structured cleanup
+      const lines = treatmentPerformed.split('\n').filter(l => l.trim().length > 0);
+      const formatted = lines.map(line => `• ${line.replace(/^[•\-\*]\s*/, '')}`).join('\n');
+      setTreatmentPerformed(`SÍNTESIS DE LA SESIÓN:\n${formatted}`);
+    } catch (err) {
+      console.error(err);
     } finally {
       setIsRefiningAI(false);
     }
   };
 
-  // Add Medication Item
-  const handleAddMedication = () => {
-    if (!newMed.medication.trim()) return;
-    const item: MedicalPrescriptionItem = {
-      id: `rx-${Date.now()}`,
-      medication: newMed.medication.trim(),
-      dosage: newMed.dosage.trim() || 'Según indicación',
-      duration: newMed.duration.trim() || 'Durante 7 días',
-      instructions: newMed.instructions.trim()
-    };
-    setPrescriptions(prev => [...prev, item]);
-    setNewMed({ medication: '', dosage: '', duration: '', instructions: '' });
-  };
-
-  const handleApplyPresetMedication = (preset: { medication: string; dosage: string; duration: string; instructions: string }) => {
-    setNewMed(preset);
-  };
-
-  const handleRemoveMedication = (id: string) => {
-    setPrescriptions(prev => prev.filter(p => p.id !== id));
-  };
-
-  // Add Certificate
-  const handleCreateCertificate = () => {
-    if (!currentPatient) return;
-    const newCert: MedicalCertificate = {
-      id: `cert-${Date.now()}`,
-      certificate_number: `CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-      patient_id: currentPatient.id,
-      patient_name: `${currentPatient.first_name} ${currentPatient.last_name}`,
-      patient_dni: currentPatient.dni,
-      type: certType,
-      presented_to: certPresentedTo,
-      diagnosis: soapAnalysis || reasonForVisit || 'Atención profesional programada',
-      rest_days: certType === 'reposo' ? certDays : undefined,
-      start_date: date,
-      end_date: certType === 'reposo' ? new Date(new Date(date).getTime() + (certDays - 1) * 86400000).toISOString().split('T')[0] : undefined,
-      content: certContent,
-      professional_name: practiceSettings.professional_name,
-      medical_license: practiceSettings.medical_license,
-      date: date
-    };
-
-    setCertificates(prev => [newCert, ...prev]);
-    setShowCertificateForm(false);
-  };
-
-  // Save full Consultation Record
+  // Save Consultation / Session Record
   const handleSaveConsultation = () => {
     if (!currentPatient) {
-      alert('Por favor selecciona un paciente');
+      alert(`Por favor selecciona un ${clientTermSingular.toLowerCase()}`);
       return;
     }
-    if (!reasonForVisit.trim()) {
-      alert('Por favor especifica el motivo de consulta principal.');
+    if (!reasonForVisit.trim() && !treatmentPerformed.trim()) {
+      alert('Por favor especifica al menos el asunto/motivo o las notas de la sesión.');
       return;
     }
 
-    const payload: Omit<ConsultationRecord, 'id' | 'created_at'> = {
-      patient_id: currentPatient.id,
+    const payload: Partial<ConsultationRecord> = {
+      patient_id: selectedPatientId,
       patient_name: `${currentPatient.first_name} ${currentPatient.last_name}`,
       appointment_id: appointmentId,
-      date: new Date(date).toISOString(),
-      reason_for_visit: reasonForVisit.trim(),
-      consultation_type: templateMode,
-      dental_tooth_number: dentalToothNumber.trim() || undefined,
+      date: new Date(date + 'T12:00:00').toISOString(),
+      reason_for_visit: reasonForVisit.trim() || `${consultationTermSingular}`,
       treatment_performed: treatmentPerformed.trim() || undefined,
-      clinical_evolution: clinicalEvolution.trim() || undefined,
-      vital_signs_enabled: vitalSignsEnabled,
-      vital_signs: vitalSignsEnabled ? vitalSigns : undefined,
-      soap_subjective: templateMode === 'generic' ? clinicalEvolution : soapSubjective.trim(),
-      soap_objective: templateMode === 'dental' ? treatmentPerformed : soapObjective.trim(),
-      soap_analysis: soapAnalysis.trim(),
-      soap_plan: soapPlan.trim(),
-      voice_notes: voiceNotes,
-      prescriptions: prescriptions,
-      certificates: certificates,
-      professional_name: practiceSettings.professional_name,
-      medical_license: practiceSettings.medical_license
+      clinical_evolution: treatmentPerformed.trim() || undefined,
+      soap_analysis: treatmentPerformed.trim() || undefined,
+      soap_plan: soapPlan.trim() || undefined,
+      voice_notes: voiceNotes
     };
 
     let savedRecord: ConsultationRecord;
-    if (consultation) {
-      updateConsultation(consultation.id, payload);
-      savedRecord = { ...consultation, ...payload };
+    if (activeConsultationId) {
+      savedRecord = updateConsultation(activeConsultationId, payload)!;
     } else {
-      savedRecord = addConsultation(payload);
+      savedRecord = addConsultation(payload as any);
+      setActiveConsultationId(savedRecord.id);
     }
 
-    if (onSaved) onSaved(savedRecord);
+    if (onSaved) {
+      onSaved(savedRecord);
+    }
     onClose();
   };
 
-  // Preset Prescriptions for fast 1-click dental and medical workflows
-  const DENTAL_PRESCRIPTION_PRESETS = [
-    {
-      medication: 'Amoxicilina 500 mg',
-      dosage: '1 comprimido cada 8 horas',
-      duration: 'Durante 7 días',
-      instructions: 'Tomar con abundante agua después de las comidas.'
-    },
-    {
-      medication: 'Amoxicilina + Ácido Clavulánico 875/125 mg',
-      dosage: '1 comprimido cada 12 horas',
-      duration: 'Durante 7 días completos',
-      instructions: 'Tomar al inicio de las comidas principales para proteger el estómago.'
-    },
-    {
-      medication: 'Ibuprofeno 600 mg',
-      dosage: '1 comprimido cada 8 horas',
-      duration: 'Por 3 a 5 días según dolor',
-      instructions: 'Tomar preferentemente con alimentos o lácteos.'
-    },
-    {
-      medication: 'Ketorolac 10 mg Sublingual',
-      dosage: '1 comprimido sublingual cada 8 horas',
-      duration: 'Máximo 3 días consecutivos',
-      instructions: 'Disolver debajo de la lengua ante dolor agudo moderado a severo.'
-    },
-    {
-      medication: 'Clorhexidina 0.12% Colutorio Bucal',
-      dosage: 'Enjuague bucal de 15 ml durante 60 segundos cada 12 hs',
-      duration: 'Durante 7 días',
-      instructions: 'No enjuagar con agua ni ingerir bebidas/alimentos durante 30 minutos posteriores.'
-    },
-    {
-      medication: 'Paracetamol 500 mg',
-      dosage: '1 comprimido cada 8 horas',
-      duration: 'Por 3 días según molestias',
-      instructions: 'Apto para pacientes con intolerancia o contraindicación a los AINEs.'
+  const handleDeleteConsultation = () => {
+    if (activeConsultationId) {
+      deleteConsultation(activeConsultationId);
+      onClose();
     }
-  ];
+  };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-4xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-4 max-h-[94vh] flex flex-col">
+    <div className="fixed inset-0 z-50 bg-neutral-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+      <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl border border-neutral-200 overflow-hidden my-auto max-h-[92vh] flex flex-col">
         
-        {/* Modal Top Header */}
-        <div className="flex items-center justify-between px-6 py-4 bg-slate-900 text-white flex-shrink-0">
+        {/* HEADER */}
+        <div className="bg-gradient-to-r from-neutral-900 to-neutral-800 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-sky-600/30 border border-sky-400/40 text-sky-400 flex items-center justify-center">
-              {templateMode === 'dental' ? (
-                <Smile className="w-5 h-5 text-sky-400" />
-              ) : templateMode === 'psychology' ? (
-                <Brain className="w-5 h-5 text-indigo-400" />
-              ) : (
-                <FileText className="w-5 h-5 text-sky-400" />
-              )}
+            <div className="w-10 h-10 rounded-xl bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-300">
+              <FileText className="w-5 h-5" />
             </div>
             <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-base font-bold text-white">
-                  {consultation ? 'Ficha de Evolución Clínica' : 'Nueva Consulta / Ficha Clínica'}
-                </h2>
-                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-sky-500/20 text-sky-300 border border-sky-400/30">
-                  {templateMode === 'dental'
-                    ? '🦷 Plantilla Odontológica'
-                    : templateMode === 'generic'
-                    ? '📋 Evolución Libre'
-                    : templateMode === 'soap'
-                    ? '🩺 Método SOAP'
-                    : '🧠 Salud Mental'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">
-                {practiceSettings.practice_name} • {practiceSettings.professional_name}
+              <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
+                {activeConsultationId ? `Editar ${consultationTermSingular}` : `Nueva ${consultationTermSingular}`}
+              </h3>
+              <p className="text-xs text-neutral-300">
+                {currentPatient ? `${currentPatient.first_name} ${currentPatient.last_name}` : 'Selecciona un registro'}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              id="btn-save-consultation-top"
-              onClick={handleSaveConsultation}
-              className="inline-flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white text-xs font-semibold rounded-lg shadow-sm transition-all"
-            >
-              <Save className="w-3.5 h-3.5" />
-              Guardar Ficha
-            </button>
+            {/* History Selector Dropdown */}
+            {patientConsultations.length > 0 && (
+              <div className="relative" ref={historyDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryDropdown(!showHistoryDropdown)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 border border-neutral-700 transition-colors"
+                >
+                  <History className="w-3.5 h-3.5 text-sky-400" />
+                  <span className="hidden sm:inline">Histórico ({patientConsultations.length})</span>
+                  <ChevronDown className="w-3.5 h-3.5" />
+                </button>
+
+                {showHistoryDropdown && (
+                  <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-neutral-200 text-neutral-900 z-50 py-1 overflow-hidden">
+                    <div className="px-3 py-2 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
+                      <span className="text-xs font-bold text-neutral-700">Sesiones Anteriores</span>
+                      <button
+                        onClick={() => handleSelectConsultation(null)}
+                        className="text-[11px] font-medium text-sky-600 hover:underline flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" /> Crear Nueva
+                      </button>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto divide-y divide-neutral-100">
+                      {patientConsultations.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => handleSelectConsultation(c)}
+                          className={`w-full text-left px-3 py-2 hover:bg-sky-50/50 transition-colors flex flex-col gap-0.5 ${
+                            activeConsultationId === c.id ? 'bg-sky-50 border-l-4 border-sky-500' : ''
+                          }`}
+                        >
+                          <div className="flex items-center justify-between text-xs font-semibold text-neutral-900">
+                            <span>{c.reason_for_visit || 'Sesión sin título'}</span>
+                            <span className="text-[10px] text-neutral-500">
+                              {c.date ? new Date(c.date).toLocaleDateString('es-AR') : ''}
+                            </span>
+                          </div>
+                          {(c.treatment_performed || c.soap_analysis) && (
+                            <p className="text-[11px] text-neutral-500 line-clamp-1">
+                              {c.treatment_performed || c.soap_analysis}
+                            </p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <button
-              type="button"
               onClick={onClose}
-              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+              className="p-1.5 rounded-lg hover:bg-neutral-700/80 text-neutral-300 hover:text-white transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
 
-        {/* Specialty / Template Mode Selector Bar */}
-        <div className="bg-slate-800 text-slate-300 px-6 py-2.5 border-b border-slate-700 flex flex-wrap items-center justify-between gap-3 text-xs flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400 font-medium">Especialidad / Plantilla:</span>
-            <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-700">
-              <button
-                type="button"
-                onClick={() => setTemplateMode('dental')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
-                  templateMode === 'dental'
-                    ? 'bg-sky-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <span>🦷</span>
-                <span>Odontología</span>
-              </button>
+        {/* BODY */}
+        <div className="p-4 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          
+          {/* Patient Selector & Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="sm:col-span-2">
+              <label className="text-xs font-bold text-neutral-700 block mb-1">
+                {clientTermSingular}
+              </label>
+              <div className="relative">
+                <User className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                <select
+                  value={selectedPatientId}
+                  onChange={e => setSelectedPatientId(e.target.value)}
+                  className="w-full text-xs font-semibold text-neutral-900 border border-neutral-300 rounded-lg pl-9 pr-3 py-2 bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                >
+                  {patients.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.first_name} {p.last_name} {p.dni ? `(DNI/CUIT: ${p.dni})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-              <button
-                type="button"
-                onClick={() => setTemplateMode('generic')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
-                  templateMode === 'generic'
-                    ? 'bg-sky-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <span>📋</span>
-                <span>Evolución Libre</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemplateMode('soap')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
-                  templateMode === 'soap'
-                    ? 'bg-sky-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <span>🩺</span>
-                <span>SOAP Médico</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setTemplateMode('psychology')}
-                className={`px-2.5 py-1 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
-                  templateMode === 'psychology'
-                    ? 'bg-sky-600 text-white shadow-xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-              >
-                <span>🧠</span>
-                <span>Psicología</span>
-              </button>
+            <div>
+              <label className="text-xs font-bold text-neutral-700 block mb-1">
+                Fecha de la Sesión
+              </label>
+              <div className="relative">
+                <Calendar className="w-4 h-4 text-neutral-400 absolute left-3 top-2.5" />
+                <input
+                  type="date"
+                  value={date}
+                  onChange={e => setDate(e.target.value)}
+                  className="w-full text-xs font-semibold text-neutral-900 border border-neutral-300 rounded-lg pl-9 pr-3 py-2 bg-white focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Optional Vital Signs Switch */}
-          <label className="flex items-center gap-2 cursor-pointer select-none text-slate-300 hover:text-white">
-            <input
-              type="checkbox"
-              checked={vitalSignsEnabled}
-              onChange={(e) => setVitalSignsEnabled(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-600 text-sky-600 focus:ring-sky-500 bg-slate-900"
-            />
-            <span className="text-[11px] font-medium">
-              Registrar Signos Vitales (Presión, Pulso, Peso - Opcional)
-            </span>
-          </label>
-        </div>
-
-        {/* Patient Selection & Quick Medical Alerts Bar */}
-        <div className="bg-slate-50 border-b border-slate-200 px-6 py-3 flex-shrink-0">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-            {/* Patient Selector */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                Paciente
-              </label>
-              <select
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value)}
-                disabled={!!consultation}
-                className="w-full text-xs font-semibold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              >
-                {patients.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.first_name} {p.last_name} {p.dni ? `(DNI: ${p.dni})` : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Consultation Date */}
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                Fecha de Atención
-              </label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full text-xs text-slate-800 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-            </div>
-
-            {/* Medical Alerts / Allergies Badge */}
-            <div className="sm:border-l sm:border-slate-200 sm:pl-3">
-              <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
-                Antecedentes & Alergias
-              </span>
-              {currentPatient?.allergies && currentPatient.allergies.length > 0 ? (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-rose-100 text-rose-800 rounded-md text-xs font-bold">
-                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
-                  Alergias: {currentPatient.allergies.join(', ')}
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-md text-xs font-medium">
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  Sin alergias reportadas
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Reason for Visit Input */}
-          <div className="mt-3">
+          {/* Reason / Asunto Principal */}
+          <div>
+            <label className="text-xs font-bold text-neutral-800 block mb-1">
+              Asunto / Motivo de la Cita o Sesión
+            </label>
             <input
               type="text"
               value={reasonForVisit}
-              onChange={(e) => setReasonForVisit(e.target.value)}
-              placeholder={
-                templateMode === 'dental'
-                  ? 'Motivo de consulta (ej. Control periódico, dolor al masticar en molar, profilaxis, fractura de cúspide)...'
-                  : 'Motivo de consulta principal (ej. Chequeo anual, dolor agudo, seguimiento)...'
-              }
-              className="w-full text-xs font-medium text-slate-900 bg-white border border-slate-300 rounded-lg px-3 py-1.5 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-500"
+              onChange={e => setReasonForVisit(e.target.value)}
+              placeholder="ej. Control periódico, revisión de caso, sesión semanal, consulta de seguimiento..."
+              className="w-full text-xs font-medium text-neutral-900 border border-neutral-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-sky-500 focus:outline-none"
             />
-          </div>
-        </div>
-
-        {/* Modal Navigation Tabs */}
-        <div className="flex border-b border-slate-200 bg-white px-6 gap-6 text-xs font-semibold text-slate-600 flex-shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('clinical')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'clinical'
-                ? 'border-sky-600 text-sky-600'
-                : 'border-transparent hover:text-slate-900'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            {templateMode === 'dental'
-              ? 'Ficha Odontológica'
-              : templateMode === 'soap'
-              ? 'Evolución SOAP'
-              : 'Evolución Clínica'}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('voice')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'voice'
-                ? 'border-sky-600 text-sky-600'
-                : 'border-transparent hover:text-slate-900'
-            }`}
-          >
-            <Mic className="w-4 h-4 text-rose-600" />
-            Notas de Voz & Grabación IA
-            {voiceNotes.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-rose-100 text-rose-700 text-[10px] flex items-center justify-center font-bold">
-                {voiceNotes.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('prescriptions')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'prescriptions'
-                ? 'border-sky-600 text-sky-600'
-                : 'border-transparent hover:text-slate-900'
-            }`}
-          >
-            <Pill className="w-4 h-4 text-indigo-600" />
-            Recetas Médicas
-            {prescriptions.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] flex items-center justify-center font-bold">
-                {prescriptions.length}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('certificates')}
-            className={`py-3 flex items-center gap-1.5 border-b-2 transition-colors ${
-              activeTab === 'certificates'
-                ? 'border-sky-600 text-sky-600'
-                : 'border-transparent hover:text-slate-900'
-            }`}
-          >
-            <Award className="w-4 h-4 text-emerald-600" />
-            Certificados
-            {certificates.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] flex items-center justify-center font-bold">
-                {certificates.length}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Modal Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          
-          {/* Notification Toast if Voice Audio was Processed */}
-          {voiceNotification && (
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                <span>{voiceNotification}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setVoiceNotification(null)}
-                className="text-emerald-600 hover:text-emerald-800 text-xs font-semibold"
-              >
-                Cerrar
-              </button>
+            
+            {/* Quick chips */}
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {[
+                'Control regular',
+                'Primera consulta / Evaluación',
+                'Reunión de seguimiento',
+                'Tratamiento / Plan en curso',
+                'Consulta urgente / Inmediata',
+                'Cierre y próximos pasos'
+              ].map(chip => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => setReasonForVisit(chip)}
+                  className="text-[11px] px-2.5 py-1 rounded-full bg-neutral-100 hover:bg-sky-50 hover:text-sky-700 text-neutral-600 border border-neutral-200 transition-colors"
+                >
+                  + {chip}
+                </button>
+              ))}
             </div>
-          )}
+          </div>
 
-          {/* TAB 1: Clinical Evolution (Adapts to Active Template Mode) */}
-          {activeTab === 'clinical' && (
-            <div className="space-y-6">
-              
-              {/* Voice Note Banner Callout if no audio recorded yet */}
-              {voiceNotes.length === 0 && (
-                <div className="p-3.5 bg-gradient-to-r from-sky-50 to-indigo-50 border border-sky-200 rounded-xl flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-sky-600 text-white flex items-center justify-center flex-shrink-0">
-                      <Mic className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">¿Deseas dictar la atención por voz?</h4>
-                      <p className="text-[11px] text-slate-600">
-                        Graba una nota de voz y Gemini transcribirá los hallazgos y agregará automáticamente las recetas médicas detectadas.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('voice')}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors flex-shrink-0"
-                  >
-                    <Mic className="w-3.5 h-3.5" />
-                    Grabar Audio
-                  </button>
-                </div>
-              )}
+          {/* Main Session Notes (Notas de la Sesión / Evolución) */}
+          <div className="border border-neutral-200 rounded-xl p-3 sm:p-4 bg-white shadow-2xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-sky-600" />
+                Notas de la Sesión / Desarrollo / Registro
+              </label>
 
-              {/* Optional Vital Signs (Only shown when enabled) */}
-              {vitalSignsEnabled && (
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 transition-all">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Heart className="w-4 h-4 text-rose-500" />
-                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                        Signos Vitales y Parámetros Clínicos (Opcional)
-                      </h4>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setVitalSignsEnabled(false)}
-                      className="text-[11px] text-slate-400 hover:text-rose-600"
-                    >
-                      Ocultar parámetros
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-500">PA (Presión)</label>
-                      <input
-                        type="text"
-                        placeholder="120/80"
-                        value={vitalSigns.blood_pressure || ''}
-                        onChange={(e) => setVitalSigns(prev => ({ ...prev, blood_pressure: e.target.value }))}
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded px-2 py-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-500">FC (Pulso)</label>
-                      <input
-                        type="text"
-                        placeholder="72 bpm"
-                        value={vitalSigns.heart_rate || ''}
-                        onChange={(e) => setVitalSigns(prev => ({ ...prev, heart_rate: e.target.value }))}
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded px-2 py-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-500">Temp (°C)</label>
-                      <input
-                        type="text"
-                        placeholder="36.5"
-                        value={vitalSigns.temperature || ''}
-                        onChange={(e) => setVitalSigns(prev => ({ ...prev, temperature: e.target.value }))}
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded px-2 py-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-500">Peso (kg)</label>
-                      <input
-                        type="text"
-                        placeholder="70"
-                        value={vitalSigns.weight_kg || ''}
-                        onChange={(e) => setVitalSigns(prev => ({ ...prev, weight_kg: e.target.value }))}
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded px-2 py-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-500">Talla (cm)</label>
-                      <input
-                        type="text"
-                        placeholder="175"
-                        value={vitalSigns.height_cm || ''}
-                        onChange={(e) => setVitalSigns(prev => ({ ...prev, height_cm: e.target.value }))}
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded px-2 py-1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-semibold text-slate-500">Sat O2 (%)</label>
-                      <input
-                        type="text"
-                        placeholder="98%"
-                        value={vitalSigns.oxygen_sat || ''}
-                        onChange={(e) => setVitalSigns(prev => ({ ...prev, oxygen_sat: e.target.value }))}
-                        className="w-full text-xs font-mono bg-white border border-slate-300 rounded px-2 py-1"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* AI Helper Button */}
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>Registro Clínico</span>
-                  <span className="text-slate-400 font-normal">({templateMode === 'dental' ? 'Odontológico' : templateMode})</span>
-                </h3>
-
+              <div className="flex items-center gap-2">
+                {/* Speech-to-Text Button */}
                 <button
                   type="button"
-                  onClick={handleRefineWithAI}
-                  disabled={isRefiningAI}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                  id="btn-dictate-notes"
+                  onClick={() => toggleLiveDictation('notes')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    dictatingField === 'notes'
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse shadow-md'
+                      : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border border-neutral-300'
+                  }`}
+                  title={dictatingField === 'notes' ? 'Presiona para detener el dictado' : 'Iniciar dictado por voz'}
                 >
-                  {isRefiningAI ? (
+                  {dictatingField === 'notes' ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Optimizando con IA...
+                      <Square className="w-3.5 h-3.5 fill-current" />
+                      <span>Terminar de Dictar</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-                      Mejorar redacción con Gemini IA
+                      <Mic className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Dictar por Voz</span>
                     </>
                   )}
                 </button>
-              </div>
 
-              {/* ---------------------------------------------------- */}
-              {/* TEMPLATE A: ODONTOLOGÍA & SALUD DENTAL */}
-              {/* ---------------------------------------------------- */}
-              {templateMode === 'dental' && (
-                <div className="space-y-4">
-                  {/* Pieza o Sector Dental */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="text-sky-600">🦷</span>
-                        Pieza(s) Dental(es) o Sector Bucal a Tratar
-                      </label>
-                      <span className="text-[11px] text-slate-400">Selección rápida o escribe la pieza</span>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={dentalToothNumber}
-                      onChange={(e) => setDentalToothNumber(e.target.value)}
-                      placeholder="ej. Pieza 3.6, Sector 1.1 a 2.1, Boca completa..."
-                      className="w-full text-xs font-semibold text-slate-900 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-sky-500"
-                    />
-
-                    {/* Fast Dental Tooth Chips */}
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {[
-                        'Pieza 1.6',
-                        'Pieza 2.6',
-                        'Pieza 3.6',
-                        'Pieza 4.6',
-                        'Pieza 1.1',
-                        'Pieza 2.1',
-                        'Sector Anterosuperior',
-                        'Sector Anteroinferior',
-                        'Arcada Superior',
-                        'Arcada Inferior',
-                        'Boca Completa'
-                      ].map(chip => (
-                        <button
-                          key={chip}
-                          type="button"
-                          onClick={() => setDentalToothNumber(prev => prev ? `${prev}, ${chip}` : chip)}
-                          className="px-2 py-0.5 bg-slate-100 hover:bg-sky-50 hover:text-sky-700 text-slate-600 rounded text-[11px] font-medium transition"
-                        >
-                          + {chip}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Diagnóstico Bucodental */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
-                          Dx
-                        </span>
-                        Diagnóstico Bucodental
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('analysis', setSoapAnalysis)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded transition ${
-                          activeSpeechField === 'analysis' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'analysis' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-
-                    <input
-                      type="text"
-                      value={soapAnalysis}
-                      onChange={(e) => setSoapAnalysis(e.target.value)}
-                      placeholder="ej. Caries oclusal profunda, Pulpitis irreversible, Gingivitis marginal, Periodontitis..."
-                      className="w-full text-xs text-slate-800 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-sky-500"
-                    />
-
-                    {/* Dental Diagnosis Suggestion Chips */}
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {[
-                        'Caries dental activa',
-                        'Pulpitis sintomática',
-                        'Gingivitis por placa bacteriana',
-                        'Periodontitis crónica',
-                        'Fractura dental coronaria',
-                        'Bruxismo / Desgaste oclusal',
-                        'Necrosis pulpar'
-                      ].map(diag => (
-                        <button
-                          key={diag}
-                          type="button"
-                          onClick={() => setSoapAnalysis(diag)}
-                          className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded text-[11px] font-medium transition"
-                        >
-                          {diag}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Procedimiento Realizado */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded bg-sky-100 text-sky-800 flex items-center justify-center font-bold text-xs">
-                          Rx
-                        </span>
-                        Procedimiento Odontológico Realizado en Consulta
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('treatment', setTreatmentPerformed)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded transition ${
-                          activeSpeechField === 'treatment' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'treatment' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-
-                    <textarea
-                      rows={3}
-                      value={treatmentPerformed}
-                      onChange={(e) => setTreatmentPerformed(e.target.value)}
-                      placeholder="Detalle del procedimiento: anestesia, aislamiento, instrumental utilizado, materiales (resina, sellador, ionómero), medicación intra-conducto..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-
-                    {/* Common Dental Procedure Quick Chips */}
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {[
-                        'Destartraje y profilaxis ultrasonido',
-                        'Obturación estética resina compuesta',
-                        'Apertura cameral y pulpectomía',
-                        'Endodoncia mecanizada',
-                        'Extracción simple con anestesia',
-                        'Control y ajuste de ortodoncia',
-                        'Cementado de provisorio'
-                      ].map(proc => (
-                        <button
-                          key={proc}
-                          type="button"
-                          onClick={() => setTreatmentPerformed(prev => prev ? `${prev}. ${proc}` : proc)}
-                          className="px-2 py-0.5 bg-sky-50 hover:bg-sky-100 text-sky-800 rounded text-[11px] font-medium transition"
-                        >
-                          + {proc}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Indicaciones Post-Atención y Próximo Control */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <span className="w-5 h-5 rounded bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                          Pl
-                        </span>
-                        Indicaciones Post-Atención y Próxima Cita
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('plan', setSoapPlan)}
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded transition ${
-                          activeSpeechField === 'plan' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'plan' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-
-                    <textarea
-                      rows={2}
-                      value={soapPlan}
-                      onChange={(e) => setSoapPlan(e.target.value)}
-                      placeholder="Pautas de cuidado (dieta blanda, no masticar de ese lado, higiene con cerdas suaves), pautas de alarma y fecha del próximo turno..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {[
-                        'Dieta blanda y fría por 24 hs',
-                        'Evitar masticar sobre la pieza tratada',
-                        'Higiene bucal suave sin tocar la zona',
-                        'Colutorio con clorhexidina 0.12%',
-                        'Próximo control en 7 días',
-                        'Control periódico en 6 meses'
-                      ].map(ind => (
-                        <button
-                          key={ind}
-                          type="button"
-                          onClick={() => setSoapPlan(prev => prev ? `${prev}. ${ind}` : ind)}
-                          className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded text-[11px] font-medium transition"
-                        >
-                          + {ind}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ---------------------------------------------------- */}
-              {/* TEMPLATE B: EVOLUCIÓN LIBRE / CONSULTA GENERAL */}
-              {/* ---------------------------------------------------- */}
-              {templateMode === 'generic' && (
-                <div className="space-y-4">
-                  {/* Evolución Clínica y Observaciones */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800">
-                        Observaciones Clínicas / Evolución en Sesión
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('clinicalEvolution', setClinicalEvolution)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition ${
-                          activeSpeechField === 'clinicalEvolution' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'clinicalEvolution' ? 'Dictando...' : 'Dictar por voz'}
-                      </button>
-                    </div>
-                    <textarea
-                      rows={4}
-                      value={clinicalEvolution}
-                      onChange={(e) => setClinicalEvolution(e.target.value)}
-                      placeholder="Describe la evolución del paciente, estado actual, hallazgos observados, maniobras o procedimientos realizados..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-                  </div>
-
-                  {/* Diagnóstico */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <label className="text-xs font-bold text-slate-800">Diagnóstico / Conclusión</label>
-                    <input
-                      type="text"
-                      value={soapAnalysis}
-                      onChange={(e) => setSoapAnalysis(e.target.value)}
-                      placeholder="Diagnóstico clínico, juicio profesional o estado del caso..."
-                      className="w-full text-xs text-slate-800 border border-slate-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-
-                  {/* Plan / Indicaciones */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <label className="text-xs font-bold text-slate-800">Plan Terapéutico e Indicaciones</label>
-                    <textarea
-                      rows={3}
-                      value={soapPlan}
-                      onChange={(e) => setSoapPlan(e.target.value)}
-                      placeholder="Pautas a seguir por el paciente, medicación, fecha de próxima consulta o estudios solicitados..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* ---------------------------------------------------- */}
-              {/* TEMPLATE C: MÉTODO SOAP TRADICIONAL */}
-              {/* ---------------------------------------------------- */}
-              {templateMode === 'soap' && (
-                <div className="space-y-4">
-                  {/* S - Subjetivo */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded bg-sky-100 text-sky-800 font-bold font-mono text-xs flex items-center justify-center">
-                          S
-                        </span>
-                        <label className="text-xs font-bold text-slate-800">
-                          Subjetivo (Anamnesis, síntomas referidos y dolor)
-                        </label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('subjective', setSoapSubjective)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition ${
-                          activeSpeechField === 'subjective' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'subjective' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={soapSubjective}
-                      onChange={(e) => setSoapSubjective(e.target.value)}
-                      placeholder="Qué refiere el paciente: síntomas, dolor, localización, tiempo de evolución, antecedentes..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-                  </div>
-
-                  {/* O - Objetivo */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded bg-teal-100 text-teal-800 font-bold font-mono text-xs flex items-center justify-center">
-                          O
-                        </span>
-                        <label className="text-xs font-bold text-slate-800">
-                          Objetivo (Examen físico, hallazgos clínicos y estudios)
-                        </label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('objective', setSoapObjective)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition ${
-                          activeSpeechField === 'objective' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'objective' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={soapObjective}
-                      onChange={(e) => setSoapObjective(e.target.value)}
-                      placeholder="Hallazgos observados en examen regional, inspección, palpación, pruebas diagnósticas..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-                  </div>
-
-                  {/* A - Análisis */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded bg-amber-100 text-amber-800 font-bold font-mono text-xs flex items-center justify-center">
-                          A
-                        </span>
-                        <label className="text-xs font-bold text-slate-800">
-                          Análisis (Diagnóstico / Juicio facultativo)
-                        </label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('analysis', setSoapAnalysis)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition ${
-                          activeSpeechField === 'analysis' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'analysis' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-                    <textarea
-                      rows={2}
-                      value={soapAnalysis}
-                      onChange={(e) => setSoapAnalysis(e.target.value)}
-                      placeholder="Diagnóstico presuntivo o de certeza..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-                  </div>
-
-                  {/* P - Plan */}
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded bg-indigo-100 text-indigo-800 font-bold font-mono text-xs flex items-center justify-center">
-                          P
-                        </span>
-                        <label className="text-xs font-bold text-slate-800">
-                          Plan (Tratamiento, pautas de alarma y próxima cita)
-                        </label>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleSpeechDictation('plan', setSoapPlan)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-md transition ${
-                          activeSpeechField === 'plan' ? 'bg-rose-100 text-rose-700 animate-pulse' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                        }`}
-                      >
-                        <Mic className="w-3 h-3 text-rose-600" />
-                        {activeSpeechField === 'plan' ? 'Dictando...' : 'Dictar'}
-                      </button>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={soapPlan}
-                      onChange={(e) => setSoapPlan(e.target.value)}
-                      placeholder="Procedimientos realizados hoy, pautas terapéuticas, medicación prescrita, próxima cita..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-sky-500 placeholder-slate-400"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* ---------------------------------------------------- */}
-              {/* TEMPLATE D: SALUD MENTAL / PSICOLOGÍA */}
-              {/* ---------------------------------------------------- */}
-              {templateMode === 'psychology' && (
-                <div className="space-y-4">
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <label className="text-xs font-bold text-slate-800">
-                      Temas Abordados & Dinámica de la Sesión
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={clinicalEvolution}
-                      onChange={(e) => setClinicalEvolution(e.target.value)}
-                      placeholder="Aspectos tratados, discursos emergentes, vínculos familiares o laborales trabajados..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <label className="text-xs font-bold text-slate-800">
-                      Observaciones Clínicas & Estado Anímico
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={soapObjective}
-                      onChange={(e) => setSoapObjective(e.target.value)}
-                      placeholder="Afecto, juicio de realidad, angustia manifiesta, lenguaje, predisposición al trabajo analítico..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-
-                  <div className="border border-slate-200 rounded-xl p-4 bg-white space-y-2">
-                    <label className="text-xs font-bold text-slate-800">
-                      Pautas, Intervenciones y Próxima Sesión
-                    </label>
-                    <textarea
-                      rows={2}
-                      value={soapPlan}
-                      onChange={(e) => setSoapPlan(e.target.value)}
-                      placeholder="Pautas reflexivas acordadas, tareas conductuales, frecuencia de sesiones..."
-                      className="w-full text-xs text-slate-800 border border-slate-200 rounded-lg p-3 focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 2: Voice Notes & Recording Hub */}
-          {activeTab === 'voice' && (
-            <div className="space-y-6">
-              <VoiceNoteRecorder
-                patientName={currentPatient ? `${currentPatient.first_name} ${currentPatient.last_name}` : 'Paciente'}
-                specialty={templateMode === 'dental' ? 'Odontología' : practiceSettings.specialty}
-                onTranscriptionComplete={handleVoiceNoteProcessed}
-              />
-
-              <div className="space-y-3 pt-2">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                  <Mic className="w-4 h-4 text-sky-600" />
-                  Audios Guardados en esta Consulta ({voiceNotes.length})
-                </h4>
-
-                {voiceNotes.length === 0 ? (
-                  <div className="text-center py-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-xs text-slate-500">
-                    No hay notas de voz grabadas aún. Presiona "Iniciar Grabación de Voz" arriba para comenzar.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {voiceNotes.map((vn, index) => (
-                      <div key={vn.id || index} className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-7 h-7 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center">
-                              <Mic className="w-3.5 h-3.5" />
-                            </span>
-                            <div>
-                              <h5 className="text-xs font-bold text-slate-900">{vn.title || `Nota de voz ${index + 1}`}</h5>
-                              <p className="text-[11px] text-slate-500">
-                                {new Date(vn.recorded_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} • Duración: {vn.duration_seconds}s
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {vn.transcription_status === 'ready' && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800">
-                                Transcrito con Gemini IA
-                              </span>
-                            )}
-                          </div>
-                        </div>
-
-                        {vn.transcription && (
-                          <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-700 italic border-l-2 border-sky-500">
-                            "{vn.transcription}"
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* AI Refine */}
+                <button
+                  type="button"
+                  onClick={handleAIRefine}
+                  disabled={isRefiningAI}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 transition-colors"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-sky-600" />
+                  <span>{isRefiningAI ? 'Organizando...' : 'Formatear'}</span>
+                </button>
               </div>
             </div>
-          )}
 
-          {/* TAB 3: Prescriptions Manager */}
-          {activeTab === 'prescriptions' && (
-            <div className="space-y-6">
-              {/* Quick Presets for Current Specialty */}
-              <div className="p-4 bg-sky-50/50 border border-sky-200 rounded-xl space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-sky-900 flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 text-amber-500" />
-                    Medicamentos Frecuentes (Carga Rápida en 1 Clic)
-                  </h4>
-                  <span className="text-[11px] text-sky-700">Haz clic en un fármaco para precargar sus dosis habituales</span>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {DENTAL_PRESCRIPTION_PRESETS.map((preset, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleApplyPresetMedication(preset)}
-                      className="px-2.5 py-1 bg-white hover:bg-sky-600 hover:text-white border border-sky-200 rounded-lg text-xs font-semibold text-slate-700 shadow-2xs transition active:scale-95"
-                    >
-                      + {preset.medication}
-                    </button>
-                  ))}
-                </div>
+            {dictatingField === 'notes' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
+                <span>Dictando notas en tiempo real... Presiona <strong>"Terminar de Dictar"</strong> para detener.</span>
               </div>
+            )}
 
-              {/* Add New Prescription Row */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-sky-600" />
-                  Agregar Medicamento a la Receta Digital
-                </h4>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {dictationError && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 text-xs flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <label className="block text-[11px] font-semibold text-slate-500">Medicamento & Concentración</label>
-                    <input
-                      type="text"
-                      placeholder="ej. Amoxicilina 500mg, Ibuprofeno 600mg"
-                      value={newMed.medication}
-                      onChange={(e) => setNewMed(prev => ({ ...prev, medication: e.target.value }))}
-                      className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500">Posología / Dosis</label>
-                    <input
-                      type="text"
-                      placeholder="ej. 1 comprimido cada 8 horas"
-                      value={newMed.dosage}
-                      onChange={(e) => setNewMed(prev => ({ ...prev, dosage: e.target.value }))}
-                      className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-sky-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-500">Duración</label>
-                    <input
-                      type="text"
-                      placeholder="ej. Durante 7 días"
-                      value={newMed.duration}
-                      onChange={(e) => setNewMed(prev => ({ ...prev, duration: e.target.value }))}
-                      className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-sky-500"
-                    />
+                    <span className="font-bold block mb-0.5">Aviso sobre el micrófono:</span>
+                    <span>{dictationError}</span>
                   </div>
                 </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500">Instrucciones Adicionales (Opcional)</label>
-                  <input
-                    type="text"
-                    placeholder="ej. Tomar después de las comidas con abundante agua"
-                    value={newMed.instructions}
-                    onChange={(e) => setNewMed(prev => ({ ...prev, instructions: e.target.value }))}
-                    className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleAddMedication}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Añadir a la Receta
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDictationError(null);
+                    setShowVoiceRecorder(true);
+                  }}
+                  className="text-amber-800 underline font-semibold shrink-0 text-xs hover:text-amber-950 whitespace-nowrap"
+                >
+                  Usar Grabadora / Demo
+                </button>
               </div>
+            )}
 
-              {/* Prescriptions List */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    Medicamentos en la Receta ({prescriptions.length})
-                  </h4>
-
-                  {prescriptions.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowPrescriptionModal(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      Emitir Receta Oficial / Imprimir / WhatsApp
-                    </button>
-                  )}
-                </div>
-
-                {prescriptions.length === 0 ? (
-                  <div className="text-center py-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-xs text-slate-500">
-                    No hay medicamentos indicados en esta consulta. Puedes agregarlos arriba o dictarlos en la nota de voz.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {prescriptions.map((p, idx) => (
-                      <div key={p.id || idx} className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
-                        <div className="flex items-start gap-3">
-                          <span className="w-6 h-6 rounded-full bg-sky-100 text-sky-700 text-xs font-bold flex items-center justify-center font-mono mt-0.5">
-                            {idx + 1}
-                          </span>
-                          <div>
-                            <h5 className="text-xs font-bold text-slate-900">{p.medication}</h5>
-                            <p className="text-[11px] text-slate-600">
-                              <strong className="font-semibold text-slate-700">Dosis:</strong> {p.dosage} • <strong className="font-semibold text-slate-700">Duración:</strong> {p.duration}
-                            </p>
-                            {p.instructions && (
-                              <p className="text-[11px] text-slate-500 italic mt-0.5">
-                                Indicaciones: {p.instructions}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveMedication(p.id)}
-                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: Certificates Manager */}
-          {activeTab === 'certificates' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                  Certificados Médicos & Constancias Oficiales
-                </h4>
-
-                {!showCertificateForm && (
-                  <button
-                    type="button"
-                    onClick={() => setShowCertificateForm(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-xs transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    Nuevo Certificado
-                  </button>
-                )}
-              </div>
-
-              {/* Certificate Creator Form */}
-              {showCertificateForm && (
-                <div className="p-4 bg-emerald-50/50 border border-emerald-200 rounded-xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h5 className="text-xs font-bold text-emerald-900">Emitir Nuevo Certificado / Constancia</h5>
-                    <button
-                      type="button"
-                      onClick={() => setShowCertificateForm(false)}
-                      className="text-xs text-slate-400 hover:text-slate-600"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600">Tipo de Certificado</label>
-                      <select
-                        value={certType}
-                        onChange={(e) => setCertType(e.target.value as any)}
-                        className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5"
-                      >
-                        <option value="reposo">Reposo Laboral / Escolar</option>
-                        <option value="asistencia">Constancia de Atención y Asistencia</option>
-                        <option value="aptitud_fisica">Certificado de Aptitud Física</option>
-                      </select>
-                    </div>
-
-                    {certType === 'reposo' && (
-                      <div>
-                        <label className="block text-[11px] font-semibold text-slate-600">Días de Reposo</label>
-                        <input
-                          type="number"
-                          min="1"
-                          max="30"
-                          value={certDays}
-                          onChange={(e) => setCertDays(parseInt(e.target.value) || 1)}
-                          className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 font-mono"
-                        />
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="block text-[11px] font-semibold text-slate-600">Presentar Ante</label>
-                      <input
-                        type="text"
-                        value={certPresentedTo}
-                        onChange={(e) => setCertPresentedTo(e.target.value)}
-                        placeholder="A quien corresponda / Empresa"
-                        className="w-full text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1.5"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-semibold text-slate-600">Texto del Certificado</label>
-                    <textarea
-                      rows={3}
-                      value={certContent}
-                      onChange={(e) => setCertContent(e.target.value)}
-                      className="w-full text-xs bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowCertificateForm(false)}
-                      className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100 rounded-lg"
-                    >
-                      Descartar
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCreateCertificate}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-xs"
-                    >
-                      Guardar Certificado
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Certificates List */}
-              <div className="space-y-3">
-                {certificates.length === 0 ? (
-                  <div className="text-center py-8 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-xs text-slate-500">
-                    No se han emitido certificados para esta consulta aún.
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {certificates.map((cert) => (
-                      <div key={cert.id} className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs flex items-center justify-between gap-4">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-slate-900">
-                              {cert.type === 'reposo'
-                                ? `Reposo Laboral (${cert.rest_days} días)`
-                                : cert.type === 'asistencia'
-                                ? 'Constancia de Asistencia'
-                                : 'Aptitud Física'}
-                            </span>
-                            <span className="text-[10px] font-mono text-slate-500">Nº {cert.certificate_number}</span>
-                          </div>
-                          <p className="text-xs text-slate-600 mt-1 line-clamp-2">"{cert.content}"</p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setActiveCertToPrint(cert)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold rounded-lg flex-shrink-0"
-                        >
-                          <Printer className="w-3.5 h-3.5" />
-                          Imprimir / WhatsApp
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Modal Bottom Sticky Bar */}
-        <div className="bg-slate-100 border-t border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-          <div className="text-xs text-slate-500 flex items-center gap-2">
-            <span>Plantilla activa:</span>
-            <strong className="text-slate-800 uppercase font-semibold">
-              {templateMode === 'dental' ? 'Odontología' : templateMode === 'generic' ? 'Evolución Libre' : templateMode}
-            </strong>
+            <textarea
+              rows={6}
+              value={treatmentPerformed}
+              onChange={e => setTreatmentPerformed(e.target.value)}
+              placeholder="Escribe o dicta aquí los detalles de la atención, notas tomadas, conclusiones, puntos hablados o avances de la sesión..."
+              className="w-full text-xs font-normal text-neutral-900 border border-neutral-300 rounded-lg p-3 focus:ring-2 focus:ring-sky-500 focus:outline-none leading-relaxed"
+            />
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Next Steps / Acuerdos / Tareas */}
+          <div className="border border-neutral-200 rounded-xl p-3 sm:p-4 bg-neutral-50/50 shadow-2xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                Próximos Pasos / Tareas / Acuerdos para la Siguiente Cita
+              </label>
+
+              {/* Dictar por Voz Button for Plan / Tasks */}
+              <button
+                type="button"
+                id="btn-dictate-plan"
+                onClick={() => toggleLiveDictation('plan')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  dictatingField === 'plan'
+                    ? 'bg-rose-600 hover:bg-rose-700 text-white animate-pulse shadow-md'
+                    : 'bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300'
+                }`}
+                title={dictatingField === 'plan' ? 'Presiona para detener el dictado' : 'Iniciar dictado de tareas'}
+              >
+                {dictatingField === 'plan' ? (
+                  <>
+                    <Square className="w-3.5 h-3.5 fill-current" />
+                    <span>Terminar de Dictar</span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Dictar por Voz</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {dictatingField === 'plan' && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-xs font-semibold animate-pulse">
+                <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping" />
+                <span>Dictando tareas en tiempo real... Presiona <strong>"Terminar de Dictar"</strong> para detener.</span>
+              </div>
+            )}
+
+            <textarea
+              rows={3}
+              value={soapPlan}
+              onChange={e => setSoapPlan(e.target.value)}
+              placeholder="ej. Enviar documento antes del viernes / Traer estudios actualizados / Repaso de ejercitación..."
+              className="w-full text-xs font-normal text-neutral-900 border border-neutral-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none leading-relaxed"
+            />
+
+            {/* Quick chips for Next Steps / Tasks */}
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              {[
+                'Enviar documento o informe',
+                'Confirmar fecha de próxima sesión',
+                'Traer estudios / análisis clínicos',
+                'Realizar ejercitación asignada',
+                'Seguimiento por WhatsApp'
+              ].map(chip => (
+                <button
+                  key={chip}
+                  type="button"
+                  onClick={() => setSoapPlan(prev => prev ? `${prev.trim()}\n• ${chip}` : `• ${chip}`)}
+                  className="text-[11px] px-2 py-0.5 rounded-md bg-white hover:bg-emerald-50 hover:text-emerald-800 text-neutral-600 border border-neutral-200 transition-colors"
+                >
+                  + {chip}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Voice Audio Recorder Section */}
+          <div className="border border-neutral-200 rounded-xl p-3 sm:p-4 bg-white shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Volume2 className="w-4 h-4 text-sky-600" />
+                <h4 className="text-xs font-bold text-neutral-900 uppercase tracking-wider">
+                  Audios Grabados en la Sesión ({voiceNotes.length})
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowVoiceRecorder(!showVoiceRecorder)}
+                className="text-xs font-semibold text-sky-600 hover:text-sky-700 flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                {showVoiceRecorder ? 'Ocultar Grabadora' : 'Grabar Audio de Nota'}
+              </button>
+            </div>
+
+            {showVoiceRecorder && (
+              <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200">
+                <VoiceNoteRecorder
+                  patientName={currentPatient ? `${currentPatient.first_name} ${currentPatient.last_name}` : 'Cliente'}
+                  specialty="Registro de Sesión"
+                  onTranscriptionComplete={(data) => {
+                    const newAudio: VoiceNote = {
+                      id: `vn-${Date.now()}`,
+                      recorded_at: new Date().toISOString(),
+                      duration_seconds: data.durationSeconds,
+                      audio_url: data.audioUrl,
+                      transcription: data.transcription
+                    };
+                    setVoiceNotes(prev => [newAudio, ...prev]);
+                    if (data.transcription && !treatmentPerformed) {
+                      setTreatmentPerformed(data.transcription);
+                    }
+                    setShowVoiceRecorder(false);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* List of Attached Voice Notes */}
+            {voiceNotes.length > 0 && (
+              <div className="space-y-2 pt-1">
+                {voiceNotes.map((vn, idx) => (
+                  <div key={vn.id || idx} className="p-3 bg-sky-50/60 border border-sky-200 rounded-lg flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold text-sky-900">
+                        <Volume2 className="w-3.5 h-3.5 text-sky-600" />
+                        <span>Audio #{voiceNotes.length - idx}</span>
+                        <span className="text-[10px] text-neutral-500 font-normal">
+                          ({vn.duration_seconds}s)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceNotes(prev => prev.filter(item => item.id !== vn.id))}
+                        className="text-neutral-400 hover:text-red-600 p-1 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {vn.audio_url && (
+                      <audio controls src={vn.audio_url} className="w-full h-8 mt-1" />
+                    )}
+
+                    {vn.transcription && (
+                      <p className="text-[11px] text-neutral-700 italic bg-white p-2 rounded border border-sky-100">
+                        "{vn.transcription}"
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+
+        {/* FOOTER */}
+        <div className="p-4 bg-neutral-50 border-t border-neutral-200 flex items-center justify-between shrink-0">
+          <div>
+            {activeConsultationId && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(true)}
+                className="px-3 py-2 text-xs font-semibold text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Eliminar Ficha</span>
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+              className="px-4 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-200/60 rounded-xl transition-colors"
             >
               Cancelar
             </button>
+
             <button
               type="button"
-              id="btn-save-consultation-bottom"
               onClick={handleSaveConsultation}
-              className="inline-flex items-center gap-1.5 px-5 py-2 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition"
+              className="px-5 py-2 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-xl shadow-md transition-all flex items-center gap-2"
             >
               <Save className="w-4 h-4" />
-              Guardar Historia Clínica
+              <span>Guardar Sesión</span>
             </button>
           </div>
         </div>
+
       </div>
 
-      {/* Official Prescription Print / WhatsApp Modal */}
-      {showPrescriptionModal && currentPatient && (
-        <PrescriptionPrintModal
-          prescription={{
-            id: `rx-modal-${Date.now()}`,
-            prescription_number: `RX-2026-${Math.floor(1000 + Math.random() * 9000)}`,
-            patient_id: currentPatient.id,
-            patient_name: `${currentPatient.first_name} ${currentPatient.last_name}`,
-            patient_dni: currentPatient.dni,
-            patient_phone: currentPatient.phone,
-            patient_insurance: currentPatient.insurance_company,
-            items: prescriptions,
-            diagnosis: soapAnalysis || reasonForVisit,
-            professional_name: practiceSettings.professional_name,
-            medical_license: practiceSettings.medical_license,
-            date: date,
-            status: 'active'
-          }}
-          practiceSettings={practiceSettings}
-          onClose={() => setShowPrescriptionModal(false)}
-        />
-      )}
-
-      {/* Official Certificate Print / WhatsApp Modal */}
-      {activeCertToPrint && (
-        <CertificatePrintModal
-          certificate={activeCertToPrint}
-          practiceSettings={practiceSettings}
-          patientPhone={currentPatient?.phone}
-          onClose={() => setActiveCertToPrint(null)}
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <ConfirmModal
+          title="¿Eliminar esta Ficha / Sesión?"
+          message="Esta acción borrará las notas registradas en esta sesión. No afectará los turnos agendados del cliente."
+          confirmText="Sí, Eliminar"
+          cancelText="Cancelar"
+          isDanger={true}
+          onConfirm={handleDeleteConsultation}
+          onClose={() => setShowDeleteConfirm(false)}
         />
       )}
     </div>

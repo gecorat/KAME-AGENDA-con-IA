@@ -19,26 +19,32 @@ import {
   CheckCircle2,
   Filter,
   ShieldCheck,
-  Stethoscope
+  Stethoscope,
+  Info
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { ConsultationRecord, MedicalCertificate } from '../types';
 import { ConsultationModal } from '../components/ConsultationModal';
 import { PrescriptionPrintModal } from '../components/PrescriptionPrintModal';
 import { CertificatePrintModal } from '../components/CertificatePrintModal';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 export const ConsultationsView: React.FC = () => {
   const {
     consultations,
     patients,
     practiceSettings,
-    deleteConsultation
+    deleteConsultation,
+    hasExampleData,
+    clearExampleData,
+    isExampleItem
   } = useAgendaStore();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatientFilter, setSelectedPatientFilter] = useState<string>('all');
   const [selectedTemplateFilter, setSelectedTemplateFilter] = useState<string>('all');
   const [expandedConsultationId, setExpandedConsultationId] = useState<string | null>(null);
+  const [consultationToDelete, setConsultationToDelete] = useState<ConsultationRecord | null>(null);
 
   // Modals
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -54,11 +60,12 @@ export const ConsultationsView: React.FC = () => {
   // Audio playback state for demo / attached audio
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
 
-  // Metrics
-  const totalConsultations = consultations.length;
-  const totalVoiceNotes = consultations.reduce((acc, c) => acc + (c.voice_notes?.length || 0), 0);
-  const totalPrescriptions = consultations.reduce((acc, c) => acc + (c.prescriptions?.length || 0), 0);
-  const totalCertificates = consultations.reduce((acc, c) => acc + (c.certificates?.length || 0), 0);
+  // Metrics (excluding example consultations from real clinical statistics)
+  const realConsultations = consultations.filter(c => !isExampleItem(c));
+  const totalConsultations = realConsultations.length;
+  const totalVoiceNotes = realConsultations.reduce((acc, c) => acc + (c.voice_notes?.length || 0), 0);
+  const totalPrescriptions = realConsultations.reduce((acc, c) => acc + (c.prescriptions?.length || 0), 0);
+  const totalCertificates = realConsultations.reduce((acc, c) => acc + (c.certificates?.length || 0), 0);
 
   // Filtered list
   const filteredConsultations = consultations.filter((c) => {
@@ -118,6 +125,34 @@ export const ConsultationsView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Demo / Example Data Banner with 1-click removal */}
+      {hasExampleData && (
+        <div className="bg-sky-50 border border-sky-200/90 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sky-950 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+              <Info className="w-4 h-4 text-sky-700" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-sky-900">
+                Fichas Clínicas de Demostración
+              </p>
+              <p className="text-[11px] text-sky-800/90 leading-tight mt-0.5">
+                Las historias clínicas de ejemplo muestran el uso de notas SOAP y dictado por voz. No suman a tus estadísticas reales y puedes eliminarlas con un clic.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => clearExampleData()}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-2xs flex items-center gap-1.5 self-end sm:self-auto cursor-pointer"
+            title="Eliminar todos los registros de ejemplo"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Eliminar datos de ejemplo</span>
+          </button>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
@@ -250,6 +285,11 @@ export const ConsultationsView: React.FC = () => {
                         <h3 className="text-sm sm:text-base font-bold text-slate-900">
                           {consultation.patient_name}
                         </h3>
+                        {isExampleItem(consultation) && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 font-bold border border-amber-300">
+                            Ejemplo
+                          </span>
+                        )}
                         {patientObj?.dni && (
                           <span className="text-xs text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
                             DNI: {patientObj.dni}
@@ -316,11 +356,7 @@ export const ConsultationsView: React.FC = () => {
 
                     <button
                       type="button"
-                      onClick={() => {
-                        if (confirm(`¿Eliminar la ficha de consulta de ${consultation.patient_name}?`)) {
-                          deleteConsultation(consultation.id);
-                        }
-                      }}
+                      onClick={() => setConsultationToDelete(consultation)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg text-xs transition-colors"
                       title="Eliminar consulta"
                     >
@@ -636,6 +672,30 @@ export const ConsultationsView: React.FC = () => {
                         </div>
                       </div>
                     )}
+                    {/* Bottom actions for expanded card */}
+                    <div className="pt-3 mt-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setConsultationToDelete(consultation)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
+                        title="Eliminar esta consulta de forma permanente"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Eliminar Consulta</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingConsultation(consultation);
+                          setIsNewModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors ml-auto"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 text-sky-600" />
+                        <span>Abrir / Editar Completo</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -686,6 +746,22 @@ export const ConsultationsView: React.FC = () => {
           onClose={() => setActiveCertificateToPrint(null)}
         />
       )}
+
+      {/* Confirmation Dialog for Consultation Deletion */}
+      <ConfirmModal
+        isOpen={!!consultationToDelete}
+        onClose={() => setConsultationToDelete(null)}
+        onConfirm={() => {
+          if (consultationToDelete) {
+            deleteConsultation(consultationToDelete.id);
+            setConsultationToDelete(null);
+          }
+        }}
+        title="¿Eliminar Ficha de Consulta?"
+        message={`¿Está seguro de que desea eliminar la ficha de consulta de ${consultationToDelete?.patient_name} (${consultationToDelete ? new Date(consultationToDelete.date || consultationToDelete.created_at).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''})? Esta acción no se puede deshacer.`}
+        confirmText="Sí, Eliminar Consulta"
+        variant="danger"
+      />
     </div>
   );
 };

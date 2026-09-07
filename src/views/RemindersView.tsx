@@ -19,7 +19,8 @@ import {
   Eye,
   RefreshCw,
   Smartphone,
-  CheckCheck
+  CheckCheck,
+  Trash2
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment } from '../types';
@@ -37,7 +38,10 @@ export const RemindersView: React.FC = () => {
     sendEmailReminder,
     confirmAppointmentByPatient,
     runAutomatedRemindersScan,
-    formatReminderText
+    formatReminderText,
+    deleteReminderLog,
+    clearAllReminderLogs,
+    isExampleItem
   } = useAgendaStore();
 
   const [activeTab, setActiveTab] = useState<'cola' | 'plantillas' | 'configuracion' | 'historial'>('cola');
@@ -81,6 +85,7 @@ export const RemindersView: React.FC = () => {
 
   const filteredAppointments = appointments
     .filter(a => {
+      if (isExampleItem(a)) return false;
       if (a.status === 'cancelled') return false;
       const aptDate = a.start_datetime.split('T')[0];
       if (filterQueue === 'today') return aptDate === todayStr;
@@ -90,16 +95,16 @@ export const RemindersView: React.FC = () => {
     })
     .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
 
-  // Demo sample for template preview
-  const sampleAppointment: Appointment = filteredAppointments[0] || appointments[0] || {
-    id: 'demo-sample',
-    patient_id: 'p-1',
-    patient_name: 'María González',
-    patient_phone: '+54 9 11 5566-7788',
-    patient_email: 'maria.gonzalez@gmail.com',
-    service_id: 'srv-1',
-    service_name: 'Limpieza Profunda & Profilaxis',
-    service_price: 32000,
+  // Template preview sample (uses real appointment if available, otherwise generic placeholders)
+  const sampleAppointment: Appointment = filteredAppointments[0] || appointments.find(a => !isExampleItem(a)) || {
+    id: 'preview-template-sample',
+    patient_id: 'sample-preview',
+    patient_name: '[Nombre del Paciente]',
+    patient_phone: '+54 9 11 0000-0000',
+    patient_email: 'paciente@ejemplo.com',
+    service_id: 'srv-preview',
+    service_name: '[Servicio / Consulta]',
+    service_price: 0,
     start_datetime: new Date(Date.now() + 86400000).toISOString(),
     end_datetime: new Date(Date.now() + 86400000 + 2700000).toISOString(),
     status: 'pending',
@@ -809,96 +814,134 @@ export const RemindersView: React.FC = () => {
       )}
 
       {/* TAB 4: AUDITORÍA Y LOGS */}
-      {activeTab === 'historial' && (
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-bold text-neutral-900">Historial de Notificaciones y Despachos</h3>
-              <p className="text-xs text-neutral-500">
-                Registro de todos los WhatsApps y correos enviados con estado de recepción y confirmación
-              </p>
+      {activeTab === 'historial' && (() => {
+        const displayLogs = reminderLogs.filter(log => !isExampleItem(log));
+
+        return (
+          <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-neutral-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-neutral-900">Historial de Notificaciones y Despachos</h3>
+                <p className="text-xs text-neutral-500">
+                  Registro de todos los WhatsApps y correos enviados con estado de recepción y confirmación
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-neutral-500 font-medium">
+                  {displayLogs.length} registros
+                </span>
+                {displayLogs.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm('¿Deseas vaciar todo el historial de notificaciones?')) {
+                        clearAllReminderLogs();
+                      }
+                    }}
+                    className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border border-rose-200 flex items-center gap-1 shadow-2xs"
+                    title="Vaciar historial de notificaciones"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Vaciar historial
+                  </button>
+                )}
+              </div>
             </div>
-            <span className="text-xs text-neutral-500 font-medium">
-              {reminderLogs.length} registros
-            </span>
-          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-neutral-50 border-b border-neutral-100 text-neutral-500 font-semibold">
-                <tr>
-                  <th className="py-3 px-4">Fecha/Hora</th>
-                  <th className="py-3 px-4">Paciente</th>
-                  <th className="py-3 px-4">Canal</th>
-                  <th className="py-3 px-4">Tipo</th>
-                  <th className="py-3 px-4">Mensaje Resumido</th>
-                  <th className="py-3 px-4">Estado</th>
-                  <th className="py-3 px-4 text-right">Confirmado</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100 text-neutral-700">
-                {reminderLogs.map(log => {
-                  const logDate = new Date(log.sent_at);
-                  const formattedTime = logDate.toLocaleDateString('es-AR', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  });
-
-                  return (
-                    <tr key={log.id} className="hover:bg-neutral-50/60 transition-colors">
-                      <td className="py-3 px-4 text-neutral-500 font-mono text-[11px]">
-                        {formattedTime}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="font-bold text-neutral-900 block">{log.patient_name}</span>
-                        <span className="text-[11px] text-neutral-400">{log.patient_phone}</span>
-                      </td>
-                      <td className="py-3 px-4">
-                        {log.channel === 'whatsapp' ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1 w-fit">
-                            <MessageSquare className="w-3 h-3" />
-                            WhatsApp
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 flex items-center gap-1 w-fit">
-                            <Mail className="w-3 h-3" />
-                            Email
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="capitalize font-medium text-neutral-600">
-                          {log.timing === '24h' ? '24 hs antes' : log.timing === '2h' ? '2 hs antes' : 'Manual'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 max-w-xs truncate text-neutral-600">
-                        {log.message_preview}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-100 text-neutral-700">
-                          {log.status === 'delivered' ? 'Entregado' : 'Enviado'}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-right">
-                        {log.confirmed ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-bold">
-                            <CheckCheck className="w-3.5 h-3.5" />
-                            Confirmado
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-neutral-400 font-medium">Pendiente</span>
-                        )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-neutral-50 border-b border-neutral-100 text-neutral-500 font-semibold">
+                  <tr>
+                    <th className="py-3 px-4">Fecha/Hora</th>
+                    <th className="py-3 px-4">Paciente</th>
+                    <th className="py-3 px-4">Canal</th>
+                    <th className="py-3 px-4">Tipo</th>
+                    <th className="py-3 px-4">Mensaje Resumido</th>
+                    <th className="py-3 px-4">Estado</th>
+                    <th className="py-3 px-4">Confirmado</th>
+                    <th className="py-3 px-4 text-right">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 text-neutral-700">
+                  {displayLogs.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-neutral-400">
+                        No hay notificaciones registradas en el historial.
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ) : (
+                    displayLogs.map(log => {
+                      const logDate = new Date(log.sent_at);
+                      const formattedTime = logDate.toLocaleDateString('es-AR', {
+                        day: 'numeric',
+                        month: 'short',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      });
+
+                      return (
+                        <tr key={log.id} className="hover:bg-neutral-50/60 transition-colors">
+                          <td className="py-3 px-4 text-neutral-500 font-mono text-[11px]">
+                            {formattedTime}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-bold text-neutral-900 block">{log.patient_name}</span>
+                            <span className="text-[11px] text-neutral-400">{log.patient_phone}</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {log.channel === 'whatsapp' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1 w-fit">
+                                <MessageSquare className="w-3 h-3" />
+                                WhatsApp
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 flex items-center gap-1 w-fit">
+                                <Mail className="w-3 h-3" />
+                                Email
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="capitalize font-medium text-neutral-600">
+                              {log.timing === '24h' ? '24 hs antes' : log.timing === '2h' ? '2 hs antes' : 'Manual'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 max-w-xs truncate text-neutral-600">
+                            {log.message_preview}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-100 text-neutral-700">
+                              {log.status === 'delivered' ? 'Entregado' : 'Enviado'}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {log.confirmed ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700 font-bold">
+                                <CheckCheck className="w-3.5 h-3.5" />
+                                Confirmado
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-neutral-400 font-medium">Pendiente</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => deleteReminderLog(log.id)}
+                              className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Eliminar este registro"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Modals */}
       <WhatsAppPreviewModal

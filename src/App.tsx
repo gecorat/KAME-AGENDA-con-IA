@@ -551,7 +551,7 @@ function MainApp() {
               Acceso Restringido a Super Administrador
             </h3>
             <p className="text-xs sm:text-sm text-neutral-600 mb-6 leading-relaxed">
-              Este módulo contiene estadísticas globales de facturación y tenencia SaaS reservadas exclusivamente para la administración central de AgendaPro AI.
+              Este módulo contiene estadísticas globales de facturación y tenencia SaaS reservadas exclusivamente para la administración central de Agenfacil.
             </p>
             <button
               type="button"

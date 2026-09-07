@@ -19,12 +19,14 @@ import {
 } from '../types';
 
 export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
-  practice_name: "Consultorio Médico Integral",
+  practice_name: "Consultorio Odontológico & Médico Integral",
   handle: "consultorio-medico",
-  professional_name: "Dr/a. Especialista",
-  professional_title: "Odontología & Medicina Especializada",
+  professional_name: "Dr/a. Gonzalo Odontología",
+  professional_title: "Odontólogo Especialista en Prótesis e Implantes",
   medical_license: "M.N. 142.890 / M.P. 45.210",
-  specialty: "Atención Integral & Consultorio",
+  specialty: "Odontología Integral, Implantes y Estética Bucal",
+  profession_category: "odontologia",
+  client_term: "pacientes",
   phone: "+54 9 11 4000-0000",
   whatsapp_number: "+54 9 11 5000-0000",
   email: "contacto@consultorio.com",
@@ -35,7 +37,7 @@ export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
   bot_tone: "cálido, empático y resolutivo",
   bot_enabled: true,
   page_color: "#0284c7", // Sky blue profesional
-  welcome_message: "¡Hola! Soy Sofía, asistente virtual de AgendaPro AI. Puedo ayudarte a conocer nuestros tratamientos, aranceles o coordinar tu próximo turno.",
+  welcome_message: "¡Hola! Soy Sofía, asistente virtual de Agenfacil. Puedo ayudarte a conocer nuestros tratamientos, aranceles o coordinar tu próximo turno.",
   auto_confirm_bookings: true,
   allow_telemedicine: true,
   subscription_plan: 'trial',
@@ -496,7 +498,7 @@ export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   send_2h_before: true,
   require_confirmation: true,
   auto_update_status_on_confirm: true,
-  sender_email_alias: "Consultorio Médico - AgendaPro AI",
+  sender_email_alias: "Consultorio Médico - Agenfacil",
   whatsapp_template_24h: "¡Hola {paciente}! Te recordamos tu turno de *{servicio}* programado para mañana *{fecha}* a las *{hora} hs* con {profesional} en {direccion}.\n\nPara confirmar tu asistencia, responde *1* a este mensaje o haz clic aquí:\n👉 {link_confirmar}\n\nSi necesitas reprogramar, responde *2*.\n¡Muchas gracias!",
   whatsapp_template_2h: "Hola {paciente}, te esperamos hoy a las *{hora} hs* en {direccion} para tu atención de *{servicio}*. Si tienes algún imprevisto, avísanos con antelación.",
   email_subject_24h: "Recordatorio de Turno: {servicio} - Mañana {hora} hs ({consultorio})",

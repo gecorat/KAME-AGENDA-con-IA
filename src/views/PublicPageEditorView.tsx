@@ -192,7 +192,7 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
 
   const publicUrl = typeof window !== 'undefined'
     ? `${window.location.origin}/u/${cleanHandle}`
-    : `https://agendapro.ai/u/${cleanHandle}`;
+    : `https://agenfacil.com/u/${cleanHandle}`;
 
   const copyPublicLink = () => {
     navigator.clipboard.writeText(publicUrl);
@@ -319,7 +319,7 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
 
           {/* Compact Input & Lock Bar */}
           <div className="flex-1 flex items-center min-w-0 max-w-2xl bg-slate-950/80 border border-slate-700/70 rounded-lg px-2.5 py-1 font-mono text-xs">
-            <span className="text-slate-500 select-none shrink-0 text-[11px]">https://agendapro.ai/u/</span>
+            <span className="text-slate-500 select-none shrink-0 text-[11px]">https://agenfacil.com/u/</span>
             <input
               type="text"
               value={handleInput}
@@ -795,7 +795,7 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
                 {previewDevice === 'mobile' && (
                   <div className="w-full bg-neutral-200/60 rounded-full py-1.5 px-3 mb-3 text-[10px] text-neutral-700 text-center font-mono truncate flex items-center justify-center gap-1">
                     <Globe className="w-2.5 h-2.5 text-neutral-500" />
-                    <span>agendapro.ai/u/{cleanHandle}</span>
+                    <span>agenfacil.com/u/{cleanHandle}</span>
                   </div>
                 )}
 
@@ -812,7 +812,7 @@ export const PublicPageEditorView: React.FC<PublicPageEditorViewProps> = ({ onNa
                       <div className="flex items-center gap-1.5 text-neutral-700 truncate text-[11px]">
                         <Globe className="w-3.5 h-3.5 text-sky-600 shrink-0" />
                         <span className="text-neutral-400 font-sans">https://</span>
-                        <span className="font-semibold text-neutral-900">agendapro.ai/u/{cleanHandle}</span>
+                        <span className="font-semibold text-neutral-900">agenfacil.com/u/{cleanHandle}</span>
                       </div>
                     </div>
                     <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0 font-sans">

@@ -108,7 +108,7 @@ export const SuperAdminApisView: React.FC = () => {
         body: JSON.stringify({
           to: testEmailTo,
           patientName: 'Gonzalo Corat (Admin Test)',
-          practiceName: 'AgendaPro AI Platform',
+          practiceName: 'Agenfacil Platform',
           date: 'Mañana',
           time: '10:00',
           serviceName: 'Prueba de Sistema',
@@ -230,7 +230,7 @@ export const SuperAdminApisView: React.FC = () => {
             )}
           </div>
           <p className="text-[11px] text-neutral-400">
-            {formData.evolution_instance_name || 'master-agendapro'} (Instancia Maestra)
+            {formData.evolution_instance_name || 'master-agenfacil'} (Instancia Maestra)
           </p>
         </div>
 
@@ -276,7 +276,7 @@ export const SuperAdminApisView: React.FC = () => {
             )}
           </div>
           <p className="text-[11px] text-neutral-400">
-            {formData.email_sender_address || 'notificaciones@agendapro.ai'}
+            {formData.email_sender_address || 'notificaciones@agenfacil.com'}
           </p>
         </div>
       </div>
@@ -344,7 +344,7 @@ export const SuperAdminApisView: React.FC = () => {
                 type="text"
                 value={formData.evolution_instance_name || ''}
                 onChange={e => handleChange('evolution_instance_name', e.target.value)}
-                placeholder="master-agendapro"
+                placeholder="master-agenfacil"
                 className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
               />
             </div>
@@ -546,7 +546,7 @@ export const SuperAdminApisView: React.FC = () => {
                 type="email"
                 value={formData.email_sender_address || ''}
                 onChange={e => handleChange('email_sender_address', e.target.value)}
-                placeholder="turnos@agendapro.ai o tu-nombre@tudominio.com"
+                placeholder="turnos@agenfacil.com o tu-nombre@tudominio.com"
                 className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
               />
             </div>

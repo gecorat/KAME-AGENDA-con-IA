@@ -1,4 +1,4 @@
-// Browser & Audio notification utility for AgendaPro AI
+// Browser & Audio notification utility for Agenfacil
 // Alerts doctor for new appointments booked by the AI bot or confirmed by patients
 
 export type NotificationPermissionStatus = 'granted' | 'denied' | 'default' | 'unsupported';

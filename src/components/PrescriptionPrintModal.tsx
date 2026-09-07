@@ -33,7 +33,7 @@ export const PrescriptionPrintModal: React.FC<PrescriptionPrintModalProps> = ({
       `💊 *MEDICAMENTOS INDICADOS:*\n${medList}\n\n` +
       `👨‍⚕️ *Profesional:* ${prescription.professional_name}\n` +
       `📜 *Matrícula:* ${prescription.medical_license || practiceSettings.medical_license || 'En trámite'}\n\n` +
-      `_Esta receta fue emitida electrónicamente a través de AgendaPro AI._`;
+      `_Esta receta fue emitida electrónicamente a través de Agenfacil._`;
 
     const cleanPhone = prescription.patient_phone.replace(/\D/g, '');
     const url = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
@@ -170,7 +170,7 @@ export const PrescriptionPrintModal: React.FC<PrescriptionPrintModalProps> = ({
             <div className="flex items-center gap-3 bg-slate-50 border border-slate-200/90 rounded-xl p-3">
               <div className="w-16 h-16 bg-white p-1 rounded-lg border border-slate-200 flex items-center justify-center shrink-0 shadow-2xs">
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fagendapro.ai%2Fverify%2Frx%2F${encodeURIComponent(prescription.id)}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=https%3A%2F%2Fagenfacil.com%2Fverify%2Frx%2F${encodeURIComponent(prescription.id)}`}
                   alt="QR Validación Receta"
                   className="w-full h-full object-contain"
                   onError={(e) => {

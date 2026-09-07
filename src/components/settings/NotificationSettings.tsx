@@ -314,7 +314,7 @@ export const NotificationSettings: React.FC = () => {
             <span>Consejo para el consultorio</span>
           </div>
           <p className="text-[11px] leading-relaxed">
-            Para no perderte ninguna notificación durante la jornada de atención, recomendamos fijar la pestaña de AgendaPro AI en tu navegador o mantenerla abierta en segundo plano.
+            Para no perderte ninguna notificación durante la jornada de atención, recomendamos fijar la pestaña de Agenfacil en tu navegador o mantenerla abierta en segundo plano.
           </p>
         </div>
       </div>

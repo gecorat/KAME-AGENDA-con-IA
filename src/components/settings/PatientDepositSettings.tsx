@@ -32,7 +32,9 @@ export const PatientDepositSettings: React.FC<PatientDepositSettingsProps> = ({
   };
 
   const depositEnabled = formData.patient_deposit_enabled ?? formData.mercadopago_deposit_enabled ?? true;
+  const depositType = formData.patient_deposit_type || 'percent';
   const depositPercent = formData.patient_deposit_percent ?? formData.mercadopago_deposit_percent ?? 30;
+  const depositFixedAmount = formData.patient_deposit_fixed_amount ?? 85000;
   const depositMethod = formData.patient_deposit_method || 'alias_cbu';
 
   const handleToggleDeposit = (enabled: boolean) => {
@@ -40,9 +42,25 @@ export const PatientDepositSettings: React.FC<PatientDepositSettingsProps> = ({
     onChange('mercadopago_deposit_enabled', enabled);
   };
 
+  const handleDepositTypeChange = (type: 'percent' | 'fixed') => {
+    onChange('patient_deposit_type', type);
+  };
+
   const handlePercentChange = (val: number) => {
-    onChange('patient_deposit_percent', val);
-    onChange('mercadopago_deposit_percent', val);
+    if (val > 100) {
+      // If user inputs a value > 100 (e.g. 85000), automatically switch to fixed amount ($ ARS) mode
+      onChange('patient_deposit_type', 'fixed');
+      onChange('patient_deposit_fixed_amount', val);
+      return;
+    }
+    const cleanVal = Math.min(100, Math.max(1, isNaN(val) ? 30 : val));
+    onChange('patient_deposit_percent', cleanVal);
+    onChange('mercadopago_deposit_percent', cleanVal);
+  };
+
+  const handleFixedAmountChange = (val: number) => {
+    const cleanVal = Math.max(0, isNaN(val) ? 0 : val);
+    onChange('patient_deposit_fixed_amount', cleanVal);
   };
 
   const handleSimulateMpConnect = () => {
@@ -105,34 +123,130 @@ export const PatientDepositSettings: React.FC<PatientDepositSettingsProps> = ({
           />
         </div>
 
-        {/* Deposit Percentage Slider/Input */}
+        {/* Deposit Calculation Mode & Amount */}
         {depositEnabled && (
-          <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200/90 space-y-2">
+          <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200/90 space-y-4">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-neutral-800">
-                Porcentaje de Seña Requerido:
+                Modalidad del Importe de Seña:
               </label>
-              <span className="text-sm font-bold font-mono text-neutral-900 bg-white px-2.5 py-0.5 rounded-lg border border-neutral-200 shadow-2xs">
-                {depositPercent}%
-              </span>
+              <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
+                <button
+                  type="button"
+                  onClick={() => handleDepositTypeChange('fixed')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    depositType === 'fixed'
+                      ? 'bg-neutral-900 text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  💵 Monto Fijo ($ ARS)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDepositTypeChange('percent')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    depositType === 'percent'
+                      ? 'bg-neutral-900 text-white shadow-2xs'
+                      : 'text-neutral-600 hover:text-neutral-900'
+                  }`}
+                >
+                  📊 Porcentaje (%)
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="10"
-                max="100"
-                step="5"
-                value={depositPercent}
-                onChange={e => handlePercentChange(parseInt(e.target.value) || 30)}
-                className="w-full accent-neutral-900"
-              />
-            </div>
-            <div className="flex justify-between text-[10px] text-neutral-400 font-mono">
-              <span>10% (Simbólica)</span>
-              <span>30% (Recomendado médicos)</span>
-              <span>50% (Procedimientos)</span>
-              <span>100% (Total)</span>
-            </div>
+
+            {/* Mode 1: Monto Fijo ($ ARS) - Allows 85000 or any custom amount */}
+            {depositType === 'fixed' ? (
+              <div className="space-y-3 pt-1">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium text-neutral-700">
+                      Monto de Seña Fijo por Turno ($):
+                    </span>
+                    <span className="text-sm font-bold font-mono text-emerald-700 bg-white px-3 py-0.5 rounded-lg border border-neutral-200 shadow-2xs">
+                      ${depositFixedAmount.toLocaleString('es-AR')} ARS
+                    </span>
+                  </div>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-bold text-neutral-400 font-mono">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={depositFixedAmount || ''}
+                      onChange={e => handleFixedAmountChange(Number(e.target.value))}
+                      placeholder="85000"
+                      className="w-full pl-8 pr-4 py-2.5 bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 font-mono text-base font-bold text-neutral-900"
+                    />
+                  </div>
+                  <p className="text-[11px] text-neutral-500 mt-1.5">
+                    Se solicitará exactamente este importe ($) para asegurar cualquier turno, sin importar el arancel del servicio.
+                  </p>
+                </div>
+
+                {/* Quick amount presets */}
+                <div className="flex items-center gap-2 flex-wrap pt-1">
+                  <span className="text-[10px] text-neutral-400 font-mono uppercase tracking-wider">Montos rápidos:</span>
+                  {[20000, 35000, 50000, 85000, 100000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleFixedAmountChange(preset)}
+                      className={`px-2.5 py-1 text-xs font-mono font-semibold rounded-lg border transition cursor-pointer ${
+                        depositFixedAmount === preset
+                          ? 'bg-neutral-900 text-white border-neutral-900 shadow-2xs'
+                          : 'bg-white hover:bg-neutral-100 text-neutral-700 border-neutral-200'
+                      }`}
+                    >
+                      ${preset.toLocaleString('es-AR')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              /* Mode 2: Porcentaje (%) */
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-neutral-700">
+                    Porcentaje de Seña Requerido:
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={depositPercent}
+                      onChange={e => handlePercentChange(Number(e.target.value))}
+                      className="w-16 px-2 py-1 text-xs font-bold text-center bg-white border border-neutral-200 rounded-lg focus:ring-2 focus:ring-neutral-900 font-mono"
+                    />
+                    <span className="text-xs font-bold text-neutral-600">%</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min="5"
+                    max="100"
+                    step="5"
+                    value={depositPercent}
+                    onChange={e => handlePercentChange(parseInt(e.target.value) || 30)}
+                    className="w-full accent-neutral-900 cursor-pointer"
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-neutral-400 font-mono">
+                  <span>10% (Simbólica)</span>
+                  <span>30% (Recomendado)</span>
+                  <span>50% (Procedimientos)</span>
+                  <span>100% (Total)</span>
+                </div>
+                <p className="text-[11px] text-neutral-500">
+                  Se calculará automáticamente el porcentaje seleccionado sobre el precio de cada servicio o consulta.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>

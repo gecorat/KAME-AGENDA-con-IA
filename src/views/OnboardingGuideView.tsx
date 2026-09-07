@@ -107,7 +107,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
       id: 'share',
       number: '05',
       title: 'Probar Portal Online de Pacientes',
-      description: 'Verifica tu página pública agendapro.ai/u/... y realiza un agendamiento de prueba para comprobar el flujo.',
+      description: 'Verifica tu página pública agenfacil.com/u/... y realiza un agendamiento de prueba para comprobar el flujo.',
       tab: 'portal',
       actionLabel: 'Ver Portal de Turnos',
       icon: Globe,
@@ -297,7 +297,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
         <div className="flex items-center gap-2.5">
           <ShieldCheck className="w-5 h-5 text-neutral-700" />
           <h3 className="text-sm font-bold text-neutral-900 font-display">
-            Tu período de prueba de 7 días (Plan Básico activo)
+            Tu período de prueba de 14 días (Plan Básico activo)
           </h3>
         </div>
         <p className="text-xs text-neutral-600 leading-relaxed">

@@ -21,7 +21,9 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
-  Edit3
+  Edit3,
+  Trash2,
+  Info
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment, AppointmentStatus } from '../types';
@@ -39,7 +41,16 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   onEditAppointment,
   onNavigateToTab
 }) => {
-  const { appointments, services, waitlist, updateAppointment } = useAgendaStore();
+  const {
+    appointments,
+    services,
+    waitlist,
+    updateAppointment,
+    deleteAppointment,
+    hasExampleData,
+    clearExampleData,
+    isExampleItem
+  } = useAgendaStore();
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   // Default view is MONTHLY as requested
@@ -322,6 +333,34 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Demo / Example Data Banner with 1-click removal */}
+      {hasExampleData && (
+        <div className="bg-sky-50 border border-sky-200/90 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sky-950 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+              <Info className="w-4 h-4 text-sky-700" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-sky-900">
+                Turnos de Demostración Activos
+              </p>
+              <p className="text-[11px] text-sky-800/90 leading-tight mt-0.5">
+                La agenda muestra turnos de ejemplo para que explores el calendario. Se limpiarán al agendar tu primer turno real o puedes eliminarlos ahora.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => clearExampleData()}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-2xs flex items-center gap-1.5 self-end sm:self-auto cursor-pointer"
+            title="Eliminar todos los registros de ejemplo"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Eliminar datos de ejemplo</span>
+          </button>
+        </div>
+      )}
 
       {/* Smart Cancellation Recovery Banner */}
       {filteredAppointments.some(a => a.status === 'cancelled') && waitingEntries.length > 0 && (
@@ -660,9 +699,27 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     </div>
 
                     <div className="flex items-center gap-2">
+                      {isExampleItem(apt) && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800 font-bold border border-amber-300">
+                          Ejemplo
+                        </span>
+                      )}
                       <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(apt.status)}`}>
                         {apt.status}
                       </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`¿Deseas eliminar el turno de ${apt.patient_name}?`)) {
+                            deleteAppointment(apt.id);
+                          }
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
+                        title="Eliminar turno"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   </div>
                 ))
@@ -885,15 +942,30 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             )}
                           </div>
 
-                          {/* Open full editor modal */}
-                          <button
-                            type="button"
-                            onClick={() => onEditAppointment(apt)}
-                            className="px-2.5 py-1 text-xs font-semibold text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors flex items-center gap-1"
-                          >
-                            <Edit3 className="w-3 h-3" />
-                            <span>Abrir / Editar</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {/* Open full editor modal */}
+                            <button
+                              type="button"
+                              onClick={() => onEditAppointment(apt)}
+                              className="px-2.5 py-1 text-xs font-semibold text-neutral-800 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors flex items-center gap-1"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                              <span>Abrir / Editar</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`¿Deseas eliminar el turno de ${apt.patient_name}?`)) {
+                                  deleteAppointment(apt.id);
+                                }
+                              }}
+                              className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                              title="Eliminar turno"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );

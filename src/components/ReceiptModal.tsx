@@ -1,23 +1,30 @@
-import React from 'react';
-import { X, Printer, MessageSquare, CheckCircle, AlertTriangle, Building2, User, Calendar, CreditCard, Copy, Check } from 'lucide-react';
+import React, { useState } from 'react';
+import { X, Printer, MessageSquare, CheckCircle, AlertTriangle, Building2, User, Calendar, CreditCard, Copy, Check, Edit2, Trash2 } from 'lucide-react';
 import { PaymentRecord } from '../types';
 import { useAgendaStore } from '../lib/store';
+import { ConfirmModal } from './ConfirmModal';
 
 interface ReceiptModalProps {
   isOpen: boolean;
   onClose: () => void;
   payment: PaymentRecord | null;
   onVoid?: (paymentId: string) => void;
+  onEdit?: (payment: PaymentRecord) => void;
+  onDelete?: (paymentId: string) => void;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
   payment,
-  onVoid
+  onVoid,
+  onEdit,
+  onDelete
 }) => {
   const { practiceSettings } = useAgendaStore();
-  const [copied, setCopied] = React.useState(false);
+  const [copied, setCopied] = useState(false);
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isConfirmVoidOpen, setIsConfirmVoidOpen] = useState(false);
 
   if (!isOpen || !payment) return null;
 
@@ -91,7 +98,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            {onEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  onEdit(payment);
+                  onClose();
+                }}
+                className="p-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60 rounded-lg transition-colors flex items-center gap-1 text-xs font-semibold"
+                title="Editar este recibo"
+              >
+                <Edit2 className="w-4 h-4 text-neutral-700" />
+                <span className="hidden sm:inline">Editar</span>
+              </button>
+            )}
             <button
               onClick={handlePrint}
               className="p-2 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200/60 rounded-lg transition-colors"
@@ -239,19 +260,40 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
         {/* Modal Actions Footer (Hidden in print) */}
         <div className="p-4 bg-neutral-50 border-t border-neutral-200 flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <div>
-            {!isVoided && onVoid && (
+          <div className="flex items-center gap-2">
+            {onEdit && (
               <button
                 type="button"
                 onClick={() => {
-                  if (confirm(`¿Está seguro de que desea anular el recibo ${payment.receipt_number}?`)) {
-                    onVoid(payment.id);
-                    onClose();
-                  }
+                  onEdit(payment);
+                  onClose();
                 }}
-                className="px-3 py-1.5 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg font-medium transition-colors"
+                className="px-3 py-1.5 text-xs text-neutral-700 hover:text-neutral-900 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg font-medium transition-colors flex items-center gap-1.5 shadow-2xs"
               >
-                Anular Recibo
+                <Edit2 className="w-3.5 h-3.5 text-neutral-600" />
+                <span>Editar Recibo</span>
+              </button>
+            )}
+
+            {!isVoided && onVoid && (
+              <button
+                type="button"
+                onClick={() => setIsConfirmVoidOpen(true)}
+                className="px-3 py-1.5 text-xs text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg font-medium transition-colors"
+              >
+                Anular
+              </button>
+            )}
+
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => setIsConfirmDeleteOpen(true)}
+                className="px-3 py-1.5 text-xs text-rose-600 hover:text-rose-800 hover:bg-rose-50 border border-rose-200 rounded-lg font-medium transition-colors flex items-center gap-1"
+                title="Eliminar comprobante"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar</span>
               </button>
             )}
           </div>
@@ -276,6 +318,37 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
         </div>
 
       </div>
+
+      {/* Confirmation Dialogs */}
+      <ConfirmModal
+        isOpen={isConfirmDeleteOpen}
+        onClose={() => setIsConfirmDeleteOpen(false)}
+        onConfirm={() => {
+          if (onDelete) {
+            onDelete(payment.id);
+            onClose();
+          }
+        }}
+        title={`¿Eliminar Recibo ${payment.receipt_number}?`}
+        message={`Esta acción eliminará de forma permanente el comprobante de cobro por $${payment.amount.toLocaleString('es-AR')} correspondiente a ${payment.patient_name} y actualizará el balance.`}
+        confirmText="Sí, Eliminar Recibo"
+        variant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={isConfirmVoidOpen}
+        onClose={() => setIsConfirmVoidOpen(false)}
+        onConfirm={() => {
+          if (onVoid) {
+            onVoid(payment.id);
+            onClose();
+          }
+        }}
+        title={`¿Anular Recibo ${payment.receipt_number}?`}
+        message={`El recibo figurará como Anulado y se deducirá del total facturado.`}
+        confirmText="Sí, Anular Recibo"
+        variant="warning"
+      />
     </div>
   );
 };

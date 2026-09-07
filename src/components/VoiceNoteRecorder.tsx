@@ -129,7 +129,11 @@ export const VoiceNoteRecorder: React.FC<VoiceNoteRecorderProps> = ({
       }, 1000);
     } catch (err: any) {
       console.warn('Error accessing microphone:', err);
-      setMicError(err.message || 'No se pudo acceder al micrófono. Verifica los permisos del navegador.');
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError' || err.message?.includes('not-allowed')) {
+        setMicError('El acceso al micrófono no fue permitido por el navegador o iFrame. Puedes hacer clic abajo para probar con el dictado de muestra o habilitar el micrófono en la configuración del navegador.');
+      } else {
+        setMicError(err.message || 'No se pudo acceder al micrófono. Verifica los permisos del navegador.');
+      }
     }
   };
 

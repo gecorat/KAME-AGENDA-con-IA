@@ -28,12 +28,24 @@ export interface Patient {
   insurance_company?: string;
   insurance_provider?: string;
   insurance_number?: string;
+  // Professional & Business customization fields
+  cuit?: string;
+  company_name?: string;
+  client_type?: 'individual' | 'company';
+  case_number?: string;
+  jurisdiction?: string;
+  subject_or_matter?: string;
+  pet_species?: string;
+  pet_breed?: string;
+  pet_weight?: string;
+  student_level?: string;
   emergency_contact?: {
     name: string;
     phone: string;
     relation: string;
   };
   total_appointments?: number;
+  is_example?: boolean;
   created_at: string;
 }
 
@@ -46,6 +58,21 @@ export interface BookingRequiredFields {
   reason: boolean;    // default: false (optional toggle: Motivo de consulta)
   address?: boolean;  // default: false (optional toggle: Domicilio)
 }
+
+export type ProfessionCategory = 
+  | 'odontologia' 
+  | 'medicina_general' 
+  | 'psicologia' 
+  | 'kinesiologia' 
+  | 'nutricion' 
+  | 'estetica_belleza' 
+  | 'veterinaria' 
+  | 'coaching_consultoria' 
+  | 'educacion_clases' 
+  | 'legal_contable' 
+  | 'otro_personalizado';
+
+export type ClientTerminology = 'pacientes' | 'clientes' | 'consultantes' | 'alumnos';
 
 export interface Appointment {
   id: string;
@@ -66,6 +93,7 @@ export interface Appointment {
   origin: 'public_booking' | 'bot_whatsapp' | 'manual' | 'telemedicine';
   meet_url?: string;
   is_demo?: boolean;
+  is_example?: boolean;
   reminder_24h_sent?: boolean;
   reminder_24h_sent_at?: string;
   reminder_2h_sent?: boolean;
@@ -74,6 +102,12 @@ export interface Appointment {
   email_reminder_sent_at?: string;
   patient_confirmed?: boolean;
   patient_confirmed_at?: string;
+  // Patient Deposit / Seña tracking
+  deposit_declared?: boolean;
+  deposit_amount?: number;
+  deposit_verified?: boolean;
+  deposit_method?: 'alias_cbu' | 'mercadopago_connect' | 'mercadopago_link' | 'cash' | 'transfer';
+  deposit_notes?: string;
 }
 
 export interface DayAvailability {
@@ -92,6 +126,9 @@ export interface PracticeSettings {
   professional_title: string; // p. ej. "Odontólogo Especialista"
   medical_license?: string; // p. ej. "M.N. 142.890 / M.P. 45.210"
   specialty: string;
+  profession_category?: ProfessionCategory;
+  custom_profession_name?: string;
+  client_term?: ClientTerminology; // 'pacientes' | 'clientes' | 'consultantes' | 'alumnos'
   phone: string;
   whatsapp_number: string;
   email: string;
@@ -121,7 +158,9 @@ export interface PracticeSettings {
   mercadopago_deposit_percent?: number;
   // Professional's deposit payment setup for their patients (No API keys needed for doctors)
   patient_deposit_enabled?: boolean;
+  patient_deposit_type?: 'percent' | 'fixed';
   patient_deposit_percent?: number;
+  patient_deposit_fixed_amount?: number;
   patient_deposit_method?: 'alias_cbu' | 'mercadopago_connect' | 'mercadopago_link';
   patient_deposit_alias?: string;
   patient_deposit_cbu?: string;
@@ -280,6 +319,7 @@ export interface WaitlistEntry {
   priority: WaitlistPriority;
   status: WaitlistStatus;
   notes?: string;
+  is_example?: boolean;
   created_at: string;
   notified_at?: string;
 }
@@ -334,6 +374,7 @@ export interface PaymentRecord {
   notes?: string;
   insurance_provider?: string;
   copay_amount?: number;
+  is_example?: boolean;
   status: 'completed' | 'voided';
 }
 
@@ -433,8 +474,22 @@ export interface ConsultationRecord {
   date: string;
   reason_for_visit: string; // Motivo de consulta principal
   // Specialty & Customization
-  consultation_type?: 'dental' | 'generic' | 'soap' | 'psychology' | 'kinesiology';
+  consultation_type?: 'dental' | 'generic' | 'soap' | 'psychology' | 'kinesiology' | 'legal' | 'nutrition' | 'education' | 'aesthetic';
   dental_tooth_number?: string; // Pieza o sector dental (ej. "3.6", "Sector anterosuperior")
+  // Legal & Accounting tracking fields
+  case_number?: string; // N° de Expediente / Causa / Legajo
+  court_jurisdiction?: string; // Juzgado / Fuero / Tribunal / Dependencia
+  procedural_stage?: string; // Estado procesal / Etapa (ej. En trámite, Prueba, Sentencia)
+  deadline_date?: string; // Vencimiento de plazo procesal o fiscal
+  legal_matter?: string; // Materia (Civil, Comercial, Laboral, Penal, Impositivo)
+  // Nutrition & Kinesiology & Education fields
+  eva_pain_scale?: number; // 1-10
+  kinesiology_zone?: string;
+  weight_kg?: string;
+  height_cm?: string;
+  bmi?: string;
+  education_topic?: string;
+  education_assignment?: string;
   treatment_performed?: string; // Procedimiento realizado en sesión
   clinical_evolution?: string;  // Nota libre / Evolución clínica genérica
   vital_signs_enabled?: boolean; // Si el profesional desea registrar signos vitales
@@ -457,6 +512,7 @@ export interface ConsultationRecord {
   }[];
   professional_name: string;
   medical_license?: string;
+  is_example?: boolean;
   created_at: string;
   updated_at?: string;
 }

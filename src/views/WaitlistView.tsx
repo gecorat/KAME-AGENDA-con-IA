@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { WaitlistEntry, WaitlistPriority, WaitlistStatus } from '../types';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 interface WaitlistViewProps {
   onOpenNewWaitlist: () => void;
@@ -43,6 +44,7 @@ export const WaitlistView: React.FC<WaitlistViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('waiting');
+  const [entryToDelete, setEntryToDelete] = useState<WaitlistEntry | null>(null);
   const [notificationToast, setNotificationToast] = useState<string | null>(null);
 
   // Stats
@@ -300,11 +302,7 @@ export const WaitlistView: React.FC<WaitlistViewProps> = ({
                         <Edit2 className="w-3.5 h-3.5" />
                       </button>
                       <button
-                        onClick={() => {
-                          if (confirm(`¿Eliminar a ${entry.patient_name} de la lista de espera?`)) {
-                            deleteWaitlistEntry(entry.id);
-                          }
-                        }}
+                        onClick={() => setEntryToDelete(entry)}
                         className="p-1 rounded-lg text-neutral-400 hover:text-rose-600 hover:bg-rose-50"
                         title="Eliminar"
                       >
@@ -404,6 +402,22 @@ export const WaitlistView: React.FC<WaitlistViewProps> = ({
           })}
         </div>
       )}
+
+      {/* Confirmation Dialog for Waitlist Deletion */}
+      <ConfirmModal
+        isOpen={!!entryToDelete}
+        onClose={() => setEntryToDelete(null)}
+        onConfirm={() => {
+          if (entryToDelete) {
+            deleteWaitlistEntry(entryToDelete.id);
+            setEntryToDelete(null);
+          }
+        }}
+        title={`¿Eliminar de lista de espera?`}
+        message={`¿Está seguro de que desea eliminar a ${entryToDelete?.patient_name} de la lista de espera?`}
+        confirmText="Sí, Eliminar"
+        variant="danger"
+      />
     </div>
   );
 };

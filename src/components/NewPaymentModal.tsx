@@ -42,7 +42,14 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
       setPatientPhone(preselectedAppointment.patient_phone);
       setConcept(preselectedAppointment.service_name);
       setServiceName(preselectedAppointment.service_name);
-      setAmount(preselectedAppointment.service_price || 0);
+      
+      const totalPrice = preselectedAppointment.service_price || 0;
+      const deposit = (preselectedAppointment.deposit_verified && preselectedAppointment.deposit_amount)
+        ? preselectedAppointment.deposit_amount
+        : 0;
+      
+      // Charge remaining balance if deposit is verified
+      setAmount(Math.max(0, totalPrice - deposit));
 
       const p = patients.find(pat => pat.id === preselectedAppointment.patient_id);
       if (p?.dni) setPatientDni(p.dni);
@@ -155,6 +162,28 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
         {/* Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           
+          {/* Verified Deposit Information Banner */}
+          {preselectedAppointment && preselectedAppointment.deposit_verified && Boolean(preselectedAppointment.deposit_amount) && (
+            <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl flex items-start gap-2.5 text-xs text-emerald-950">
+              <Check className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              <div className="flex-1 space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold">Seña previa acreditada:</span>
+                  <span className="font-mono font-bold text-emerald-800">
+                    -${(preselectedAppointment.deposit_amount || 0).toLocaleString('es-AR')}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-[11px] text-emerald-800">
+                  <span>Arancel total: ${(preselectedAppointment.service_price || 0).toLocaleString('es-AR')}</span>
+                  <span className="font-bold">Saldo a cobrar: ${amount.toLocaleString('es-AR')}</span>
+                </div>
+                <p className="text-[10px] text-emerald-700 italic">
+                  El sistema ha ajustado automáticamente el monto para cobrar únicamente el saldo restante.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Quick link from pending appointments if not preselected */}
           {!preselectedAppointment && pendingAppointments.length > 0 && (
             <div className="p-3 bg-amber-50 rounded-xl border border-amber-200/80">
@@ -276,8 +305,8 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
               </label>
               <input
                 type="number"
-                min="1"
-                step="100"
+                min="0"
+                step="any"
                 value={amount || ''}
                 onChange={e => setAmount(Number(e.target.value))}
                 className="w-full px-3 py-2 text-base font-bold text-neutral-900 bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"

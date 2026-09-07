@@ -31,6 +31,7 @@ import {
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { Conversation, ChatMessage } from '../types';
+import { ConfirmModal } from '../components/ConfirmModal';
 
 interface WhatsAppChatsViewProps {
   onOpenNewAppointmentWithPatient?: (patientName: string, patientPhone: string) => void;
@@ -76,6 +77,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
   const [showNewSimModal, setShowNewSimModal] = useState(false);
   const [newSimPatientName, setNewSimPatientName] = useState('');
   const [newSimPatientPhone, setNewSimPatientPhone] = useState('');
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -289,25 +291,24 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
   };
 
   const handleDisconnectWhatsApp = async () => {
-    if (window.confirm('¿Deseas desvincular la sesión actual de WhatsApp?')) {
-      try {
-        const targetInstance = practiceSettings.practice_name
-          ? practiceSettings.practice_name.toLowerCase().replace(/[^a-z0-9]/g, '')
-          : 'consultorio';
-        await fetch('/api/evolution/disconnect-instance', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ instanceName: targetInstance })
-        });
-      } catch (err) {
-        console.warn('Error disconnecting instance:', err);
-      }
-      updatePracticeSettings({
-        whatsapp_connected: false,
-        whatsapp_session_phone: undefined
+    try {
+      const targetInstance = practiceSettings.practice_name
+        ? practiceSettings.practice_name.toLowerCase().replace(/[^a-z0-9]/g, '')
+        : 'consultorio';
+      await fetch('/api/evolution/disconnect-instance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instanceName: targetInstance })
       });
-      setEvolutionQrCode(null);
+    } catch (err) {
+      console.warn('Error disconnecting instance:', err);
     }
+    updatePracticeSettings({
+      whatsapp_connected: false,
+      whatsapp_session_phone: undefined
+    });
+    setEvolutionQrCode(null);
+    setShowDisconnectConfirm(false);
   };
 
   // Find appointments for active patient
@@ -825,7 +826,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               {practiceSettings.whatsapp_connected ? (
                 <button
                   type="button"
-                  onClick={handleDisconnectWhatsApp}
+                  onClick={() => setShowDisconnectConfirm(true)}
                   className="px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-md font-medium transition-colors"
                 >
                   Desvincular
@@ -952,7 +953,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200 space-y-1.5">
                 <div className="flex items-center gap-2 font-bold text-neutral-900">
                   <Bot className="w-4 h-4 text-neutral-700" />
-                  <span>Tu Trial de 7 días incluye:</span>
+                  <span>Tu Trial de 14 días incluye:</span>
                 </div>
                 <p className="text-[11px] text-neutral-600">
                   Acceso irrestricto a este <strong>Simulador del Bot IA</strong>, que opera con la agenda en vivo, tus aranceles, servicios y horarios reales, simulando con exactitud cómo responderá la IA a tus pacientes.
@@ -1003,6 +1004,17 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Confirmation Dialog for WhatsApp Session Disconnect */}
+      <ConfirmModal
+        isOpen={showDisconnectConfirm}
+        onClose={() => setShowDisconnectConfirm(false)}
+        onConfirm={handleDisconnectWhatsApp}
+        title="¿Desvincular WhatsApp?"
+        message="¿Está seguro de que desea desvincular la sesión actual de WhatsApp? Las respuestas automáticas y recordatorios quedarán pausados hasta que vuelva a escanear el código QR."
+        confirmText="Sí, Desvincular"
+        variant="danger"
+      />
     </div>
   );
 };

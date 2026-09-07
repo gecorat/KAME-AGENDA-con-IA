@@ -126,10 +126,11 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({
               </label>
               <input
                 type="number"
+                min="0"
+                step="any"
                 value={price}
                 onChange={e => setPrice(Number(e.target.value))}
-                step="500"
-                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 font-mono"
                 required
               />
             </div>

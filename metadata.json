@@ -1,6 +1,6 @@
 {
-  "name": "AgendaPro AI",
-  "description": "Sistema de gestión para consultorios: agenda inteligente, bot IA en WhatsApp, historias clínicas con notas de voz y transcripción IA, recordatorios, cobros y caja",
+  "name": "Agenfacil",
+  "description": "Agenfacil - Sistema inteligente de gestión para consultorios: agenda automatizada, bot IA en WhatsApp, historias clínicas, recordatorios, cobros y portal de reservas.",
   "requestFramePermissions": [
     "microphone"
   ],

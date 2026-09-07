@@ -133,7 +133,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
               <input
                 type="number"
                 min="0"
-                step="500"
+                step="any"
                 value={openingAmount}
                 onChange={e => setOpeningAmount(Number(e.target.value))}
                 className="w-full px-3 py-2 text-lg font-bold font-mono text-neutral-900 bg-white border border-neutral-200 rounded-xl focus:ring-2 focus:ring-emerald-500"
@@ -208,7 +208,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
               <input
                 type="number"
                 min="0"
-                step="100"
+                step="any"
                 value={countedCash || ''}
                 onChange={e => setCountedCash(Number(e.target.value))}
                 placeholder="Ingrese cuánto dinero contó"
@@ -349,8 +349,8 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
               </label>
               <input
                 type="number"
-                min="1"
-                step="50"
+                min="0"
+                step="any"
                 value={movementAmount || ''}
                 onChange={e => setMovementAmount(Number(e.target.value))}
                 placeholder="Monto"

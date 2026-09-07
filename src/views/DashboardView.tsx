@@ -24,7 +24,9 @@ import {
   Copy,
   Check,
   Share2,
-  Globe
+  Globe,
+  Trash2,
+  Info
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment } from '../types';
@@ -40,14 +42,26 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   onNavigateToTab,
   onEditAppointment
 }) => {
-  const { appointments, patients, services, practiceSettings, waitlist, updateAppointment, payments } = useAgendaStore();
+  const {
+    appointments,
+    patients,
+    services,
+    practiceSettings,
+    waitlist,
+    updateAppointment,
+    deleteAppointment,
+    payments,
+    hasExampleData,
+    clearExampleData,
+    isExampleItem
+  } = useAgendaStore();
   const [copiedPortal, setCopiedPortal] = useState(false);
 
   const handleCopyPortal = () => {
     const handle = practiceSettings.handle || 'consultorio-medico';
     const url = typeof window !== 'undefined'
       ? `${window.location.origin}/u/${handle}`
-      : `https://agendapro.ai/u/${handle}`;
+      : `https://agenfacil.com/u/${handle}`;
     navigator.clipboard?.writeText?.(url);
     setCopiedPortal(true);
     setTimeout(() => setCopiedPortal(false), 2500);
@@ -57,7 +71,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const handle = practiceSettings.handle || 'consultorio-medico';
     const url = typeof window !== 'undefined'
       ? `${window.location.origin}/u/${handle}`
-      : `https://agendapro.ai/u/${handle}`;
+      : `https://agenfacil.com/u/${handle}`;
     const shareData = {
       title: `${practiceSettings.practice_name || 'Consultorio Médico'} - Reservas Online`,
       text: `Agenda tu turno online con ${practiceSettings.professional_name || 'nosotros'} ingresando a:`,
@@ -74,20 +88,36 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     onNavigateToTab('pagina-publica');
   };
 
+  const realPatients = patients.filter(p => !isExampleItem(p));
+  const realAppointments = appointments.filter(a => !isExampleItem(a));
+  const realPayments = payments.filter(p => !isExampleItem(p));
+
   const todayStr = new Date().toISOString().split('T')[0];
-  const waitingList = waitlist.filter(w => w.status === 'waiting');
-  const monthCollected = payments.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
+  const waitingList = waitlist.filter(w => w.status === 'waiting' && !isExampleItem(w));
+  const monthCollected = realPayments.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
 
   // Appointments today
   const todayAppointments = appointments.filter(a => {
     return a.start_datetime.startsWith(todayStr);
   }).sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
 
+  const todayRealAppointments = realAppointments.filter(a => a.start_datetime.startsWith(todayStr));
+
+  // 7-day registered real patients
+  const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const newPatientsThisWeek = realPatients.filter(p => {
+    try {
+      return new Date(p.created_at).getTime() >= oneWeekAgo;
+    } catch {
+      return false;
+    }
+  }).length;
+
   // Calculations
-  const totalCompleted = appointments.filter(a => a.status === 'completed').length;
-  const totalConfirmed = appointments.filter(a => a.status === 'confirmed').length;
-  const totalPending = appointments.filter(a => a.status === 'pending').length;
-  const projectedRevenue = appointments
+  const totalCompleted = realAppointments.filter(a => a.status === 'completed').length;
+  const totalConfirmed = realAppointments.filter(a => a.status === 'confirmed').length;
+  const totalPending = realAppointments.filter(a => a.status === 'pending').length;
+  const projectedRevenue = realAppointments
     .filter(a => a.status !== 'cancelled')
     .reduce((acc, curr) => acc + (curr.service_price || 0), 0);
 
@@ -139,7 +169,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               onClick={() => onNavigateToTab('portal')}
               className="text-neutral-800 hover:text-sky-600 font-medium inline-flex items-center gap-1 transition-colors hover:underline cursor-pointer max-w-full sm:max-w-xs truncate"
             >
-              <span className="truncate">agendapro.ai/u/{practiceSettings.handle || 'consultorio-medico'}</span>
+              <span className="truncate">agenfacil.com/u/{practiceSettings.handle || 'consultorio-medico'}</span>
               <ExternalLink className="w-3 h-3 text-neutral-400 shrink-0" />
             </button>
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -210,6 +240,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
+      {/* Demo / Example Data Banner with 1-click removal */}
+      {hasExampleData && (
+        <div className="bg-sky-50 border border-sky-200/90 rounded-xl p-3.5 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sky-950 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-sky-100 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+              <Info className="w-4 h-4 text-sky-700" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-sky-900">
+                Modo Demostración activo
+              </p>
+              <p className="text-[11px] text-sky-800/90 leading-tight mt-0.5">
+                Los datos de ejemplo te permiten explorar el sistema sin alterar tus estadísticas reales. Se eliminarán automáticamente al registrar información real.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => clearExampleData()}
+            className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-lg text-xs font-semibold shrink-0 transition-colors shadow-2xs flex items-center gap-1.5 self-end sm:self-auto cursor-pointer"
+            title="Eliminar todos los pacientes y turnos de ejemplo"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Eliminar datos de ejemplo</span>
+          </button>
+        </div>
+      )}
+
       {/* Metrics Row - Responsive minimalist cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
         <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors">
@@ -218,11 +276,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Calendar className="w-4 h-4 text-neutral-400" />
           </div>
           <div className="text-2xl font-bold text-neutral-900 tracking-tight font-display">
-            {todayAppointments.length}
+            {todayRealAppointments.length}
           </div>
-          <p className="text-[11px] text-neutral-500 mt-1">
-            {todayAppointments.filter(a => a.status === 'confirmed').length} confirmados • {todayAppointments.filter(a => a.status === 'completed').length} atendidos
-          </p>
+          {hasExampleData && todayRealAppointments.length === 0 && todayAppointments.length > 0 ? (
+            <p className="text-[11px] text-amber-700 font-medium mt-1">
+              1 turno de ejemplo (no sumado)
+            </p>
+          ) : (
+            <p className="text-[11px] text-neutral-500 mt-1">
+              {todayRealAppointments.filter(a => a.status === 'confirmed').length} confirmados • {todayRealAppointments.filter(a => a.status === 'completed').length} atendidos
+            </p>
+          )}
         </div>
 
         <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors">
@@ -231,11 +295,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Users className="w-4 h-4 text-neutral-400" />
           </div>
           <div className="text-2xl font-bold text-neutral-900 tracking-tight font-display">
-            {patients.length}
+            {realPatients.length}
           </div>
-          <p className="text-[11px] text-emerald-700 font-medium mt-1">
-            +3 pacientes nuevos esta semana
-          </p>
+          {hasExampleData && realPatients.length === 0 ? (
+            <p className="text-[11px] text-amber-700 font-medium mt-1">
+              1 paciente de ejemplo (no sumado)
+            </p>
+          ) : (
+            <p className="text-[11px] text-emerald-700 font-medium mt-1">
+              {newPatientsThisWeek > 0 ? `+${newPatientsThisWeek} pacientes nuevos esta semana` : 'Sin registros esta semana'}
+            </p>
+          )}
         </div>
 
         <div 
@@ -320,6 +390,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-sm font-semibold text-neutral-900">{apt.patient_name}</span>
+                          {isExampleItem(apt) && (
+                            <span className="inline-flex items-center text-[10px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded border border-amber-300 font-semibold">
+                              Ejemplo
+                            </span>
+                          )}
                           {getStatusBadge(apt.status)}
                           {apt.patient_confirmed && (
                             <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-800 px-1.5 py-0.5 rounded border border-emerald-200/60 font-semibold">
@@ -384,6 +459,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         className="px-2.5 py-1 text-xs font-medium text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors"
                       >
                         Detalle
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          if (window.confirm('¿Deseas eliminar este turno?')) {
+                            deleteAppointment(apt.id);
+                          }
+                        }}
+                        className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                        title="Eliminar turno"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>

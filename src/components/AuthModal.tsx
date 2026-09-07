@@ -93,11 +93,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="p-6 pb-4 border-b border-neutral-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-neutral-950 text-white flex items-center justify-center font-bold text-xs">
-              K
+              A
             </div>
             <div>
               <h3 className="text-base font-bold text-neutral-900 font-display">
-                {mode === 'login' ? 'Iniciar Sesión en AgendaPro' : 'Crear Cuenta Profesional'}
+                {mode === 'login' ? 'Iniciar Sesión en Agenfacil' : 'Crear Cuenta Profesional'}
               </h3>
               <p className="text-xs text-neutral-500">
                 {mode === 'login' ? 'Accede a tu panel médico y agenda' : 'Comienza a gestionar tu consultorio con IA'}

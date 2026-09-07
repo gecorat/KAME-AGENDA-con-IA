@@ -89,7 +89,7 @@ export const SuperAdminApiSettings: React.FC<SuperAdminApiSettingsProps> = ({
         body: JSON.stringify({
           to: testEmailTo,
           patientName: 'Gonzalo Corat (Admin Test)',
-          practiceName: 'AgendaPro AI Platform',
+          practiceName: 'Agenfacil Platform',
           date: 'Mañana',
           time: '10:00',
           serviceName: 'Prueba de Sistema',

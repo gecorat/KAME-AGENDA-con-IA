@@ -56,7 +56,7 @@ async function startServer() {
       }
 
       const ai = getAI();
-      const practiceName = practiceSettings.practice_name || "AgendaPro AI";
+      const practiceName = practiceSettings.practice_name || "Agenfacil";
       const assistantName = practiceSettings.bot_assistant_name || "Asistente Virtual";
       const botTone = practiceSettings.bot_tone || "cálido, profesional y conciso";
 
@@ -222,7 +222,7 @@ Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el 
         });
       }
 
-      const prompt = `Como asistente de consultorio médico/profesional (${practiceSettings?.practice_name || "AgendaPro"}), sugiere una respuesta rápida, empática y profesional para este mensaje del paciente:
+      const prompt = `Como asistente de consultorio médico/profesional (${practiceSettings?.practice_name || "Agenfacil"}), sugiere una respuesta rápida, empática y profesional para este mensaje del paciente:
 "${lastPatientMessage}"
 Responde ÚNICAMENTE con el texto sugerido en español rioplatense o neutro, sin comillas ni intros.`;
 
@@ -672,7 +672,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       } = req.body;
 
       const token = accessToken || process.env.MERCADOPAGO_ACCESS_TOKEN;
-      const appUrl = (process.env.APP_URL || "https://agendapro.ai").replace(/\/$/, "");
+      const appUrl = (process.env.APP_URL || "https://agenfacil.com").replace(/\/$/, "");
 
       if (!token) {
         // Fallback simulation link for testing
@@ -795,7 +795,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       const htmlBody = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 24px; color: #171717;">
           <div style="border-bottom: 1px solid #f0f0f0; padding-bottom: 16px; margin-bottom: 20px;">
-            <h2 style="margin: 0; font-size: 18px; color: #0a0a0a; font-weight: 700;">${practiceName || "AgendaPro AI"}</h2>
+            <h2 style="margin: 0; font-size: 18px; color: #0a0a0a; font-weight: 700;">${practiceName || "Agenfacil"}</h2>
             <p style="margin: 4px 0 0 0; font-size: 13px; color: #737373;">Recordatorio de turno médico / profesional</p>
           </div>
           
@@ -817,7 +817,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
           </p>
 
           <div style="border-top: 1px solid #f0f0f0; padding-top: 16px; font-size: 11px; color: #a3a3a3; text-align: center;">
-            Enviado automáticamente por ${practiceName || "AgendaPro AI"} • Sistema de gestión clínica
+            Enviado automáticamente por ${practiceName || "Agenfacil"} • Sistema de gestión clínica
           </div>
         </div>
       `;
@@ -878,7 +878,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`AgendaPro AI Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Agenfacil Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

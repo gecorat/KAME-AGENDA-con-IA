@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   Appointment,
   Patient,
@@ -56,9 +56,12 @@ import {
   saveServiceToFirestore,
   deleteServiceFromFirestore,
   saveConsultationToFirestore,
+  deleteConsultationFromFirestore,
   savePaymentToFirestore,
+  deletePaymentFromFirestore,
   saveSettingsToFirestore,
   saveWaitlistToFirestore,
+  deleteWaitlistFromFirestore,
   saveUserToFirestore,
   getUserFromFirestore,
   subscribeToUsers,
@@ -139,10 +142,15 @@ interface AgendaStoreContextType {
   cashRegister: CashRegister;
   cashMovements: CashMovement[];
   addPayment: (data: Omit<PaymentRecord, 'id' | 'receipt_number' | 'date' | 'status'> & { receipt_number?: string; date?: string }) => PaymentRecord;
+  updatePayment: (paymentId: string, updates: Partial<PaymentRecord>) => void;
+  deletePayment: (paymentId: string) => void;
   voidPayment: (paymentId: string, reason?: string) => void;
   openCashRegister: (openingCash: number, notes?: string) => void;
   closeCashRegister: (closingCash: number, notes?: string) => void;
   addCashMovement: (data: Omit<CashMovement, 'id' | 'created_at'>) => CashMovement;
+  updateCashMovement: (movementId: string, updates: Partial<CashMovement>) => void;
+  deleteCashMovement: (movementId: string) => void;
+  verifyAppointmentDeposit: (appointmentId: string, verified: boolean) => void;
 
   // EHR & Clinical Consultations with Voice Notes
   consultations: ConsultationRecord[];
@@ -183,33 +191,111 @@ interface AgendaStoreContextType {
   dismissToastNotification: () => void;
   triggerNotification: (notif: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => void;
 
+  // Example / Demo data management
+  hasExampleData: boolean;
+  clearExampleData: () => Promise<void>;
+  isExampleItem: (item: any) => boolean;
+  deleteReminderLog: (logId: string) => void;
+  clearAllReminderLogs: () => void;
+  clearAllPendingAppointments: () => void;
+
   // Utilities
   resetToDemoData: () => void;
 }
 
-// Clean storage helper: removes legacy mock demo items so only real data is shown
+// Helper to determine if an item is a demo/example item that should not count towards real statistics
+export function isExampleItem(item: any): boolean {
+  if (!item) return false;
+  if (item.is_example === true || item.is_demo === true) return true;
+
+  if (typeof item.id === 'string') {
+    const id = item.id.toLowerCase();
+    if (
+      id.startsWith('ejemplo-') ||
+      id.startsWith('sample-') ||
+      id.startsWith('demo-') ||
+      id === 'pat-1' || id === 'pat-2' || id === 'pat-3' || id === 'pat-4' || id === 'pat-5' || id === 'ejemplo-paciente-1' ||
+      id === 'apt-1' || id === 'apt-2' || id === 'apt-3' || id === 'apt-4' || id === 'apt-5' || id === 'apt-6' || id === 'ejemplo-turno-1' ||
+      id === 'pay-1' || id === 'pay-2' || id === 'pay-3' || id === 'pay-4' ||
+      id === 'cs-1' || id === 'cs-2' || id === 'cs-3' || id === 'cons-1' || id === 'cons-2' ||
+      id === 'wait-1' || id === 'wait-2' ||
+      id === 'log-1' || id === 'log-2' || id === 'log-3' || id === 'log-4' || id === 'log-5' ||
+      id === 'mov-1' || id === 'mov-2' || id === 'mov-3' ||
+      id === 'conv-1' || id === 'conv-2' || id === 'conv-3'
+    ) return true;
+  }
+
+  const text = `${item.first_name || ''} ${item.last_name || ''} ${item.patient_name || ''} ${item.doctor_name || ''} ${item.notes || ''} ${item.concept || ''}`.toLowerCase();
+  if (
+    text.includes('(ejemplo)') ||
+    text.includes('(muestra)') ||
+    text.includes('sofía navarro') ||
+    text.includes('sofia navarro') ||
+    text.includes('valentina rossi') ||
+    text.includes('matías albarracín') ||
+    text.includes('matias albarracin') ||
+    text.includes('camila benítez') ||
+    text.includes('camila benitez') ||
+    text.includes('esteban morales') ||
+    text.includes('lucía méndez') ||
+    text.includes('lucia mendez') ||
+    text.includes('carlos benítez') ||
+    text.includes('carlos benitez') ||
+    text.includes('mariana costa') ||
+    text.includes('lucas gómez') ||
+    text.includes('lucas gomez') ||
+    text.includes('martina silva') ||
+    text.includes('joaquín pereyra') ||
+    text.includes('joaquin pereyra') ||
+    text.includes('florencia díaz') ||
+    text.includes('florencia diaz') ||
+    text.includes('tomás herrera') ||
+    text.includes('tomas herrera') ||
+    text.includes('camila morales') ||
+    text.includes('ficha de demostración') ||
+    text.includes('turno de muestra') ||
+    text.includes('paciente de ejemplo')
+  ) return true;
+
+  if (
+    item.email === 'ejemplo@paciente.com' ||
+    item.patient_email === 'ejemplo@paciente.com' ||
+    item.email === 'valentina.rossi@email.com' ||
+    item.patient_email === 'valentina.rossi@email.com' ||
+    item.email === 'matias.albarracin@gmail.com' ||
+    item.patient_email === 'matias.albarracin@gmail.com' ||
+    item.email === 'camibenitez@hotmail.com' ||
+    item.patient_email === 'camibenitez@hotmail.com' ||
+    item.email === 'esteban.morales@tech.ar' ||
+    item.patient_email === 'esteban.morales@tech.ar'
+  ) return true;
+
+  if (
+    item.phone === '+54 9 11 9999-0000' ||
+    item.patient_phone === '+54 9 11 9999-0000' ||
+    item.phone === '+54 9 11 6721-9988' ||
+    item.patient_phone === '+54 9 11 6721-9988' ||
+    item.phone === '+54 9 11 5102-4433' ||
+    item.patient_phone === '+54 9 11 5102-4433' ||
+    item.phone === '+54 9 11 4490-8812' ||
+    item.patient_phone === '+54 9 11 4490-8812' ||
+    item.phone === '+54 9 11 3322-7711' ||
+    item.patient_phone === '+54 9 11 3322-7711' ||
+    item.dni === '99.999.999' ||
+    item.patient_dni === '99.999.999'
+  ) return true;
+
+  return false;
+}
+
+// Clean storage helper: always removes mock demo items so only real data is shown
 function getCleanStorageList<T>(key: string): T[] {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      const hasMock = parsed.some((item: any) =>
-        item.id === 'pat-1' ||
-        item.id === 'apt-1' ||
-        item.first_name === 'Valentina' ||
-        item.patient_name === 'Valentina Rossi' ||
-        item.id === 'conv-1' ||
-        item.id === 'pay-1' ||
-        item.id === 'mov-1' ||
-        item.id === 'cs-1' ||
-        item.id === 'tenant-1'
-      );
-      if (hasMock) {
-        localStorage.removeItem(key);
-        return [];
-      }
-      return parsed;
+      return parsed.filter((item: any) => !isExampleItem(item));
     }
     return [];
   } catch {
@@ -379,12 +465,12 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     }
   });
 
-  // Real clean patients (starts empty, only real data)
+  // Real clean patients (starts completely clean/empty, no fake data)
   const [patients, setPatients] = useState<Patient[]>(() => {
     return getCleanStorageList<Patient>(STORAGE_KEYS.PATIENTS);
   });
 
-  // Real clean appointments (starts empty, only real data)
+  // Real clean appointments (starts completely clean/empty, no fake data)
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     return getCleanStorageList<Appointment>(STORAGE_KEYS.APPOINTMENTS);
   });
@@ -404,8 +490,8 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const saved = localStorage.getItem(STORAGE_KEYS.REMINDER_CONFIG);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed.sender_email_alias && parsed.sender_email_alias.includes('Gonzalo')) {
-          parsed.sender_email_alias = 'Consultorio Médico - AgendaPro AI';
+        if (parsed.sender_email_alias && (parsed.sender_email_alias.includes('Gonzalo') || parsed.sender_email_alias.includes('AgendaPro'))) {
+          parsed.sender_email_alias = 'Consultorio Médico - Agenfacil';
         }
         return parsed;
       }
@@ -507,7 +593,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
           id: firebaseUser.uid,
           email: emailLower,
           doctor_name: session.name,
-          practice_name: remoteDoc?.practice_name || (isSuper ? 'Plataforma SaaS AgendaPro AI' : `Consultorio ${session.name}`),
+          practice_name: remoteDoc?.practice_name || (isSuper ? 'Plataforma SaaS Agenfacil' : `Consultorio ${session.name}`),
           phone: remoteDoc?.phone || '',
           plan: effectivePlan,
           status: isSuper ? 'active' : (remoteDoc?.status || 'trial'),
@@ -937,7 +1023,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     triggerNotification({
       type: 'test',
-      title: '🔔 Notificación de Prueba - AgendaPro AI',
+      title: '🔔 Notificación de Prueba - Agenfacil',
       message: '¡Excelente! Las alertas del navegador están activas para nuevos turnos y confirmaciones.',
       patient_name: 'Dr/a. Notificaciones Activas',
       service_name: 'Alerta del Sistema'
@@ -990,56 +1076,108 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     // Initial cleanup of duplicates in Firestore in background
     cleanupDuplicatePatientsInFirestore();
 
-    const unsubAppointments = subscribeToAppointments((remoteAppointments) => {
-      if (remoteAppointments && remoteAppointments.length > 0) {
-        setAppointments(prev => {
-          // Detect newly added remote appointments from bot or public booking
-          if (prev.length > 0) {
-            const existingIds = new Set(prev.map(a => a.id));
-            remoteAppointments.forEach(remoteApt => {
-              if (!existingIds.has(remoteApt.id) && (remoteApt.origin === 'bot_whatsapp' || remoteApt.origin === 'public_booking')) {
-                if (practiceSettings.notify_bot_bookings !== false) {
-                  const aptDate = new Date(remoteApt.start_datetime);
-                  const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
-                  const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-                  triggerNotification({
-                    type: remoteApt.origin === 'bot_whatsapp' ? 'bot_booking' : 'public_booking',
-                    title: remoteApt.origin === 'bot_whatsapp' ? '🤖 ¡Nuevo turno agendado por el Bot!' : '🌐 Nueva reserva online recibida',
-                    message: `${remoteApt.patient_name} reservó "${remoteApt.service_name}" para el ${dateStr} a las ${timeStr} hs.`,
-                    appointment_id: remoteApt.id,
-                    patient_name: remoteApt.patient_name,
-                    service_name: remoteApt.service_name,
-                    datetime: remoteApt.start_datetime
-                  });
-                }
-              }
-            });
+    // Initial purge of any legacy example / demo records from localStorage and state
+    try {
+      localStorage.setItem('agendapro_example_dismissed', 'true');
+      [
+        STORAGE_KEYS.PATIENTS,
+        STORAGE_KEYS.APPOINTMENTS,
+        STORAGE_KEYS.PAYMENTS,
+        STORAGE_KEYS.CONSULTATIONS,
+        STORAGE_KEYS.WAITLIST,
+        STORAGE_KEYS.REMINDER_LOGS,
+        STORAGE_KEYS.CONVERSATIONS,
+        STORAGE_KEYS.CASH_MOVEMENTS
+      ].forEach(k => {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(i => !isExampleItem(i));
+            if (cleaned.length !== parsed.length) {
+              localStorage.setItem(k, JSON.stringify(cleaned));
+            }
           }
+        }
+      });
+    } catch {}
 
-          const map = new Map<string, Appointment>();
-          prev.forEach(a => map.set(a.id, a));
-          remoteAppointments.forEach(a => map.set(a.id, a));
-          return Array.from(map.values());
+    // Clean initial state if any lingering mock items slipped in
+    setPatients(prev => prev.filter(p => !isExampleItem(p)));
+    setAppointments(prev => prev.filter(a => !isExampleItem(a)));
+    setPayments(prev => prev.filter(p => !isExampleItem(p)));
+    setConsultations(prev => prev.filter(c => !isExampleItem(c)));
+    setWaitlist(prev => prev.filter(w => !isExampleItem(w)));
+    setReminderLogs(prev => prev.filter(l => !isExampleItem(l)));
+    setConversations(prev => prev.filter(c => !isExampleItem(c)));
+
+    // Cleanup Firestore mock documents in background
+    const mockIds = [
+      'pat-1', 'pat-2', 'pat-3', 'pat-4', 'pat-5', 'ejemplo-paciente-1',
+      'apt-1', 'apt-2', 'apt-3', 'apt-4', 'apt-5', 'apt-6', 'ejemplo-turno-1',
+      'pay-1', 'pay-2', 'pay-3', 'pay-4',
+      'cons-1', 'cons-2', 'cs-1', 'cs-2', 'cs-3',
+      'wait-1', 'wait-2'
+    ];
+    mockIds.forEach(id => {
+      if (id.startsWith('pat-') || id === 'ejemplo-paciente-1') deletePatientFromFirestore(id);
+      if (id.startsWith('apt-') || id === 'ejemplo-turno-1') deleteAppointmentFromFirestore(id);
+      if (id.startsWith('pay-')) deletePaymentFromFirestore(id);
+      if (id.startsWith('cons-') || id.startsWith('cs-')) deleteConsultationFromFirestore(id);
+      if (id.startsWith('wait-')) deleteWaitlistFromFirestore(id);
+    });
+
+    const unsubAppointments = subscribeToAppointments((remoteAppointments) => {
+      if (remoteAppointments) {
+        // Detect newly added remote appointments from bot or public booking
+        const existingIds = new Set(appointments.map(a => a.id));
+        remoteAppointments.forEach(remoteApt => {
+          if (!existingIds.has(remoteApt.id) && (remoteApt.origin === 'bot_whatsapp' || remoteApt.origin === 'public_booking') && !isExampleItem(remoteApt)) {
+            if (practiceSettings.notify_bot_bookings !== false) {
+              const aptDate = new Date(remoteApt.start_datetime);
+              const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
+              const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+              triggerNotification({
+                type: remoteApt.origin === 'bot_whatsapp' ? 'bot_booking' : 'public_booking',
+                title: remoteApt.origin === 'bot_whatsapp' ? '🤖 ¡Nuevo turno agendado por el Bot!' : '🌐 Nueva reserva online recibida',
+                message: `${remoteApt.patient_name} reservó "${remoteApt.service_name}" para el ${dateStr} a las ${timeStr} hs.`,
+                appointment_id: remoteApt.id,
+                patient_name: remoteApt.patient_name,
+                service_name: remoteApt.service_name,
+                datetime: remoteApt.start_datetime
+              });
+            }
+          }
         });
+
+        // Filter out and remove any mock items from Firestore
+        const mockAppointments = remoteAppointments.filter(isExampleItem);
+        if (mockAppointments.length > 0) {
+          mockAppointments.forEach(m => deleteAppointmentFromFirestore(m.id));
+        }
+
+        const validList = remoteAppointments.filter(a => !isExampleItem(a));
+        setAppointments(validList);
       }
     });
 
     const unsubPatients = subscribeToPatients((remotePatients) => {
-      if (remotePatients && remotePatients.length > 0) {
-        setPatients(prev => {
-          const map = new Map<string, Patient>();
-          prev.forEach(p => map.set(p.id, p));
-          remotePatients.forEach(p => map.set(p.id, p));
-          
-          const rawList = Array.from(map.values());
-          const { canonicalList, removedIds } = deduplicatePatientRecords(rawList);
-          
-          // Delete ghost duplicates from Firestore
-          if (removedIds.length > 0) {
-            removedIds.forEach(id => deletePatientFromFirestore(id));
-          }
-          return canonicalList;
-        });
+      if (remotePatients) {
+        // Filter out and remove any mock items from Firestore
+        const mockPatients = remotePatients.filter(isExampleItem);
+        if (mockPatients.length > 0) {
+          mockPatients.forEach(m => deletePatientFromFirestore(m.id));
+        }
+
+        const filtered = remotePatients.filter(p => !isExampleItem(p));
+        const { canonicalList, removedIds } = deduplicatePatientRecords(filtered);
+        
+        // Delete ghost duplicates from Firestore
+        if (removedIds.length > 0) {
+          removedIds.forEach(id => deletePatientFromFirestore(id));
+        }
+
+        setPatients(canonicalList);
       }
     });
 
@@ -1051,45 +1189,37 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     const unsubServices = subscribeToServices((remoteServices) => {
       if (remoteServices && remoteServices.length > 0) {
-        setServices(prev => {
-          const map = new Map<string, Service>();
-          prev.forEach(s => map.set(s.id, s));
-          remoteServices.forEach(s => map.set(s.id, s));
-          return Array.from(map.values());
-        });
+        setServices(remoteServices);
       }
     });
 
     const unsubPayments = subscribeToPayments((remotePayments) => {
-      if (remotePayments && remotePayments.length > 0) {
-        setPayments(prev => {
-          const map = new Map<string, PaymentRecord>();
-          prev.forEach(p => map.set(p.id, p));
-          remotePayments.forEach(p => map.set(p.id, p));
-          return Array.from(map.values());
-        });
+      if (remotePayments) {
+        const mockPayments = remotePayments.filter(isExampleItem);
+        if (mockPayments.length > 0) {
+          mockPayments.forEach(m => deletePaymentFromFirestore(m.id));
+        }
+        setPayments(remotePayments.filter(p => !isExampleItem(p)));
       }
     });
 
     const unsubWaitlist = subscribeToWaitlist((remoteWaitlist) => {
-      if (remoteWaitlist && remoteWaitlist.length > 0) {
-        setWaitlist(prev => {
-          const map = new Map<string, WaitlistEntry>();
-          prev.forEach(w => map.set(w.id, w));
-          remoteWaitlist.forEach(w => map.set(w.id, w));
-          return Array.from(map.values());
-        });
+      if (remoteWaitlist) {
+        const mockWait = remoteWaitlist.filter(isExampleItem);
+        if (mockWait.length > 0) {
+          mockWait.forEach(m => deleteWaitlistFromFirestore(m.id));
+        }
+        setWaitlist(remoteWaitlist.filter(w => !isExampleItem(w)));
       }
     });
 
     const unsubConsultations = subscribeToConsultations((remoteConsultations) => {
-      if (remoteConsultations && remoteConsultations.length > 0) {
-        setConsultations(prev => {
-          const map = new Map<string, ConsultationRecord>();
-          prev.forEach(c => map.set(c.id, c));
-          remoteConsultations.forEach(c => map.set(c.id, c));
-          return Array.from(map.values());
-        });
+      if (remoteConsultations) {
+        const mockConsults = remoteConsultations.filter(isExampleItem);
+        if (mockConsults.length > 0) {
+          mockConsults.forEach(m => deleteConsultationFromFirestore(m.id));
+        }
+        setConsultations(remoteConsultations.filter(c => !isExampleItem(c)));
       }
     });
 
@@ -1104,76 +1234,97 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     };
   }, []);
 
-  // Backfill patients from appointments if any exist without a patient record, with strict deduplication
-  useEffect(() => {
-    if (appointments.length > 0) {
-      setPatients(prev => {
-        const { canonicalList, removedIds } = deduplicatePatientRecords(prev);
-        if (removedIds.length > 0) {
-          removedIds.forEach(id => deletePatientFromFirestore(id));
-        }
+  // Example / Demo data state helpers
+  const hasExampleData = useMemo(() => {
+    return patients.some(isExampleItem) ||
+      appointments.some(isExampleItem) ||
+      payments.some(isExampleItem) ||
+      consultations.some(isExampleItem) ||
+      waitlist.some(isExampleItem) ||
+      reminderLogs.some(isExampleItem);
+  }, [patients, appointments, payments, consultations, waitlist, reminderLogs]);
 
-        const phoneMap = new Map<string, Patient>();
-        const nameMap = new Map<string, Patient>();
-        const idMap = new Map<string, Patient>();
-
-        canonicalList.forEach(p => {
-          const np = normalizePhoneDigits(p.phone);
-          const nm = normalizeText(`${p.first_name} ${p.last_name}`);
-          if (np && np.length >= 7) phoneMap.set(np, p);
-          if (nm && nm.length >= 5) nameMap.set(nm, p);
-          idMap.set(p.id, p);
-        });
-
-        const toAdd: Patient[] = [];
-        appointments.forEach(apt => {
-          const normPhone = normalizePhoneDigits(apt.patient_phone);
-          const normName = normalizeText(apt.patient_name);
-
-          const exists = 
-            idMap.has(apt.patient_id) ||
-            (normPhone && normPhone.length >= 7 && phoneMap.has(normPhone)) ||
-            (normName && normName.length >= 5 && nameMap.has(normName));
-
-          if (!exists && apt.patient_name) {
-            const nameParts = apt.patient_name.trim().split(' ');
-            const firstName = nameParts[0] || 'Paciente';
-            const lastName = nameParts.slice(1).join(' ') || '';
-            const newPatId = apt.patient_id && !apt.patient_id.startsWith('pat-web-') && !apt.patient_id.startsWith('pat-bot-')
-              ? apt.patient_id
-              : `pat-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-            
-            const newPat: Patient = {
-              id: newPatId,
-              first_name: firstName,
-              last_name: lastName,
-              phone: apt.patient_phone || '',
-              email: apt.patient_email || undefined,
-              total_appointments: appointments.filter(a => a.patient_phone === apt.patient_phone || a.patient_name === apt.patient_name).length,
-              created_at: new Date().toISOString()
-            };
-            toAdd.push(newPat);
-            if (normPhone && normPhone.length >= 7) phoneMap.set(normPhone, newPat);
-            if (normName && normName.length >= 5) nameMap.set(normName, newPat);
-            idMap.set(newPatId, newPat);
+  const clearExampleData = async () => {
+    try {
+      localStorage.setItem('agendapro_example_dismissed', 'true');
+      [
+        STORAGE_KEYS.PATIENTS,
+        STORAGE_KEYS.APPOINTMENTS,
+        STORAGE_KEYS.PAYMENTS,
+        STORAGE_KEYS.CONSULTATIONS,
+        STORAGE_KEYS.WAITLIST,
+        STORAGE_KEYS.REMINDER_LOGS,
+        STORAGE_KEYS.CONVERSATIONS,
+        STORAGE_KEYS.CASH_MOVEMENTS
+      ].forEach(k => {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const cleaned = parsed.filter(i => !isExampleItem(i));
+            localStorage.setItem(k, JSON.stringify(cleaned));
           }
-        });
-
-        if (toAdd.length > 0) {
-          toAdd.forEach(p => savePatientToFirestore(p));
-          return [...canonicalList, ...toAdd];
         }
-        return canonicalList;
       });
+    } catch {}
+
+    // 1. Remove from local state
+    setPatients(prev => prev.filter(p => !isExampleItem(p)));
+    setAppointments(prev => prev.filter(a => !isExampleItem(a)));
+    setPayments(prev => prev.filter(p => !isExampleItem(p)));
+    setConsultations(prev => prev.filter(c => !isExampleItem(c)));
+    setWaitlist(prev => prev.filter(w => !isExampleItem(w)));
+    setReminderLogs(prev => prev.filter(l => !isExampleItem(l)));
+    setConversations(prev => prev.filter(c => !isExampleItem(c)));
+
+    // 2. Remove from Firestore
+    try {
+      patients.filter(isExampleItem).forEach(p => deletePatientFromFirestore(p.id));
+      appointments.filter(isExampleItem).forEach(a => deleteAppointmentFromFirestore(a.id));
+      payments.filter(isExampleItem).forEach(p => deletePaymentFromFirestore(p.id));
+      consultations.filter(isExampleItem).forEach(c => deleteConsultationFromFirestore(c.id));
+      waitlist.filter(isExampleItem).forEach(w => deleteWaitlistFromFirestore(w.id));
+
+      // Extra safety for known mock IDs in Firestore
+      ['pat-1', 'pat-2', 'pat-3', 'pat-4', 'pat-5', 'ejemplo-paciente-1'].forEach(id => deletePatientFromFirestore(id));
+      ['apt-1', 'apt-2', 'apt-3', 'apt-4', 'apt-5', 'apt-6', 'ejemplo-turno-1'].forEach(id => deleteAppointmentFromFirestore(id));
+      ['pay-1', 'pay-2', 'pay-3', 'pay-4'].forEach(id => deletePaymentFromFirestore(id));
+      ['cs-1', 'cs-2', 'cs-3', 'cons-1', 'cons-2'].forEach(id => deleteConsultationFromFirestore(id));
+      ['wait-1', 'wait-2'].forEach(id => deleteWaitlistFromFirestore(id));
+    } catch (e) {
+      console.warn('Could not clean some example items from Firestore:', e);
     }
-  }, [appointments.length]);
+  };
+
+  const clearAllPendingAppointments = () => {
+    setAppointments(prev => prev.filter(a => a.payment_status !== 'pending'));
+    appointments
+      .filter(a => a.payment_status === 'pending')
+      .forEach(a => deleteAppointmentFromFirestore(a.id));
+  };
+
+  const deleteReminderLog = (logId: string) => {
+    setReminderLogs(prev => prev.filter(l => l.id !== logId));
+  };
+
+  const clearAllReminderLogs = () => {
+    setReminderLogs([]);
+    try {
+      localStorage.setItem(STORAGE_KEYS.REMINDER_LOGS, JSON.stringify([]));
+    } catch {}
+  };
 
   // Appointment Handlers
   const addAppointment = (data: Omit<Appointment, 'id'>): Appointment => {
+    // If user adds a real appointment, clear example data automatically
+    if (!data.is_example && !data.is_demo) {
+      clearExampleData();
+    }
+
     const id = `apt-${Date.now()}`;
     const newApt: Appointment = { ...data, id };
     
-    setAppointments(prev => [newApt, ...prev]);
+    setAppointments(prev => [newApt, ...prev.filter(a => a.id !== id)]);
 
     // Save to Firestore in background
     saveAppointmentToFirestore(newApt);
@@ -1273,12 +1424,22 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const deleteAppointment = (id: string) => {
+    if (id.startsWith('ejemplo-') || id === 'apt-1') {
+      try {
+        localStorage.setItem('agendapro_example_dismissed', 'true');
+      } catch {}
+    }
     setAppointments(prev => prev.filter(a => a.id !== id));
     deleteAppointmentFromFirestore(id);
   };
 
   // Patient Handlers
   const addPatient = (data: Omit<Patient, 'id' | 'created_at' | 'total_appointments'>): Patient => {
+    // If real patient is added, clear example demo data
+    if (!isExampleItem(data)) {
+      clearExampleData();
+    }
+
     const normPhone = normalizePhoneDigits(data.phone);
     const normDni = normalizeDniString(data.dni);
     const normName = normalizeText(`${data.first_name} ${data.last_name}`);
@@ -1365,8 +1526,20 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const deletePatient = (id: string) => {
+    if (id.startsWith('ejemplo-') || id === 'pat-1') {
+      try {
+        localStorage.setItem('agendapro_example_dismissed', 'true');
+      } catch {}
+    }
     setPatients(prev => prev.filter(p => p.id !== id));
+    setAppointments(prev => prev.filter(a => a.patient_id !== id));
+    setConsultations(prev => prev.filter(c => c.patient_id !== id));
+    setPayments(prev => prev.filter(p => p.patient_id !== id));
+
     deletePatientFromFirestore(id);
+    appointments.filter(a => a.patient_id === id).forEach(a => deleteAppointmentFromFirestore(a.id));
+    consultations.filter(c => c.patient_id === id).forEach(c => deleteConsultationFromFirestore(c.id));
+    payments.filter(p => p.patient_id === id).forEach(p => deletePaymentFromFirestore(p.id));
   };
 
   // Service Handlers
@@ -1474,6 +1647,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const deleteWaitlistEntry = (id: string) => {
     setWaitlist(prev => prev.filter(w => w.id !== id));
+    deleteWaitlistFromFirestore(id);
   };
 
   const notifyWaitlistEntry = (id: string) => {
@@ -1758,6 +1932,38 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newPayment;
   };
 
+  const updatePayment = (paymentId: string, updates: Partial<PaymentRecord>) => {
+    setPayments(prev => prev.map(p => {
+      if (p.id === paymentId) {
+        const updated: PaymentRecord = { ...p, ...updates };
+        savePaymentToFirestore(updated);
+        return updated;
+      }
+      return p;
+    }));
+  };
+
+  const deletePayment = (paymentId: string) => {
+    const existing = payments.find(p => p.id === paymentId);
+    if (existing) {
+      // Revert appointment payment status if attached
+      if (existing.appointment_id) {
+        setAppointments(prev => prev.map(a => {
+          if (a.id === existing.appointment_id) {
+            return { ...a, payment_status: 'pending' };
+          }
+          return a;
+        }));
+      }
+      // Remove any matching cash movement
+      if (existing.receipt_number) {
+        setCashMovements(prev => prev.filter(m => !m.concept.includes(existing.receipt_number)));
+      }
+    }
+    setPayments(prev => prev.filter(p => p.id !== paymentId));
+    deletePaymentFromFirestore(paymentId);
+  };
+
   const voidPayment = (paymentId: string, reason?: string) => {
     setPayments(prev => prev.map(p => {
       if (p.id === paymentId) {
@@ -1791,6 +1997,21 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         return updatedPayment;
       }
       return p;
+    }));
+  };
+
+  const verifyAppointmentDeposit = (appointmentId: string, verified: boolean) => {
+    setAppointments(prev => prev.map(a => {
+      if (a.id === appointmentId) {
+        const updated: Appointment = {
+          ...a,
+          deposit_verified: verified,
+          payment_status: verified ? 'partial' : a.payment_status
+        };
+        saveAppointmentToFirestore(updated);
+        return updated;
+      }
+      return a;
     }));
   };
 
@@ -1841,6 +2062,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return newMov;
   };
 
+  const updateCashMovement = (movementId: string, updates: Partial<CashMovement>) => {
+    setCashMovements(prev => prev.map(m => m.id === movementId ? { ...m, ...updates } : m));
+  };
+
+  const deleteCashMovement = (movementId: string) => {
+    setCashMovements(prev => prev.filter(m => m.id !== movementId));
+  };
+
   const resetToDemoData = () => {
     setPracticeSettings(INITIAL_PRACTICE_SETTINGS);
     setServices(INITIAL_SERVICES);
@@ -1884,6 +2113,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const deleteConsultation = (id: string) => {
     setConsultations(prev => prev.filter(c => c.id !== id));
+    deleteConsultationFromFirestore(id);
   };
 
   const addVoiceNoteToConsultation = (consultationId: string, voiceNote: Omit<VoiceNote, 'id' | 'recorded_at'>): VoiceNote => {
@@ -1944,10 +2174,15 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       runAutomatedRemindersScan,
       formatReminderText,
       addPayment,
+      updatePayment,
+      deletePayment,
       voidPayment,
       openCashRegister,
       closeCashRegister,
       addCashMovement,
+      updateCashMovement,
+      deleteCashMovement,
+      verifyAppointmentDeposit,
       addConsultation,
       updateConsultation,
       deleteConsultation,
@@ -1981,6 +2216,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       clearNotifications,
       dismissToastNotification,
       triggerNotification,
+      // Example data management
+      hasExampleData,
+      clearExampleData,
+      isExampleItem,
+      deleteReminderLog,
+      clearAllReminderLogs,
+      clearAllPendingAppointments,
       resetToDemoData
     }}>
       {children}

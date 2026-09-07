@@ -22,6 +22,7 @@ import { PracticeSettings } from '../types';
 import { PatientDepositSettings } from '../components/settings/PatientDepositSettings';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
+import { ProfessionSettings } from '../components/settings/ProfessionSettings';
 
 export const SettingsView: React.FC = () => {
   const {
@@ -192,6 +193,9 @@ export const SettingsView: React.FC = () => {
         {/* TAB 1: CONSULTORIO & GENERAL */}
         {activeTab === 'general' && (
           <>
+            {/* Rubro, Profesión y Terminología */}
+            <ProfessionSettings settings={formData} onChange={handleChange} />
+
             {/* Identity & Practice Information */}
             <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
               <div className="flex items-center gap-2 pb-3 border-b border-neutral-100">
@@ -424,7 +428,7 @@ export const SettingsView: React.FC = () => {
 
         {/* System Version Footer */}
         <div className="pt-4 border-t border-neutral-200 flex justify-between items-center text-xs text-neutral-400">
-          <span>AgendaPro AI v3.0 • Sistema Integral Multi-Tenant con Datos Reales</span>
+          <span>Agenfacil v3.0 • Sistema Integral Multi-Tenant con Datos Reales</span>
           <span className="text-[11px] text-neutral-500 font-mono">
             Firestore Sync • Tiempo Real
           </span>

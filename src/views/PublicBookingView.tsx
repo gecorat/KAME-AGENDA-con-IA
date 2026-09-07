@@ -341,7 +341,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
               <span>Volver atrás</span>
             </button>
             <span className="text-xs bg-sky-100 text-sky-800 font-medium px-2.5 py-1 rounded-full border border-sky-200">
-              Vista previa del enlace público: agendapro.ai/u/{practiceSettings.handle}
+              Vista previa del enlace público: agenfacil.com/u/{practiceSettings.handle}
             </span>
           </div>
         )}
@@ -828,23 +828,31 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                 </div>
 
                 {/* Patient Deposit Payment Box */}
-                {(practiceSettings.patient_deposit_enabled ?? practiceSettings.mercadopago_deposit_enabled ?? true) && (
-                  <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-left space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link' ? (
-                          <CreditCard className="w-4 h-4 text-sky-600" />
-                        ) : (
-                          <Landmark className="w-4 h-4 text-emerald-700" />
-                        )}
-                        <span className="text-xs font-bold text-neutral-900">
-                          Seña Requerida ({practiceSettings.patient_deposit_percent ?? practiceSettings.mercadopago_deposit_percent ?? 30}%)
+                {(practiceSettings.patient_deposit_enabled ?? practiceSettings.mercadopago_deposit_enabled ?? true) && (() => {
+                  const isFixed = practiceSettings.patient_deposit_type === 'fixed';
+                  const percent = practiceSettings.patient_deposit_percent ?? practiceSettings.mercadopago_deposit_percent ?? 30;
+                  const fixedAmount = practiceSettings.patient_deposit_fixed_amount ?? 85000;
+                  const depositAmount = isFixed
+                    ? fixedAmount
+                    : Math.round(((selectedService?.price || 0) * percent) / 100);
+
+                  return (
+                    <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-left space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link' ? (
+                            <CreditCard className="w-4 h-4 text-sky-600" />
+                          ) : (
+                            <Landmark className="w-4 h-4 text-emerald-700" />
+                          )}
+                          <span className="text-xs font-bold text-neutral-900">
+                            Seña Requerida {isFixed ? '(Monto Fijo)' : `(${percent}%)`}
+                          </span>
+                        </div>
+                        <span className="text-xs font-black text-emerald-950">
+                          ${depositAmount.toLocaleString('es-AR')} ARS
                         </span>
                       </div>
-                      <span className="text-xs font-black text-emerald-950">
-                        ${Math.round(((selectedService?.price || 0) * (practiceSettings.patient_deposit_percent ?? practiceSettings.mercadopago_deposit_percent ?? 30)) / 100).toLocaleString('es-AR')} ARS
-                      </span>
-                    </div>
 
                     {/* Method 1: Alias / CBU Transfer */}
                     {(!practiceSettings.patient_deposit_method || practiceSettings.patient_deposit_method === 'alias_cbu') && (
@@ -954,7 +962,8 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                       </div>
                     )}
                   </div>
-                )}
+                );
+              })()}
 
                 <div className="pt-2 flex flex-col gap-2">
                   <a
@@ -1055,7 +1064,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
             <span>Tus datos están protegidos con encriptación SSL de 256 bits y privacidad médica</span>
           </div>
           <p className="text-[11px] text-neutral-400">
-            Potenciado por <span className="font-bold text-neutral-600">AgendaPro AI</span> • Sistema Inteligente de Gestión Médica
+            Potenciado por <span className="font-bold text-neutral-600">Agenfacil</span> • Sistema Inteligente de Gestión Médica
           </p>
         </div>
       </div>

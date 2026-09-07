@@ -105,7 +105,7 @@ export const createGoogleCalendarEvent = async (
   try {
     const serviceName = service?.name || appointment.service_name || 'Consulta Médica';
     const patientName = patient ? `${patient.first_name} ${patient.last_name}` : appointment.patient_name;
-    const summary = `${serviceName} - ${patientName} (Kame Agenda)`;
+    const summary = `${serviceName} - ${patientName} (Agenfacil)`;
     
     // Dates from ISO 8601
     const startDate = new Date(appointment.start_datetime);
@@ -120,7 +120,7 @@ export const createGoogleCalendarEvent = async (
       `Arancel: $${(service?.price || appointment.service_price).toLocaleString('es-AR')}`,
       appointment.notes ? `Notas: ${appointment.notes}` : '',
       `Sede / Consultorio: ${practiceSettings?.address || 'Consultorio Principal'}`,
-      'Generado automáticamente por Kame Agenda AI'
+      'Generado automáticamente por Agenfacil'
     ].filter(Boolean).join('\n');
 
     const eventPayload = {
@@ -244,7 +244,7 @@ export const exportDataToGoogleSheets = async (
       day: '2-digit'
     }).replace(/\//g, '-');
 
-    const title = `Kame Agenda AI - Backup y Reporte (${practiceSettings.practice_name}) - ${dateStamp}`;
+    const title = `Agenfacil - Backup y Reporte (${practiceSettings.practice_name}) - ${dateStamp}`;
 
     // 1. Create Spreadsheet
     const createRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
