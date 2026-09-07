@@ -530,7 +530,21 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-      return saved ? JSON.parse(saved) : [];
+      if (saved) {
+        const parsed: AppNotification[] = JSON.parse(saved);
+        // Deduplicate notifications by appointment_id or title+message
+        const seen = new Set<string>();
+        const unique: AppNotification[] = [];
+        for (const n of parsed) {
+          const key = n.appointment_id ? `appt-${n.appointment_id}-${n.type}` : `${n.title}-${n.message}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(n);
+          }
+        }
+        return unique;
+      }
+      return [];
     } catch {
       return [];
     }
@@ -982,6 +996,19 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Dispatch browser desktop + in-app notification
   const triggerNotification = (notifData: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => {
+    // Deduplicate: check if notification with same appointment_id and type already exists in state
+    if (notifData.appointment_id) {
+      const alreadyExists = notifications.some(
+        n => n.appointment_id === notifData.appointment_id && n.type === notifData.type
+      );
+      if (alreadyExists) return;
+    } else {
+      const alreadyExists = notifications.some(
+        n => n.title === notifData.title && n.message === notifData.message && (Date.now() - new Date(n.created_at).getTime() < 1000 * 60 * 10)
+      );
+      if (alreadyExists) return;
+    }
+
     const newNotif: AppNotification = {
       ...notifData,
       id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -1133,7 +1160,11 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const existingIds = new Set(appointments.map(a => a.id));
         remoteAppointments.forEach(remoteApt => {
           if (!existingIds.has(remoteApt.id) && (remoteApt.origin === 'bot_whatsapp' || remoteApt.origin === 'public_booking') && !isExampleItem(remoteApt)) {
-            if (practiceSettings.notify_bot_bookings !== false) {
+            // Only trigger notification if created recently (within last 3 minutes) with valid created_at timestamp
+            const createdTime = (remoteApt as any).created_at ? new Date((remoteApt as any).created_at).getTime() : 0;
+            const isRecent = createdTime > 0 && (Date.now() - createdTime < 1000 * 60 * 3);
+
+            if (isRecent && practiceSettings.notify_bot_bookings !== false) {
               const aptDate = new Date(remoteApt.start_datetime);
               const dateStr = aptDate.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' });
               const timeStr = aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });

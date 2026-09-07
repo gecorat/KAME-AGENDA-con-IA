@@ -28,6 +28,7 @@ import { ConsultationModal } from '../components/ConsultationModal';
 import { PrescriptionPrintModal } from '../components/PrescriptionPrintModal';
 import { CertificatePrintModal } from '../components/CertificatePrintModal';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { getProfessionInfo, getClientTerm, getConsultationTerm } from '../lib/terminology';
 
 export const ConsultationsView: React.FC = () => {
   const {
@@ -39,6 +40,14 @@ export const ConsultationsView: React.FC = () => {
     clearExampleData,
     isExampleItem
   } = useAgendaStore();
+
+  const profInfo = getProfessionInfo(practiceSettings);
+  const clientTermPlural = getClientTerm(practiceSettings, { plural: true, capitalize: true });
+  const clientTermSingular = getClientTerm(practiceSettings, { plural: false, capitalize: true });
+  const consultationTermPlural = getConsultationTerm(practiceSettings, { plural: true, capitalize: true });
+  const consultationTermSingular = getConsultationTerm(practiceSettings, { plural: false, capitalize: true });
+
+  const hasMedicalTools = profInfo.fieldsCategory === 'medical' || profInfo.id === 'odontologia' || profInfo.id === 'medicina_general' || profInfo.id === 'veterinaria' || profInfo.id === 'nutricion';
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatientFilter, setSelectedPatientFilter] = useState<string>('all');
@@ -92,6 +101,10 @@ export const ConsultationsView: React.FC = () => {
     }
   };
 
+  const placeholderText = hasMedicalTools 
+    ? `Buscar por ${clientTermSingular.toLowerCase()}, diagnóstico, síntoma o tratamiento...`
+    : `Buscar por ${clientTermSingular.toLowerCase()}, motivo de consulta, acuerdo o tema trabajado...`;
+
   return (
     <div id="consultations-view" className="space-y-6">
       {/* Header Banner */}
@@ -99,14 +112,14 @@ export const ConsultationsView: React.FC = () => {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">
-              Historias Clínicas & Evolución
+              {profInfo.consultationLabelPlural} &amp; Evolución
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-sky-100 text-sky-800 border border-sky-200">
-              Notas de Voz & SOAP
+              Notas de Voz &amp; {profInfo.badgeWorkflow || 'Seguimiento'}
             </span>
           </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Registro médico electrónico de consultas, dictado con transcripción inteligente de voz y recetas oficiales.
+            {profInfo.consultationSubtitle || 'Registro electrónico de sesiones, dictado con transcripción inteligente de voz.'}
           </p>
         </div>
 
@@ -121,7 +134,7 @@ export const ConsultationsView: React.FC = () => {
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 active:scale-95 text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
-            Nueva Consulta con Voz
+            Nueva {consultationTermSingular} con Voz
           </button>
         </div>
       </div>
@@ -135,10 +148,10 @@ export const ConsultationsView: React.FC = () => {
             </div>
             <div>
               <p className="text-xs font-bold text-sky-900">
-                Fichas Clínicas de Demostración
+                Fichas de Demostración de Ejemplo
               </p>
               <p className="text-[11px] text-sky-800/90 leading-tight mt-0.5">
-                Las historias clínicas de ejemplo muestran el uso de notas SOAP y dictado por voz. No suman a tus estadísticas reales y puedes eliminarlas con un clic.
+                Las fichas de ejemplo muestran el uso de notas dinámicas y dictado por voz. No suman a tus estadísticas reales y puedes eliminarlas con un clic.
               </p>
             </div>
           </div>
@@ -155,14 +168,14 @@ export const ConsultationsView: React.FC = () => {
       )}
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+      <div className={`grid gap-3 sm:gap-4 ${hasMedicalTools ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-1 sm:grid-cols-3'}`}>
         <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
           <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Consultas</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">{consultationTermPlural}</span>
             <FileText className="w-4 h-4 text-sky-600" />
           </div>
           <div className="text-2xl font-bold text-slate-900">{totalConsultations}</div>
-          <p className="text-[11px] text-slate-500 mt-1">Evoluciones clínicas guardadas</p>
+          <p className="text-[11px] text-slate-500 mt-1">Registros de evolución guardados</p>
         </div>
 
         <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
@@ -174,23 +187,38 @@ export const ConsultationsView: React.FC = () => {
           <p className="text-[11px] text-slate-500 mt-1">Procesadas por Gemini IA</p>
         </div>
 
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Recetas Rp/</span>
-            <Pill className="w-4 h-4 text-indigo-600" />
-          </div>
-          <div className="text-2xl font-bold text-indigo-600">{totalPrescriptions}</div>
-          <p className="text-[11px] text-slate-500 mt-1">Medicamentos prescritos</p>
-        </div>
+        {hasMedicalTools ? (
+          <>
+            <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Recetas Rp/</span>
+                <Pill className="w-4 h-4 text-indigo-600" />
+              </div>
+              <div className="text-2xl font-bold text-indigo-600">{totalPrescriptions}</div>
+              <p className="text-[11px] text-slate-500 mt-1">Medicamentos prescritos</p>
+            </div>
 
-        <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
-          <div className="flex items-center justify-between text-slate-400 mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Certificados</span>
-            <Award className="w-4 h-4 text-emerald-600" />
+            <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+              <div className="flex items-center justify-between text-slate-400 mb-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Certificados</span>
+                <Award className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-bold text-emerald-600">{totalCertificates}</div>
+              <p className="text-[11px] text-slate-500 mt-1">Reposo y constancias</p>
+            </div>
+          </>
+        ) : (
+          <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-xs">
+            <div className="flex items-center justify-between text-slate-400 mb-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Planes &amp; Acuerdos</span>
+              <Award className="w-4 h-4 text-indigo-600" />
+            </div>
+            <div className="text-2xl font-bold text-indigo-600">
+              {realConsultations.filter(c => c.soap_plan || c.treatment_performed).length}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">Acuerdos intersesión definidos</p>
           </div>
-          <div className="text-2xl font-bold text-emerald-600">{totalCertificates}</div>
-          <p className="text-[11px] text-slate-500 mt-1">Reposo y constancias</p>
-        </div>
+        )}
       </div>
 
       {/* Filter & Search Toolbar */}
@@ -199,7 +227,7 @@ export const ConsultationsView: React.FC = () => {
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Buscar por paciente, diagnóstico, síntoma o fármaco prescrito..."
+            placeholder={placeholderText}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all"
@@ -214,11 +242,11 @@ export const ConsultationsView: React.FC = () => {
               onChange={(e) => setSelectedTemplateFilter(e.target.value)}
               className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
             >
-              <option value="all">Todas las especialidades</option>
-              <option value="dental">🦷 Odontología</option>
+              <option value="all">Todos los formatos</option>
               <option value="generic">📋 Evolución Libre</option>
-              <option value="soap">🩺 Método SOAP</option>
-              <option value="psychology">🧠 Salud Mental</option>
+              <option value="soap">🩺 Formato SOAP</option>
+              {profInfo.id === 'odontologia' && <option value="dental">🦷 Odontología FDI</option>}
+              {profInfo.id === 'psicologia' && <option value="psychology">🧠 Psicología / Encuadre</option>}
             </select>
           </div>
 
@@ -227,7 +255,7 @@ export const ConsultationsView: React.FC = () => {
             onChange={(e) => setSelectedPatientFilter(e.target.value)}
             className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2 text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
-            <option value="all">Todos los pacientes</option>
+            <option value="all">Todos los {clientTermPlural.toLowerCase()}</option>
             {patients.map(p => (
               <option key={p.id} value={p.id}>
                 {p.first_name} {p.last_name}
@@ -244,9 +272,9 @@ export const ConsultationsView: React.FC = () => {
             <div className="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 mx-auto flex items-center justify-center mb-3">
               <Stethoscope className="w-6 h-6" />
             </div>
-            <h3 className="text-sm font-bold text-slate-800">No se encontraron consultas clínicas</h3>
+            <h3 className="text-sm font-bold text-slate-800">No se encontraron {consultationTermPlural.toLowerCase()}</h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-4">
-              Registra una nueva consulta para este paciente, utilizando el dictado de notas de voz o el método SOAP tradicional.
+              Registra una nueva {consultationTermSingular.toLowerCase()} para este {clientTermSingular.toLowerCase()} utilizando el dictado de notas de voz o carga los datos manualmente.
             </p>
             <button
               type="button"
@@ -257,7 +285,7 @@ export const ConsultationsView: React.FC = () => {
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold rounded-lg shadow-sm"
             >
               <Plus className="w-3.5 h-3.5" />
-              Crear Primera Consulta
+              Crear Primera {consultationTermSingular}
             </button>
           </div>
         ) : (
@@ -267,6 +295,34 @@ export const ConsultationsView: React.FC = () => {
             const hasVoiceNotes = consultation.voice_notes && consultation.voice_notes.length > 0;
             const hasPrescriptions = consultation.prescriptions && consultation.prescriptions.length > 0;
             const hasCertificates = consultation.certificates && consultation.certificates.length > 0;
+
+            const soapLabels = hasMedicalTools ? {
+              sTitle: "S",
+              sLabel: "Subjetivo (Anamnesis)",
+              sDesc: "Sin datos subjetivos registrados.",
+              oTitle: "O",
+              oLabel: "Objetivo (Examen Clínico)",
+              oDesc: "Sin hallazgos clínicos registrados.",
+              aTitle: "A",
+              aLabel: "Análisis (Diagnóstico)",
+              aDesc: "Diagnóstico no especificado.",
+              pTitle: "P",
+              pLabel: "Plan Terapéutico",
+              pDesc: "Sin pautas registradas."
+            } : {
+              sTitle: "S",
+              sLabel: "Situación Inicial / Motivo",
+              sDesc: "Sin situación inicial registrada.",
+              oTitle: "O",
+              oLabel: "Observaciones / Trabajo",
+              oDesc: "Sin observaciones registradas.",
+              aTitle: "A",
+              aLabel: "Análisis / Conclusiones",
+              aDesc: "Sin conclusiones especificadas.",
+              pTitle: "P",
+              pLabel: "Plan de Acción & Tareas",
+              pDesc: "Sin tareas o acuerdos registrados."
+            };
 
             return (
               <div
@@ -296,9 +352,15 @@ export const ConsultationsView: React.FC = () => {
                           </span>
                         )}
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
-                          {consultation.consultation_type === 'dental' ? '🦷 Odontología' : consultation.consultation_type === 'generic' ? '📋 Evolución Libre' : consultation.consultation_type === 'psychology' ? '🧠 Psicología' : '🩺 SOAP'}
+                          {consultation.consultation_type === 'dental' && profInfo.id === 'odontologia'
+                            ? '🦷 Odontología' 
+                            : consultation.consultation_type === 'generic' 
+                            ? '📋 Evolución Libre' 
+                            : consultation.consultation_type === 'psychology' 
+                            ? '🧠 Psicología' 
+                            : '🩺 Formato SOAP'}
                         </span>
-                        {consultation.dental_tooth_number && (
+                        {consultation.dental_tooth_number && profInfo.id === 'odontologia' && (
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                             🦷 {consultation.dental_tooth_number}
                           </span>
@@ -330,7 +392,7 @@ export const ConsultationsView: React.FC = () => {
 
                   {/* Actions Right */}
                   <div className="flex items-center gap-2 self-end sm:self-center">
-                    {hasPrescriptions && (
+                    {hasPrescriptions && hasMedicalTools && (
                       <button
                         type="button"
                         onClick={() => setActivePrescriptionToPrint({ consultation })}
@@ -358,7 +420,7 @@ export const ConsultationsView: React.FC = () => {
                       type="button"
                       onClick={() => setConsultationToDelete(consultation)}
                       className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg text-xs transition-colors"
-                      title="Eliminar consulta"
+                      title={`Eliminar ${consultationTermSingular.toLowerCase()}`}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -393,7 +455,7 @@ export const ConsultationsView: React.FC = () => {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="text-xs font-bold text-slate-900">
-                            {consultation.voice_notes[0].title || 'Nota de audio grabada en consulta'}
+                            {consultation.voice_notes[0].title || `Nota de audio grabada en ${consultationTermSingular.toLowerCase()}`}
                           </span>
                           <span className="text-[11px] text-slate-500 font-mono">
                             ({consultation.voice_notes[0].duration_seconds}s)
@@ -414,8 +476,8 @@ export const ConsultationsView: React.FC = () => {
                 {/* Expanded Details: SOAP Breakdown, Prescriptions & Certificates */}
                 {isExpanded && (
                   <div className="p-5 sm:p-6 space-y-6">
-                    {/* Vital Signs Bar - Only if enabled and filled */}
-                    {consultation.vital_signs_enabled && consultation.vital_signs && Object.values(consultation.vital_signs).some(Boolean) && (
+                    {/* Vital Signs Bar - Only if enabled, filled, and medical */}
+                    {hasMedicalTools && consultation.vital_signs_enabled && consultation.vital_signs && Object.values(consultation.vital_signs).some(Boolean) && (
                       <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-4 text-xs">
                         {consultation.vital_signs.blood_pressure && (
                           <div>
@@ -456,8 +518,8 @@ export const ConsultationsView: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Specialized Clinical Content According to Template */}
-                    {consultation.consultation_type === 'dental' ? (
+                    {/* Specialized Content According to Template */}
+                    {consultation.consultation_type === 'dental' && profInfo.id === 'odontologia' ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Procedimiento Realizado */}
                         <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5">
@@ -504,7 +566,7 @@ export const ConsultationsView: React.FC = () => {
                             <span className="w-5 h-5 rounded bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[11px]">
                               🦷
                             </span>
-                            Sector Dental & Motivo
+                            Sector Dental &amp; Motivo
                           </div>
                           <p className="text-xs text-slate-700 leading-relaxed">
                             {consultation.dental_tooth_number && (
@@ -516,14 +578,14 @@ export const ConsultationsView: React.FC = () => {
                           </p>
                         </div>
                       </div>
-                    ) : consultation.consultation_type === 'generic' ? (
+                    ) : (consultation.consultation_type === 'generic' || (consultation.consultation_type === 'dental' && profInfo.id !== 'odontologia')) ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5 md:col-span-2">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-sky-800">
                             <span className="w-5 h-5 rounded bg-sky-200 text-sky-800 flex items-center justify-center font-bold text-[11px]">
                               📋
                             </span>
-                            Evolución Clínica y Observaciones
+                            Evolución y Observaciones
                           </div>
                           <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
                             {consultation.clinical_evolution || consultation.soap_subjective || 'Sin evolución detallada.'}
@@ -555,18 +617,18 @@ export const ConsultationsView: React.FC = () => {
                         </div>
                       </div>
                     ) : (
-                      /* Traditional SOAP grid */
+                      /* Traditional / Dynamically Labeled SOAP grid */
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* S: Subjetivo */}
                         <div className="p-4 bg-sky-50/40 border border-sky-100 rounded-xl space-y-1.5">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-sky-800">
                             <span className="w-5 h-5 rounded bg-sky-200 text-sky-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                              S
+                              {soapLabels.sTitle}
                             </span>
-                            Subjetivo (Anamnesis)
+                            {soapLabels.sLabel}
                           </div>
                           <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                            {consultation.soap_subjective || 'Sin datos subjetivos registrados.'}
+                            {consultation.soap_subjective || soapLabels.sDesc}
                           </p>
                         </div>
 
@@ -574,12 +636,12 @@ export const ConsultationsView: React.FC = () => {
                         <div className="p-4 bg-teal-50/40 border border-teal-100 rounded-xl space-y-1.5">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-teal-800">
                             <span className="w-5 h-5 rounded bg-teal-200 text-teal-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                              O
+                              {soapLabels.oTitle}
                             </span>
-                            Objetivo (Examen Clínico)
+                            {soapLabels.oLabel}
                           </div>
                           <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                            {consultation.soap_objective || 'Sin hallazgos clínicos registrados.'}
+                            {consultation.soap_objective || soapLabels.oDesc}
                           </p>
                         </div>
 
@@ -587,12 +649,12 @@ export const ConsultationsView: React.FC = () => {
                         <div className="p-4 bg-amber-50/40 border border-amber-100 rounded-xl space-y-1.5">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800">
                             <span className="w-5 h-5 rounded bg-amber-200 text-amber-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                              A
+                              {soapLabels.aTitle}
                             </span>
-                            Análisis (Diagnóstico)
+                            {soapLabels.aLabel}
                           </div>
                           <p className="text-xs font-semibold text-slate-800 whitespace-pre-line leading-relaxed">
-                            {consultation.soap_analysis || 'Diagnóstico no especificado.'}
+                            {consultation.soap_analysis || soapLabels.aDesc}
                           </p>
                         </div>
 
@@ -600,19 +662,19 @@ export const ConsultationsView: React.FC = () => {
                         <div className="p-4 bg-indigo-50/40 border border-indigo-100 rounded-xl space-y-1.5">
                           <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-800">
                             <span className="w-5 h-5 rounded bg-indigo-200 text-indigo-800 flex items-center justify-center font-mono font-bold text-[11px]">
-                              P
+                              {soapLabels.pTitle}
                             </span>
-                            Plan Terapéutico
+                            {soapLabels.pLabel}
                           </div>
                           <p className="text-xs text-slate-700 whitespace-pre-line leading-relaxed">
-                            {consultation.soap_plan || 'Sin pautas registradas.'}
+                            {consultation.soap_plan || soapLabels.pDesc}
                           </p>
                         </div>
                       </div>
                     )}
 
-                    {/* Prescriptions strip if any */}
-                    {hasPrescriptions && (
+                    {/* Prescriptions strip if any (only medical) */}
+                    {hasPrescriptions && hasMedicalTools && (
                       <div className="space-y-2 border-t border-slate-100 pt-4">
                         <div className="flex items-center justify-between">
                           <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
@@ -641,8 +703,8 @@ export const ConsultationsView: React.FC = () => {
                       </div>
                     )}
 
-                    {/* Certificates strip if any */}
-                    {hasCertificates && (
+                    {/* Certificates strip if any (only medical) */}
+                    {hasCertificates && hasMedicalTools && (
                       <div className="space-y-2 border-t border-slate-100 pt-4">
                         <h4 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                           <Award className="w-3.5 h-3.5 text-emerald-600" />
@@ -678,10 +740,10 @@ export const ConsultationsView: React.FC = () => {
                         type="button"
                         onClick={() => setConsultationToDelete(consultation)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors"
-                        title="Eliminar esta consulta de forma permanente"
+                        title={`Eliminar ${consultationTermSingular.toLowerCase()}`}
                       >
                         <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                        <span>Eliminar Consulta</span>
+                        <span>Eliminar {consultationTermSingular}</span>
                       </button>
 
                       <button
