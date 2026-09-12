@@ -23,7 +23,7 @@ import {
 } from 'firebase/auth';
 import { getApps, initializeApp, getApp } from 'firebase/app';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { Appointment, Patient, Service, PracticeSettings, WaitlistEntry, ConsultationRecord, PaymentRecord, SaasTenantUser } from '../types';
+import { Appointment, Patient, Service, PracticeSettings, WaitlistEntry, ConsultationRecord, PaymentRecord, SaasTenantUser, SaasTransferSubmission, AppSuggestion, ContactMessage } from '../types';
 
 // Ensure Firebase App is initialized
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
@@ -73,7 +73,10 @@ export const COLLECTIONS = {
   WAITLIST: 'waitlist',
   USERS: 'users',
   CONSULTATIONS: 'consultations',
-  PAYMENTS: 'payments'
+  PAYMENTS: 'payments',
+  SAAS_TRANSFERS: 'saas_transfers',
+  SUGGESTIONS: 'suggestions',
+  CONTACT_MESSAGES: 'contact_messages'
 };
 
 /**
@@ -678,4 +681,209 @@ export const subscribeToWaitlist = (
     }
   );
 };
+
+/**
+ * Subscribe to real-time SaaS bank transfer submissions
+ */
+export const subscribeToSaasTransfers = (
+  onData: (transfers: SaasTransferSubmission[]) => void,
+  onError?: (err: Error) => void
+) => {
+  const colRef = collection(db, COLLECTIONS.SAAS_TRANSFERS);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: SaasTransferSubmission[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...(d.data() as any) } as SaasTransferSubmission);
+      });
+      // Sort newest first
+      items.sort((a, b) => new Date(b.created_at || '').getTime() - new Date(a.created_at || '').getTime());
+      onData(items);
+    },
+    (err) => {
+      console.warn('Firestore saas transfers listener notice:', err);
+      if (onError) onError(err);
+    }
+  );
+};
+
+/**
+ * Save new SaaS bank transfer submission
+ */
+export const saveSaasTransferToFirestore = async (transfer: SaasTransferSubmission): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SAAS_TRANSFERS, transfer.id);
+    const payload = cleanObjectForFirestore(transfer);
+    await setDoc(docRef, payload);
+    return true;
+  } catch (error) {
+    console.error('Error saving SaaS transfer to Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Update SaaS bank transfer status (approve, reject)
+ */
+export const updateSaasTransferInFirestore = async (
+  transferId: string,
+  updates: Partial<SaasTransferSubmission>
+): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SAAS_TRANSFERS, transferId);
+    const payload = cleanObjectForFirestore(updates);
+    await updateDoc(docRef, payload);
+    return true;
+  } catch (error) {
+    console.error('Error updating SaaS transfer in Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Subscribe to all app suggestions in real time
+ */
+export const subscribeToSuggestions = (
+  onData: (suggestions: AppSuggestion[]) => void,
+  onError?: (error: any) => void
+) => {
+  const colRef = collection(db, COLLECTIONS.SUGGESTIONS);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: AppSuggestion[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...(d.data() as any) });
+      });
+      onData(items);
+    },
+    (err) => {
+      console.warn('Firestore suggestions listener notice:', err);
+      if (onError) onError(err);
+    }
+  );
+};
+
+/**
+ * Save a new suggestion to Firestore
+ */
+export const saveSuggestionToFirestore = async (suggestion: AppSuggestion): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestion.id);
+    const payload = cleanObjectForFirestore(suggestion);
+    await setDoc(docRef, payload);
+    return true;
+  } catch (error) {
+    console.error('Error saving suggestion to Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Update a suggestion in Firestore (status, admin reply, upvotes)
+ */
+export const updateSuggestionInFirestore = async (
+  suggestionId: string,
+  updates: Partial<AppSuggestion>
+): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestionId);
+    const payload = cleanObjectForFirestore(updates);
+    await updateDoc(docRef, payload);
+    return true;
+  } catch (error) {
+    console.error('Error updating suggestion in Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete a suggestion from Firestore
+ */
+export const deleteSuggestionFromFirestore = async (suggestionId: string): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestionId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error('Error deleting suggestion from Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Subscribe to contact messages in real time for SuperAdmin
+ */
+export const subscribeToContactMessages = (
+  onData: (messages: ContactMessage[]) => void,
+  onError?: (error: any) => void
+) => {
+  const colRef = collection(db, COLLECTIONS.CONTACT_MESSAGES);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      const items: ContactMessage[] = [];
+      snapshot.forEach((d) => {
+        items.push({ id: d.id, ...(d.data() as any) });
+      });
+      // Sort newest first
+      items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      onData(items);
+    },
+    (err) => {
+      console.warn('Firestore contact messages listener notice:', err);
+      if (onError) onError(err);
+    }
+  );
+};
+
+/**
+ * Save a new contact message to Firestore
+ */
+export const saveContactMessageToFirestore = async (message: ContactMessage): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, message.id);
+    const payload = cleanObjectForFirestore(message);
+    await setDoc(docRef, payload);
+    return true;
+  } catch (error) {
+    console.error('Error saving contact message to Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Update a contact message in Firestore (status, notes)
+ */
+export const updateContactMessageInFirestore = async (
+  messageId: string,
+  updates: Partial<ContactMessage>
+): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, messageId);
+    const payload = cleanObjectForFirestore(updates);
+    await updateDoc(docRef, payload);
+    return true;
+  } catch (error) {
+    console.error('Error updating contact message in Firestore:', error);
+    return false;
+  }
+};
+
+/**
+ * Delete a contact message from Firestore
+ */
+export const deleteContactMessageFromFirestore = async (messageId: string): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, messageId);
+    await deleteDoc(docRef);
+    return true;
+  } catch (error) {
+    console.error('Error deleting contact message from Firestore:', error);
+    return false;
+  }
+};
+
+
 

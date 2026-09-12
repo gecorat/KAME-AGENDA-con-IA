@@ -35,7 +35,9 @@ import {
   BookOpen,
   Heart,
   Smile,
-  Briefcase
+  Briefcase,
+  Lightbulb,
+  Mail
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { NotificationCenter } from './NotificationCenter';
@@ -56,13 +58,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   onOpenAppointment,
   children
 }) => {
-  const { practiceSettings, waitlist, appointments, services, availability, currentUser, logout } = useAgendaStore();
+  const { practiceSettings, waitlist, appointments, services, availability, currentUser, logout, unreadContactMessagesCount } = useAgendaStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const waitingCount = waitlist.filter(w => w.status === 'waiting').length;
   const pendingPaymentsCount = appointments.filter(a => a.payment_status === 'pending' && a.status !== 'cancelled').length;
-  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
-  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
+  const isGonzalo = !currentUser || currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+  const isSuperAdmin = isGonzalo || currentUser?.role === 'superadmin' || Boolean(currentUser?.isSuperAdmin);
   const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
   const isPro = isSuperAdmin || practiceSettings.subscription_plan === 'pro';
   const trialDaysLeft = practiceSettings.trial_days_left ?? 14;
@@ -103,47 +105,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     {
       title: 'Principal',
       items: [
-        {
-          id: 'guia',
-          label: 'Guía de Inicio',
-          icon: Compass,
-          badge: `${completedStepsCount}/5`,
-          badgeColor: completedStepsCount === 5 ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-900 text-white'
-        },
-        { id: 'dashboard', label: 'Panel', icon: LayoutDashboard },
-        { id: 'agenda', label: 'Agenda', icon: Calendar },
-        { id: 'pacientes', label: clientTermPlural, icon: professionInfo.id === 'legal_contable' ? Scale : Users }
-      ]
-    },
-    {
-      title: 'Comunicación',
-      items: [
-        {
-          id: 'chats',
-          label: isPro ? 'WhatsApp & Chats' : 'Bot IA (Simulador)',
-          icon: MessageSquare,
-          badge: isPro ? (practiceSettings.whatsapp_connected ? 'En línea' : 'Configurar') : 'Trial',
-          badgeColor: isPro ? (practiceSettings.whatsapp_connected ? 'bg-neutral-100 text-neutral-800' : 'bg-amber-100 text-amber-800') : 'bg-neutral-100 text-neutral-800'
-        },
-        {
-          id: 'recordatorios',
-          label: 'Recordatorios',
-          icon: Bell,
-          badge: 'Auto',
-          badgeColor: 'bg-neutral-100 text-neutral-700'
-        },
-        {
-          id: 'espera',
-          label: 'Lista de Espera',
-          icon: ListOrdered,
-          badge: waitingCount > 0 ? `${waitingCount}` : undefined,
-          badgeColor: 'bg-neutral-200 text-neutral-800'
-        }
-      ]
-    },
-    {
-      title: 'Gestión & Caja',
-      items: [
+        { id: 'dashboard', label: 'Panel General', icon: LayoutDashboard },
+        { id: 'agenda', label: 'Agenda de Turnos', icon: Calendar },
+        { id: 'pacientes', label: clientTermPlural, icon: professionInfo.id === 'legal_contable' ? Scale : Users },
         {
           id: 'cobros',
           label: professionInfo.id === 'legal_contable' ? 'Honorarios & Caja' : 'Cobros & Caja',
@@ -158,21 +122,66 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           badge: professionInfo.badgeWorkflow,
           badgeColor: 'bg-neutral-100 text-neutral-700'
         },
-        { id: 'metricas', label: 'Métricas', icon: TrendingUp }
+        {
+          id: 'espera',
+          label: 'Lista de Espera',
+          icon: ListOrdered,
+          badge: waitingCount > 0 ? `${waitingCount}` : undefined,
+          badgeColor: 'bg-neutral-200 text-neutral-800'
+        }
       ]
     },
     {
-      title: 'Configuración',
+      title: 'WhatsApp & Bot',
       items: [
-        { id: 'editor-pagina', label: 'Editor Página Pública', icon: Palette, badge: 'Diseño', badgeColor: 'bg-emerald-100 text-emerald-800' },
-        { id: 'servicios', label: 'Aranceles', icon: DollarSign },
-        { id: 'horarios', label: 'Horarios', icon: Clock },
+        {
+          id: 'chats',
+          label: isPro ? 'WhatsApp & Chats' : 'Bot IA (Simulador)',
+          icon: MessageSquare,
+          badge: isPro ? (practiceSettings.whatsapp_connected ? 'En línea' : 'Configurar') : 'Trial',
+          badgeColor: isPro ? (practiceSettings.whatsapp_connected ? 'bg-neutral-100 text-neutral-800' : 'bg-amber-100 text-amber-800') : 'bg-neutral-100 text-neutral-800'
+        },
+        {
+          id: 'recordatorios',
+          label: 'Recordatorios',
+          icon: Bell,
+          badge: 'Auto',
+          badgeColor: 'bg-neutral-100 text-neutral-700'
+        }
+      ]
+    },
+    {
+      title: 'Informes & Guía',
+      items: [
+        { id: 'metricas', label: 'Métricas & Estadísticas', icon: TrendingUp },
+        {
+          id: 'guia',
+          label: 'Guía de Inicio',
+          icon: Compass,
+          badge: `${completedStepsCount}/5`,
+          badgeColor: completedStepsCount === 5 ? 'bg-emerald-100 text-emerald-800' : 'bg-neutral-900 text-white'
+        },
+        {
+          id: 'sugerencias',
+          label: 'Buzón de Sugerencias',
+          icon: Lightbulb,
+          badge: 'Feedback',
+          badgeColor: 'bg-amber-100 text-amber-800'
+        }
+      ]
+    },
+    {
+      title: 'Configuración & Portal',
+      items: [
+        { id: 'editor-pagina', label: 'Página Web & Portal', icon: Palette, badge: 'Público', badgeColor: 'bg-emerald-100 text-emerald-800' },
+        { id: 'servicios', label: 'Servicios & Aranceles', icon: DollarSign },
+        { id: 'horarios', label: 'Horarios de Atención', icon: Clock },
         {
           id: 'google-sync',
           label: 'Google Workspace',
           icon: Cloud
         },
-        { id: 'configuracion', label: 'Ajustes', icon: Settings },
+        { id: 'configuracion', label: 'Ajustes Generales', icon: Settings },
         {
           id: 'suscripcion',
           label: 'Planes & Precios',
@@ -187,6 +196,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         title: 'Super Admin (Gonzalo)',
         items: [
           {
+            id: 'superadmin-apis',
+            label: 'APIs & Pasarelas (DLocal / MP)',
+            icon: Key,
+            badge: 'Admin',
+            badgeColor: 'bg-amber-400 text-neutral-950 font-bold'
+          },
+          {
             id: 'superadmin-analytics',
             label: 'Estadísticas SaaS & Cobros',
             icon: TrendingUp,
@@ -194,11 +210,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             badgeColor: 'bg-amber-400 text-neutral-950 font-bold'
           },
           {
-            id: 'superadmin-apis',
-            label: 'APIs & Webhooks SaaS',
-            icon: Key,
-            badge: 'Admin',
-            badgeColor: 'bg-amber-400 text-neutral-950 font-bold'
+            id: 'superadmin-mensajes',
+            label: 'Mensajes Web (Contacto)',
+            icon: Mail,
+            badge: unreadContactMessagesCount > 0 ? `${unreadContactMessagesCount} NUEVO${unreadContactMessagesCount > 1 ? 'S' : ''}` : undefined,
+            badgeColor: 'bg-rose-500 text-white font-bold animate-pulse'
           }
         ]
       }
@@ -206,7 +222,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   ];
 
   const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap(s => s.items);
-  const activeItem = ALL_NAV_ITEMS.find(item => item.id === activeTab || (activeTab === 'asistente' && item.id === 'chats'));
+  const activeItem = ALL_NAV_ITEMS.find(item =>
+    item.id === activeTab ||
+    (activeTab === 'asistente' && item.id === 'chats') ||
+    (activeTab === 'apis' && item.id === 'superadmin-apis') ||
+    (activeTab === 'mensajes' && item.id === 'superadmin-mensajes')
+  );
 
   return (
     <div className="min-h-screen bg-[#fafafa] text-neutral-900 flex flex-col font-sans max-w-full overflow-x-hidden">

@@ -658,11 +658,11 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                   </div>
 
                   <div className="space-y-3.5">
-                    {/* Full Name & Phone with Country selector */}
+                    {/* Full Name & Phone - Always shown, usually side-by-side on md+ */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                       <div>
                         <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                          Nombre y Apellido {req.full_name ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                          Nombre y Apellido <span className="text-red-500 font-bold">*</span>
                         </label>
                         <input
                           type="text"
@@ -676,7 +676,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
 
                       <div>
                         <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                          WhatsApp / Celular {req.phone ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                          WhatsApp / Celular <span className="text-red-500 font-bold">*</span>
                         </label>
                         <PhoneInputWithCountry
                           value={patientPhone}
@@ -690,82 +690,97 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                       </div>
                     </div>
 
+                    {/* DNI, Email, Insurance, Address - Only render if required */}
                     {/* DNI & Email */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {(req.dni || req.email) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {req.dni && (
+                          <div>
+                            <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                              DNI / Documento <span className="text-red-500 font-bold">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={patientDni}
+                              onChange={e => setPatientDni(e.target.value)}
+                              placeholder="Ej. 39.120.400"
+                              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                              required={req.dni}
+                            />
+                          </div>
+                        )}
+
+                        {req.email && (
+                          <div>
+                            <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                              Correo Electrónico <span className="text-red-500 font-bold">*</span>
+                            </label>
+                            <input
+                              type="email"
+                              value={patientEmail}
+                              onChange={e => setPatientEmail(e.target.value)}
+                              placeholder="lucas@ejemplo.com"
+                              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                              required={req.email}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Insurance & Address */}
+                    {(req.insurance || req.address) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {req.insurance && (
+                          <div>
+                            <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                              Obra Social o Prepaga <span className="text-red-500 font-bold">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={patientInsurance}
+                              onChange={e => setPatientInsurance(e.target.value)}
+                              placeholder="Ej. OSDE 210, Swiss Medical, Particular..."
+                              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                              required={req.insurance}
+                            />
+                          </div>
+                        )}
+
+                        {req.address && (
+                          <div>
+                            <label className="text-xs font-semibold text-neutral-700 block mb-1">
+                              Domicilio o Localidad <span className="text-red-500 font-bold">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={patientAddress}
+                              onChange={e => setPatientAddress(e.target.value)}
+                              placeholder="Ej. Ciudad de Santa Fe, Bv. Gálvez 1200"
+                              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
+                              required={req.address}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reason */}
+                    {req.reason && (
                       <div>
                         <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                          DNI / Documento {req.dni ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
+                          Motivo de consulta o comentarios <span className="text-red-500 font-bold">*</span>
                         </label>
-                        <input
-                          type="text"
-                          value={patientDni}
-                          onChange={e => setPatientDni(e.target.value)}
-                          placeholder="Ej. 39.120.400"
+                        <textarea
+                          rows={2}
+                          value={patientNotes}
+                          onChange={e => setPatientNotes(e.target.value)}
+                          placeholder="Contanos si tienes alguna duda, molestia específica o preferencia..."
                           className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
-                          required={req.dni}
+                          required={req.reason}
                         />
                       </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                          Correo Electrónico {req.email ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
-                        </label>
-                        <input
-                          type="email"
-                          value={patientEmail}
-                          onChange={e => setPatientEmail(e.target.value)}
-                          placeholder="lucas@ejemplo.com"
-                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
-                          required={req.email}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Obra Social / Cobertura & Domicilio */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                      <div>
-                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                          Obra Social o Prepaga {req.insurance ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
-                        </label>
-                        <input
-                          type="text"
-                          value={patientInsurance}
-                          onChange={e => setPatientInsurance(e.target.value)}
-                          placeholder="Ej. OSDE 210, Swiss Medical, Particular..."
-                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
-                          required={req.insurance}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                          Domicilio o Localidad {req.address ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
-                        </label>
-                        <input
-                          type="text"
-                          value={patientAddress}
-                          onChange={e => setPatientAddress(e.target.value)}
-                          placeholder="Ej. Ciudad de Santa Fe, Bv. Gálvez 1200"
-                          className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
-                          required={req.address}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Motivo de consulta */}
-                    <div>
-                      <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                        Motivo de consulta o comentarios {req.reason ? <span className="text-red-500 font-bold">*</span> : <span className="text-neutral-400 font-normal">(Opcional)</span>}
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={patientNotes}
-                        onChange={e => setPatientNotes(e.target.value)}
-                        placeholder="Contanos si tienes alguna duda, molestia específica o preferencia..."
-                        className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 font-medium"
-                        required={req.reason}
-                      />
-                    </div>
+                    )}
                   </div>
 
                   <div className="flex items-center justify-between pt-4 border-t border-neutral-200">

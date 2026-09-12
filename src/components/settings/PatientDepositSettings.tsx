@@ -489,6 +489,21 @@ export const PatientDepositSettings: React.FC<PatientDepositSettingsProps> = ({
               </div>
             </div>
           )}
+
+          {/* Dynamic QR and Checkout link callout */}
+          <div className="p-4 bg-gradient-to-r from-indigo-50/80 to-sky-50/80 border border-indigo-200/90 rounded-2xl flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0">
+              <Sparkles className="w-4 h-4" />
+            </div>
+            <div className="space-y-1">
+              <h5 className="text-xs font-bold text-indigo-950">
+                Generación Dinámica de Códigos QR & Links con Monto Precargado
+              </h5>
+              <p className="text-[11px] text-indigo-900 leading-relaxed">
+                Al hacer clic en <strong>"Solicitar Pago"</strong> desde la lista o ficha de cualquier paciente, el sistema generará automáticamente un Código QR dinámico y un Link de Checkout de Mercado Pago con el importe exacto del turno y retorno directo para registrar el cobro al instante.
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -25,12 +25,14 @@ import {
   Edit2,
   Trash2,
   Info,
-  FileText
+  FileText,
+  Send
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { PaymentRecord, PaymentMethod, Appointment, CashMovement } from '../types';
 import { ReceiptModal } from '../components/ReceiptModal';
 import { NewPaymentModal } from '../components/NewPaymentModal';
+import { PaymentRequestModal } from '../components/PaymentRequestModal';
 import { EditPaymentModal } from '../components/EditPaymentModal';
 import { CashMovementModal } from '../components/CashMovementModal';
 import { CashRegisterModal } from '../components/CashRegisterModal';
@@ -73,6 +75,7 @@ export const BillingView: React.FC = () => {
   const [movementToEdit, setMovementToEdit] = useState<CashMovement | null>(null);
   const [isCashMovementModalOpen, setIsCashMovementModalOpen] = useState(false);
   const [preselectedAppointment, setPreselectedAppointment] = useState<Appointment | null>(null);
+  const [selectedAptForRequest, setSelectedAptForRequest] = useState<Appointment | null>(null);
   const [cashModalMode, setCashModalMode] = useState<'open_box' | 'close_box' | 'add_movement' | null>(null);
 
   // Financial calculations
@@ -942,10 +945,18 @@ export const BillingView: React.FC = () => {
                             <button
                               onClick={() => handleCollectAppointment(apt)}
                               className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1"
-                              title="Registrar cobro de este turno"
+                              title="Registrar cobro confirmado en caja"
                             >
                               <DollarSign className="w-3.5 h-3.5" />
-                              Cobrar
+                              Registrar Cobro
+                            </button>
+                            <button
+                              onClick={() => setSelectedAptForRequest(apt)}
+                              className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1"
+                              title="Solicitar datos de pago por WhatsApp (Alias, MP o QR)"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              Solicitar Pago
                             </button>
                             <button
                               onClick={() => setAppointmentToDelete(apt)}
@@ -1092,10 +1103,10 @@ export const BillingView: React.FC = () => {
                                 <button
                                   onClick={() => handleCollectAppointment(rec.appointment_ref!)}
                                   className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1"
-                                  title="Registrar cobro de copago o arancel"
+                                  title="Registrar cobro de copago o arancel en caja"
                                 >
                                   <DollarSign className="w-3 h-3" />
-                                  Cobrar
+                                  Registrar Cobro
                                 </button>
                               )}
                               {rec.source === 'payment' && rec.payment_ref && (
@@ -1184,6 +1195,18 @@ export const BillingView: React.FC = () => {
           isOpen={!!cashModalMode}
           onClose={() => setCashModalMode(null)}
           mode={cashModalMode}
+        />
+      )}
+
+      {selectedAptForRequest && (
+        <PaymentRequestModal
+          isOpen={!!selectedAptForRequest}
+          onClose={() => setSelectedAptForRequest(null)}
+          patientName={selectedAptForRequest.patient_name}
+          patientPhone={selectedAptForRequest.patient_phone}
+          concept={`${selectedAptForRequest.service_name} (${selectedAptForRequest.date})`}
+          amount={selectedAptForRequest.service_price || 0}
+          appointmentId={selectedAptForRequest.id}
         />
       )}
 

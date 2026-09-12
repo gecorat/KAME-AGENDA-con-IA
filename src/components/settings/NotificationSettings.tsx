@@ -49,7 +49,8 @@ export const NotificationSettings: React.FC = () => {
       message: 'Martina Benítez ha agendado "Consulta Odontológica Inicial" para el próximo Martes a las 10:30 hs.',
       patient_name: 'Martina Benítez',
       service_name: 'Consulta Odontológica Inicial',
-      datetime: new Date().toISOString()
+      datetime: new Date().toISOString(),
+      force: true
     });
     setTestSent('Se envió la alerta de turno por Bot');
     setTimeout(() => setTestSent(null), 3000);
@@ -62,7 +63,8 @@ export const NotificationSettings: React.FC = () => {
       message: 'Lucas Gómez confirmó su asistencia para "Limpieza y Profilaxis" de mañana a las 15:00 hs.',
       patient_name: 'Lucas Gómez',
       service_name: 'Limpieza y Profilaxis',
-      datetime: new Date().toISOString()
+      datetime: new Date().toISOString(),
+      force: true
     });
     setTestSent('Se envió la alerta de confirmación');
     setTimeout(() => setTestSent(null), 3000);

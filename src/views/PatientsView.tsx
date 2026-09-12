@@ -42,12 +42,16 @@ import {
   Smile,
   Briefcase,
   AlertTriangle,
-  Zap
+  Zap,
+  Send,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Patient, ConsultationRecord, MedicalCertificate, PaymentRecord, Appointment } from '../types';
 import { ConsultationModal } from '../components/ConsultationModal';
 import { NewPaymentModal } from '../components/NewPaymentModal';
+import { PaymentRequestModal } from '../components/PaymentRequestModal';
 import { EditPaymentModal } from '../components/EditPaymentModal';
 import { ReceiptModal } from '../components/ReceiptModal';
 import { PrescriptionPrintModal } from '../components/PrescriptionPrintModal';
@@ -98,8 +102,17 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   const [selectedPatientId, setSelectedPatientId] = useState<string>(patients[0]?.id || '');
   const [activeTab, setActiveTab] = useState<PatientTab>('consultations');
 
-  // Interactive date filter for attention history
+  // Interactive timeline & date filter
+  const [selectedTimelineFilter, setSelectedTimelineFilter] = useState<'all' | 'appointments' | 'consultations'>('all');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('all');
+  const [consultationAppointmentId, setConsultationAppointmentId] = useState<string | undefined>(undefined);
+  const [preselectedAppointmentForPayment, setPreselectedAppointmentForPayment] = useState<Appointment | null>(null);
+  const [paymentRequestDetails, setPaymentRequestDetails] = useState<{
+    concept: string;
+    amount: number;
+    appointmentId?: string;
+  } | null>(null);
+  const [expandedConsultationId, setExpandedConsultationId] = useState<string | null>(null);
 
   // In-place editing of patient general notes / initial state
   const [isEditingNotes, setIsEditingNotes] = useState(false);
@@ -115,6 +128,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   const [consultationToDelete, setConsultationToDelete] = useState<ConsultationRecord | null>(null);
 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isPaymentRequestModalOpen, setIsPaymentRequestModalOpen] = useState(false);
   const [isEditPaymentModalOpen, setIsEditPaymentModalOpen] = useState(false);
   const [paymentToEdit, setPaymentToEdit] = useState<PaymentRecord | null>(null);
   const [paymentToDelete, setPaymentToDelete] = useState<PaymentRecord | null>(null);
@@ -195,15 +209,16 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         .sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime())
     : [];
 
-  // Distinct attention dates for interactive date filtering
+  // Distinct attention dates across both appointments and consultations for interactive timeline filtering
   const distinctAttentionDates = Array.from(
-    new Set(
-      patientConsultations.map(c => {
+    new Set([
+      ...patientAppointments.map(a => a.date || (a.start_datetime ? a.start_datetime.split('T')[0] : '')),
+      ...patientConsultations.map(c => {
         const raw = c.date || c.created_at;
         return raw ? raw.split('T')[0] : '';
-      }).filter(Boolean)
-    )
-  );
+      })
+    ].filter(Boolean))
+  ).sort().reverse();
 
   // Filtered consultations by selected date
   const filteredConsultations = selectedDateFilter === 'all'
@@ -212,6 +227,47 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         const raw = c.date || c.created_at;
         return raw && raw.startsWith(selectedDateFilter);
       });
+
+  // Filtered appointments by selected date
+  const filteredAppointments = selectedDateFilter === 'all'
+    ? patientAppointments
+    : patientAppointments.filter(a => {
+        const d = a.start_datetime ? a.start_datetime.split('T')[0] : '';
+        return d === selectedDateFilter;
+      });
+
+  const handleAttendAppointment = (apt: Appointment) => {
+    setConsultationAppointmentId(apt.id);
+    const aptDate = apt.start_datetime ? apt.start_datetime.split('T')[0] : '';
+    const existing = patientConsultations.find(c => 
+      c.appointment_id === apt.id ||
+      (c.date && aptDate && c.date.startsWith(aptDate))
+    );
+    setConsultationToEdit(existing || null);
+    setIsConsultationModalOpen(true);
+  };
+
+  const handleCollectAppointment = (apt: Appointment) => {
+    setPreselectedAppointmentForPayment(apt);
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleSendPaymentRequest = (apt?: Appointment) => {
+    if (apt) {
+      setPaymentRequestDetails({
+        concept: `${apt.service_name} (${new Date(apt.start_datetime).toLocaleDateString()})`,
+        amount: apt.service_price || 0,
+        appointmentId: apt.id
+      });
+    } else {
+      const pendingApt = patientAppointments.find(a => a.payment_status === 'pending');
+      setPaymentRequestDetails({
+        concept: `Arancel / Consulta - ${selectedPatient?.first_name} ${selectedPatient?.last_name}`,
+        amount: pendingApt?.service_price || patientAppointments[0]?.service_price || 0,
+      });
+    }
+    setIsPaymentRequestModalOpen(true);
+  };
 
   const patientPayments = selectedPatient
     ? payments
@@ -510,25 +566,12 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   </div>
                 </div>
 
-                {/* Primary Action Buttons: Ver Ficha, Agendar Turno, Cobrar */}
-                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConsultationToEdit(null);
-                      setIsConsultationModalOpen(true);
-                    }}
-                    className="flex-1 sm:flex-initial px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
-                    title={`Ver Ficha / Registrar ${consultationTermSingular}`}
-                  >
-                    <FileText className="w-3.5 h-3.5 shrink-0" />
-                    <span>Ver Ficha / Sesión</span>
-                  </button>
-
+                {/* Primary Action Buttons: Agendar Turno, Nueva Sesión, Cobrar */}
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => onScheduleForPatient(selectedPatient)}
-                    className="flex-1 sm:flex-initial px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
+                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
                     title={`Agendar para este ${clientTermSingular.toLowerCase()}`}
                   >
                     <Calendar className="w-3.5 h-3.5 shrink-0" />
@@ -537,19 +580,42 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setIsPaymentModalOpen(true)}
-                    className="flex-1 sm:flex-initial px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
-                    title={`Registrar cobro de ${professionInfo.billingTerm.toLowerCase()}`}
+                    onClick={() => {
+                      setConsultationToEdit(null);
+                      setIsConsultationModalOpen(true);
+                    }}
+                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
+                    title={`Ver Ficha / Registrar ${consultationTermSingular}`}
                   >
-                    <DollarSign className="w-3.5 h-3.5 shrink-0" />
-                    <span>Cobrar</span>
+                    <FileText className="w-3.5 h-3.5 shrink-0" />
+                    <span>Nueva Ficha / Sesión</span>
                   </button>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setIsPaymentModalOpen(true)}
+                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
+                    title={`Registrar cobro confirmado de ${professionInfo.billingTerm.toLowerCase()} en caja`}
+                  >
+                    <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                    <span>Registrar Cobro</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleSendPaymentRequest()}
+                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
+                    title="Solicitar pago por WhatsApp (Alias / CBU / Link MP / QR)"
+                  >
+                    <Send className="w-3.5 h-3.5 shrink-0" />
+                    <span>Solicitar Pago</span>
+                  </button>
+
+                  <div className="flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
                     <button
                       type="button"
                       onClick={() => onEditPatient(selectedPatient)}
-                      className="p-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-600 transition-colors shrink-0"
+                      className="min-h-[38px] min-w-[38px] p-2 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center shrink-0"
                       title={`Editar datos del ${clientTermSingular.toLowerCase()}`}
                     >
                       <Edit2 className="w-3.5 h-3.5" />
@@ -558,7 +624,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handleDeletePatient(selectedPatient)}
-                      className="p-1.5 rounded-lg border border-neutral-200 hover:bg-rose-50 hover:text-rose-600 text-neutral-400 transition-colors shrink-0"
+                      className="min-h-[38px] min-w-[38px] p-2 rounded-lg border border-neutral-200 hover:bg-rose-50 hover:text-rose-600 text-neutral-400 transition-colors flex items-center justify-center shrink-0"
                       title={`Eliminar ${clientTermSingular.toLowerCase()}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -636,7 +702,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
               </div>
 
               {/* 3. Structured Personal Information & Coverage / Legal / Academic Card */}
-              <div className="p-4 bg-gradient-to-br from-neutral-50 to-white rounded-xl border border-neutral-200/90 shadow-2xs space-y-3 text-xs">
+              <div className="p-3.5 sm:p-4 bg-gradient-to-br from-neutral-50 to-white rounded-xl border border-neutral-200/90 shadow-2xs space-y-3 text-xs">
                 <div className="flex items-center justify-between pb-2 border-b border-neutral-200/70">
                   <span className="text-[11px] font-bold text-neutral-800 uppercase tracking-wider flex items-center gap-1.5 font-display">
                     {professionInfo.id === 'legal_contable' ? (
@@ -657,14 +723,14 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onEditPatient(selectedPatient)}
-                    className="text-[11px] text-sky-700 hover:text-sky-800 hover:underline font-semibold flex items-center gap-1"
+                    className="text-[11px] text-sky-700 hover:text-sky-800 hover:underline font-semibold flex items-center gap-1 min-h-[30px]"
                   >
                     <Edit2 className="w-3 h-3" />
                     <span>Modificar datos</span>
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
                   <div className="space-y-0.5">
                     <span className="text-[10px] text-neutral-500 block uppercase font-medium tracking-wider">
                       {professionInfo.id === 'legal_contable' ? 'CUIT / CUIL / DNI' : 'DNI / Identificación'}
@@ -719,7 +785,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 </div>
 
                 {/* Additional profession-specific details */}
-                <div className="pt-2.5 border-t border-neutral-200/60 grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div className="pt-2.5 border-t border-neutral-200/60 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 text-xs">
                   {professionInfo.id === 'legal_contable' ? (
                     <>
                       <div>
@@ -815,59 +881,41 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 </div>
               </div>
 
-              {/* 5. Sub-Tab Navigation inside Patient Profile */}
+              {/* 5. Sub-Tab Navigation inside Patient Profile (Unified & Simplified) */}
               <div className="border-b border-neutral-200 flex items-center gap-2 sm:gap-4 text-xs font-semibold overflow-x-auto whitespace-nowrap pb-1 no-scrollbar scroll-smooth">
                 <button
                   type="button"
                   onClick={() => setActiveTab('consultations')}
-                  className={`pb-1.5 transition-colors relative flex items-center gap-1.5 shrink-0 ${
-                    activeTab === 'consultations'
+                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] ${
+                    activeTab === 'consultations' || activeTab === 'appointments'
                       ? 'text-indigo-700 border-b-2 border-indigo-600 font-bold'
                       : 'text-neutral-500 hover:text-neutral-800'
                   }`}
                 >
-                  {getProfessionHistoryIcon()}
-                  <span>
-                    Historial de {consultationTermPlural} ({patientConsultations.length})
+                  <Clock className="w-3.5 h-3.5" />
+                  <span>Historial Turnos y Sesiones</span>
+                  <span className="text-[10px] bg-indigo-50 text-indigo-700 font-semibold px-1.5 py-0.2 rounded border border-indigo-200/60">
+                    {patientAppointments.length + patientConsultations.length}
                   </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setActiveTab('overview')}
-                  className={`pb-1.5 transition-colors relative flex items-center gap-1.5 shrink-0 ${
+                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] ${
                     activeTab === 'overview'
                       ? 'text-neutral-900 border-b-2 border-neutral-900 font-bold'
                       : 'text-neutral-500 hover:text-neutral-800'
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>{professionInfo.detailsTabTitle}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('appointments')}
-                  className={`pb-1.5 transition-colors relative flex items-center gap-1.5 shrink-0 ${
-                    activeTab === 'appointments'
-                      ? 'text-sky-700 border-b-2 border-sky-600 font-bold'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>
-                    {professionInfo.id === 'legal_contable'
-                      ? 'Citas & Audiencias'
-                      : professionInfo.id === 'educacion_clases'
-                      ? 'Clases'
-                      : 'Turnos'} ({patientAppointments.length})
-                  </span>
+                  <span>Ficha y Antecedentes</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setActiveTab('billing')}
-                  className={`pb-1.5 transition-colors relative flex items-center gap-1.5 shrink-0 ${
+                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] ${
                     activeTab === 'billing'
                       ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
                       : 'text-neutral-500 hover:text-neutral-800'
@@ -880,372 +928,643 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 </button>
               </div>
 
-              {/* Tab 1: Historial de Atención Cronológico por Fecha Seleccionable (Interactivo) */}
-              {activeTab === 'consultations' && (
-                <div className="space-y-3.5 animate-in fade-in duration-150">
-                  {/* Top Bar with Date Timeline Filter and Action */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50/70 p-2.5 rounded-xl border border-neutral-200/80">
-                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                      <span className="text-[11px] font-semibold text-neutral-600 flex items-center gap-1 shrink-0">
-                        <Filter className="w-3 h-3 text-neutral-400" />
-                        Filtrar por fecha:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDateFilter('all')}
-                        className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 ${
-                          selectedDateFilter === 'all'
-                            ? 'bg-indigo-600 text-white shadow-2xs'
-                            : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
-                        }`}
-                      >
-                        Todas ({patientConsultations.length})
-                      </button>
+              {/* Tab 1: Línea de Tiempo Unificada (Turnos & Consultas Coordinadas) */}
+              {(activeTab === 'consultations' || activeTab === 'appointments') && (() => {
+                // Map linked consultations to appointments
+                const linkedConsultationsMap = new Map<string, ConsultationRecord>();
+                patientConsultations.forEach(c => {
+                  if (c.appointment_id) {
+                    linkedConsultationsMap.set(c.appointment_id, c);
+                  }
+                });
+                patientAppointments.forEach(apt => {
+                  if (!linkedConsultationsMap.has(apt.id)) {
+                    const aptDate = apt.start_datetime ? apt.start_datetime.split('T')[0] : '';
+                    const matched = patientConsultations.find(c => 
+                      !Array.from(linkedConsultationsMap.values()).some(v => v.id === c.id) &&
+                      ((c.date && aptDate && c.date.startsWith(aptDate)) ||
+                       (c.created_at && aptDate && c.created_at.split('T')[0] === aptDate))
+                    );
+                    if (matched) {
+                      linkedConsultationsMap.set(apt.id, matched);
+                    }
+                  }
+                });
 
-                      {distinctAttentionDates.map(dateStr => {
-                        const countOnDate = patientConsultations.filter(c => (c.date || c.created_at || '').startsWith(dateStr)).length;
-                        return (
+                const standaloneConsultations = patientConsultations.filter(c => 
+                  !Array.from(linkedConsultationsMap.values()).some(v => v.id === c.id)
+                );
+
+                const filteredStandalone = selectedDateFilter === 'all'
+                  ? standaloneConsultations
+                  : standaloneConsultations.filter(c => {
+                      const raw = c.date || c.created_at;
+                      return raw && raw.startsWith(selectedDateFilter);
+                    });
+
+                const totalTimelineCount = selectedTimelineFilter === 'appointments'
+                  ? filteredAppointments.length
+                  : selectedTimelineFilter === 'consultations'
+                  ? filteredConsultations.length
+                  : filteredAppointments.length + filteredStandalone.length;
+
+                return (
+                  <div className="space-y-3.5 animate-in fade-in duration-150">
+                    {/* Filter & Action Controls */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50/70 p-2.5 rounded-xl border border-neutral-200/80">
+                      <div className="flex flex-col gap-2 min-w-0">
+                        {/* Scope Filter: All vs Appointments vs Consultations */}
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
                           <button
-                            key={dateStr}
                             type="button"
-                            onClick={() => setSelectedDateFilter(dateStr)}
+                            onClick={() => setSelectedTimelineFilter('all')}
+                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 ${
+                              selectedTimelineFilter === 'all'
+                                ? 'bg-indigo-600 text-white shadow-2xs'
+                                : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
+                            }`}
+                          >
+                            Todos ({patientAppointments.length + patientConsultations.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTimelineFilter('appointments')}
                             className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 flex items-center gap-1 ${
-                              selectedDateFilter === dateStr
+                              selectedTimelineFilter === 'appointments'
                                 ? 'bg-indigo-600 text-white shadow-2xs'
                                 : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
                             }`}
                           >
                             <Calendar className="w-3 h-3" />
-                            <span>{new Date(dateStr + 'T12:00:00').toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
-                            <span className={`text-[10px] px-1 py-0.2 rounded-full ${
-                              selectedDateFilter === dateStr ? 'bg-indigo-700 text-white' : 'bg-neutral-100 text-neutral-600'
-                            }`}>
-                              {countOnDate}
-                            </span>
+                            <span>Solo Turnos ({patientAppointments.length})</span>
                           </button>
-                        );
-                      })}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConsultationToEdit(null);
-                        setIsConsultationModalOpen(true);
-                      }}
-                      className="px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Nueva {consultationTermSingular}</span>
-                    </button>
-                  </div>
-
-                  {/* Consultation List / Details */}
-                  {filteredConsultations.length === 0 ? (
-                    <div className="p-8 bg-neutral-50/70 rounded-xl border border-neutral-200/70 text-center text-xs text-neutral-500 space-y-2">
-                      <div className="flex justify-center">{getProfessionHistoryIcon()}</div>
-                      <p className="font-semibold text-neutral-700">
-                        {selectedDateFilter === 'all'
-                          ? `Sin ${consultationTermPlural.toLowerCase()} registradas para este ${clientTermSingular.toLowerCase()}`
-                          : `No hay registros de atención para la fecha seleccionada (${selectedDateFilter})`}
-                      </p>
-                      <p className="text-[11px] text-neutral-400">
-                        {professionInfo.id === 'legal_contable'
-                          ? 'Inicia un registro de actuación, audiencia o asesoramiento para asentar avances y notas de voz.'
-                          : professionInfo.id === 'educacion_clases'
-                          ? 'Registra una nueva clase dictada, contenido abordado, calificaciones y tareas asignadas.'
-                          : 'Inicia una nueva evolución o consulta para transcribir notas de voz, registrar diagnósticos y planes.'}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConsultationToEdit(null);
-                          setIsConsultationModalOpen(true);
-                        }}
-                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs inline-flex items-center gap-1.5 hover:bg-indigo-700 shadow-2xs"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Nueva {consultationTermSingular}</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-[440px] overflow-y-auto pr-1">
-                      {filteredConsultations.map(c => {
-                        const rawDate = c.date || c.created_at;
-                        const dateObj = new Date(rawDate);
-                        return (
-                          <div
-                            key={c.id}
-                            className="p-3.5 rounded-xl border border-neutral-200/85 bg-white hover:border-indigo-300 hover:shadow-2xs transition-all space-y-2.5"
+                          <button
+                            type="button"
+                            onClick={() => setSelectedTimelineFilter('consultations')}
+                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 flex items-center gap-1 ${
+                              selectedTimelineFilter === 'consultations'
+                                ? 'bg-indigo-600 text-white shadow-2xs'
+                                : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
+                            }`}
                           >
-                            {/* Consultation Top Info */}
-                            <div className="flex items-start justify-between gap-2">
-                              <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="font-bold text-xs sm:text-sm text-neutral-900">
-                                    {c.reason_for_visit || c.treatment_performed || (
-                                      professionInfo.id === 'legal_contable'
-                                        ? 'Actuación / Diligencia Judicial'
-                                        : professionInfo.id === 'educacion_clases'
-                                        ? 'Clase Dictada'
-                                        : 'Atención / Consulta'
-                                    )}
+                            <Stethoscope className="w-3 h-3" />
+                            <span>Solo {consultationTermPlural} ({patientConsultations.length})</span>
+                          </button>
+                        </div>
+
+                        {/* Date Filter Pills */}
+                        {distinctAttentionDates.length > 0 && (
+                          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                            <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
+                              <Filter className="w-2.5 h-2.5 text-neutral-400" />
+                              Fecha:
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDateFilter('all')}
+                              className={`px-2 py-0.5 text-[11px] rounded-md font-medium transition-all shrink-0 ${
+                                selectedDateFilter === 'all'
+                                  ? 'bg-neutral-800 text-white'
+                                  : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                              }`}
+                            >
+                              Todas
+                            </button>
+                            {distinctAttentionDates.map(dateStr => {
+                              const aptsCount = patientAppointments.filter(a => a.start_datetime.split('T')[0] === dateStr).length;
+                              const consCount = patientConsultations.filter(c => (c.date || c.created_at || '').startsWith(dateStr)).length;
+                              return (
+                                <button
+                                  key={dateStr}
+                                  type="button"
+                                  onClick={() => setSelectedDateFilter(dateStr)}
+                                  className={`px-2 py-0.5 text-[11px] rounded-md font-medium transition-all shrink-0 flex items-center gap-1 ${
+                                    selectedDateFilter === dateStr
+                                      ? 'bg-neutral-800 text-white'
+                                      : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                                  }`}
+                                >
+                                  <span>{new Date(dateStr + 'T12:00:00').toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                  <span className={`text-[9px] px-1 py-0.2 rounded-full ${
+                                    selectedDateFilter === dateStr ? 'bg-neutral-700 text-white' : 'bg-neutral-100 text-neutral-600'
+                                  }`}>
+                                    {aptsCount + consCount}
                                   </span>
-                                  {c.consultation_type && (
-                                    <span className="px-1.5 py-0.2 text-[10px] font-semibold uppercase bg-indigo-50 text-indigo-700 rounded border border-indigo-100">
-                                      {c.consultation_type}
-                                    </span>
-                                  )}
-                                  {c.service_name && (
-                                    <span className="px-1.5 py-0.2 text-[10px] font-medium bg-neutral-100 text-neutral-700 rounded">
-                                      {c.service_name}
-                                    </span>
-                                  )}
-                                  {c.procedural_stage && (
-                                    <span className="px-1.5 py-0.2 text-[10px] font-medium bg-amber-50 text-amber-800 rounded border border-amber-200">
-                                      Etapa: {c.procedural_stage}
-                                    </span>
-                                  )}
-                                </div>
-                                <span className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
-                                  <Calendar className="w-3 h-3 text-neutral-400" />
-                                  {dateObj.toLocaleDateString([], {
-                                    weekday: 'long',
-                                    day: 'numeric',
-                                    month: 'long',
-                                    year: 'numeric'
-                                  })}{' '}
-                                  a las {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
-                                  {c.professional_name && (
-                                    <span>• {c.professional_name}</span>
-                                  )}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
-                                {c.prescriptions && c.prescriptions.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setActivePrescriptionToPrint({ consultation: c })}
-                                    className="px-2 py-1 rounded-lg text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shrink-0"
-                                    title="Imprimir / Ver Receta Médica"
-                                  >
-                                    <Pill className="w-3.5 h-3.5 shrink-0" />
-                                    <span className="hidden sm:inline">Receta ({c.prescriptions.length})</span>
-                                  </button>
-                                )}
-
-                                {c.certificates && c.certificates.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => setActiveCertificateToPrint({ certificate: c.certificates![0], patientPhone: selectedPatient.phone })}
-                                    className="px-2 py-1 rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shrink-0"
-                                    title="Imprimir / Ver Certificado"
-                                  >
-                                    <Award className="w-3.5 h-3.5 shrink-0" />
-                                    <span className="hidden sm:inline">Certificado</span>
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setConsultationToEdit(c);
-                                    setIsConsultationModalOpen(true);
-                                  }}
-                                  className="px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
-                                >
-                                  <Eye className="w-3 h-3 shrink-0" />
-                                  <span>Ver / Editar</span>
                                 </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
 
-                                <button
-                                  type="button"
-                                  onClick={() => setConsultationToDelete(c)}
-                                  className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 hover:border-rose-300 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
-                                  title="Eliminar registro"
-                                >
-                                  <Trash2 className="w-3 h-3 text-rose-500 shrink-0" />
-                                  <span>Eliminar</span>
-                                </button>
-                              </div>
-                            </div>
+                      {/* Top Action Buttons */}
+                      <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => onScheduleForPatient(selectedPatient)}
+                          className="px-2.5 py-1 text-xs font-semibold text-neutral-800 bg-white hover:bg-neutral-100 rounded-lg border border-neutral-300 shadow-2xs transition-colors flex items-center gap-1 shrink-0"
+                        >
+                          <Calendar className="w-3.5 h-3.5 text-neutral-600" />
+                          <span>Agendar Turno</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setConsultationAppointmentId(undefined);
+                            setConsultationToEdit(null);
+                            setIsConsultationModalOpen(true);
+                          }}
+                          className="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1 shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Nueva {consultationTermSingular}</span>
+                        </button>
+                      </div>
+                    </div>
 
-                            {/* Legal Case Details block if applicable */}
-                            {(c.court_or_tribunal || c.deadline_date || c.task_diligence) && (
-                              <div className="p-2.5 bg-indigo-50/70 border border-indigo-200/80 rounded-lg text-xs space-y-1.5">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  {c.court_or_tribunal && (
-                                    <span className="text-indigo-950 font-semibold flex items-center gap-1">
-                                      <Scale className="w-3.5 h-3.5 text-indigo-700" />
-                                      Juzgado / Dependencia: {c.court_or_tribunal}
-                                    </span>
-                                  )}
-                                  {c.deadline_date && (
-                                    <span className="text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200 flex items-center gap-1">
-                                      <AlertTriangle className="w-3 h-3" />
-                                      Vencimiento: {new Date(c.deadline_date + 'T12:00:00').toLocaleDateString()}
-                                    </span>
-                                  )}
-                                </div>
-                                {c.task_diligence && (
-                                  <p className="text-indigo-900 text-[11px]">
-                                    <strong>Actuación:</strong> {c.task_diligence}
-                                  </p>
-                                )}
-                              </div>
-                            )}
+                    {/* Timeline Stream */}
+                    {totalTimelineCount === 0 ? (
+                      <div className="p-8 bg-neutral-50/70 rounded-xl border border-neutral-200/70 text-center text-xs text-neutral-500 space-y-2">
+                        <div className="flex justify-center">{getProfessionHistoryIcon()}</div>
+                        <p className="font-semibold text-neutral-700">
+                          {selectedDateFilter === 'all'
+                            ? `Sin turnos ni registros de atención para este ${clientTermSingular.toLowerCase()}`
+                            : `No hay turnos ni evoluciones para la fecha seleccionada (${selectedDateFilter})`}
+                        </p>
+                        <p className="text-[11px] text-neutral-400 max-w-md mx-auto">
+                          Cuando agendes un turno o registres una evolución, podrás ver el historial completo, atender con un clic y cobrar directamente desde aquí.
+                        </p>
+                        <div className="flex items-center justify-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => onScheduleForPatient(selectedPatient)}
+                            className="px-3 py-1.5 bg-neutral-900 text-white rounded-lg font-semibold text-xs inline-flex items-center gap-1.5 hover:bg-neutral-800 shadow-2xs"
+                          >
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span>Agendar Turno</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setConsultationAppointmentId(undefined);
+                              setConsultationToEdit(null);
+                              setIsConsultationModalOpen(true);
+                            }}
+                            className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg font-semibold text-xs inline-flex items-center gap-1.5 hover:bg-indigo-700 shadow-2xs"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Nueva {consultationTermSingular}</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                        {/* 1. APPOINTMENTS (in 'all' or 'appointments' filter) */}
+                        {selectedTimelineFilter !== 'consultations' && filteredAppointments.map(apt => {
+                          const linkedConsultation = linkedConsultationsMap.get(apt.id);
+                          const linkedPayment = patientPayments.find(p => p.appointment_id === apt.id);
+                          const isExpanded = expandedConsultationId === (linkedConsultation?.id || apt.id);
+                          const aptDateObj = new Date(apt.start_datetime);
 
-                            {/* Education Class Topic & Homework */}
-                            {(c.class_topic || c.homework_assigned || c.student_eval_grade) && (
-                              <div className="p-2.5 bg-sky-50/70 border border-sky-200/80 rounded-lg text-xs space-y-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  {c.class_topic && (
-                                    <span className="text-sky-950 font-semibold flex items-center gap-1">
-                                      <BookOpen className="w-3.5 h-3.5 text-sky-700" />
-                                      Tema: {c.class_topic}
-                                    </span>
-                                  )}
-                                  {c.student_eval_grade && (
-                                    <span className="text-sky-800 font-bold bg-white px-2 py-0.5 rounded border border-sky-300">
-                                      Nota: {c.student_eval_grade}
-                                    </span>
-                                  )}
-                                </div>
-                                {c.homework_assigned && (
-                                  <p className="text-sky-900 text-[11px]">
-                                    <strong>Tarea asignada:</strong> {c.homework_assigned}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Dental Tooth or Sector if applicable */}
-                            {c.dental_tooth_number && (
-                              <div className="p-2 bg-sky-50/70 border border-sky-200/80 rounded-lg text-xs flex items-center gap-2">
-                                <span className="text-base">🦷</span>
+                          return (
+                            <div
+                              key={`apt-${apt.id}`}
+                              className="p-3.5 rounded-xl border border-neutral-200/90 bg-white hover:border-indigo-200 hover:shadow-2xs transition-all space-y-2.5"
+                            >
+                              {/* Header: Turn Info & Status Badges */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div>
-                                  <strong className="text-sky-950 font-semibold">Pieza(s) Dental(es) / Sector: </strong>
-                                  <span className="text-sky-900 font-medium">{c.dental_tooth_number}</span>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-xs sm:text-sm text-neutral-900 flex items-center gap-1.5">
+                                      <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                      {apt.service_name}
+                                    </span>
+                                    {apt.origin === 'telemedicine' && (
+                                      <span className="px-1.5 py-0.2 text-[9px] font-bold bg-sky-100 text-sky-800 rounded">
+                                        VIRTUAL / TELECONSULTA
+                                      </span>
+                                    )}
+                                    {apt.patient_confirmed && (
+                                      <span className="px-1.5 py-0.2 text-[9px] font-bold bg-emerald-100 text-emerald-800 rounded flex items-center gap-0.5">
+                                        <UserCheck className="w-2.5 h-2.5" />
+                                        CONFIRMADO
+                                      </span>
+                                    )}
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                      apt.status === 'completed'
+                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                        : apt.status === 'confirmed'
+                                        ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                                        : 'bg-neutral-100 text-neutral-600'
+                                    }`}>
+                                      {apt.status === 'completed' ? 'Atendido' : apt.status === 'confirmed' ? 'Confirmado' : apt.status}
+                                    </span>
+                                  </div>
+                                  <span className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
+                                    <Clock className="w-3 h-3 text-neutral-400" />
+                                    {aptDateObj.toLocaleDateString([], {
+                                      weekday: 'long',
+                                      day: 'numeric',
+                                      month: 'long',
+                                      year: 'numeric'
+                                    })}{' '}
+                                    a las {aptDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
+                                  </span>
+                                </div>
+
+                                {/* Price & Payment Status */}
+                                <div className="flex items-center gap-2 sm:text-right">
+                                  <div>
+                                    <span className="text-xs font-bold text-neutral-900 block">
+                                      ${(apt.service_price || 0).toLocaleString('es-AR')}
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded inline-block ${
+                                      apt.payment_status === 'paid'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}>
+                                      {apt.payment_status === 'paid' ? 'Pagado' : 'Pendiente de cobro'}
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
-                            )}
 
-                            {/* Kinesiology / Physical Details */}
-                            {(c.affected_body_part || c.pain_scale_eva !== undefined) && (
-                              <div className="p-2 bg-emerald-50/70 border border-emerald-200/80 rounded-lg text-xs flex items-center justify-between gap-2">
-                                {c.affected_body_part && (
-                                  <span className="text-emerald-950 font-medium">
-                                    <strong>Zona:</strong> {c.affected_body_part}
-                                  </span>
-                                )}
-                                {c.pain_scale_eva !== undefined && (
-                                  <span className="text-emerald-900 font-bold bg-white px-2 py-0.5 rounded border border-emerald-300">
-                                    Dolor EVA: {c.pain_scale_eva}/10
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Nutrition Measurements */}
-                            {(c.weight_kg || c.bmi) && (
-                              <div className="p-2 bg-amber-50/70 border border-amber-200/80 rounded-lg text-xs flex items-center gap-4">
-                                {c.weight_kg && <span><strong>Peso:</strong> {c.weight_kg} kg</span>}
-                                {c.height_cm && <span><strong>Talla:</strong> {c.height_cm} cm</span>}
-                                {c.bmi && <span><strong>IMC:</strong> {c.bmi}</span>}
-                              </div>
-                            )}
-
-                            {/* Generic Session Notes & Plan */}
-                            {(c.treatment_performed || c.clinical_evolution || c.soap_analysis || c.soap_plan) && (
-                              <div className="space-y-2 text-xs bg-neutral-50/90 p-3 rounded-lg border border-neutral-200/80">
-                                {(c.treatment_performed || c.clinical_evolution || c.soap_analysis) && (
-                                  <div>
-                                    <span className="font-bold text-neutral-800 block text-[11px] mb-1 uppercase tracking-wider">
-                                      Notas de la Sesión / Registro:
-                                    </span>
-                                    <p className="text-neutral-800 leading-relaxed whitespace-pre-line">
-                                      {c.treatment_performed || c.clinical_evolution || c.soap_analysis}
-                                    </p>
-                                  </div>
-                                )}
-
-                                {c.soap_plan && (
-                                  <div className="pt-1 border-t border-neutral-200/60">
-                                    <span className="font-bold text-emerald-800 block text-[11px] mb-0.5 uppercase tracking-wider">
-                                      Próximos Pasos / Indicaciones:
-                                    </span>
-                                    <p className="text-neutral-700 leading-relaxed whitespace-pre-line">
-                                      {c.soap_plan}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Voice Notes recorded for this consultation */}
-                            {c.voice_notes && c.voice_notes.length > 0 && (
-                              <div className="space-y-1.5 pt-1">
-                                <span className="text-[11px] font-semibold text-neutral-600 flex items-center gap-1">
-                                  <Volume2 className="w-3 h-3 text-indigo-600" />
-                                  Audios y Notas de Voz de la Consulta:
-                                </span>
-                                <div className="space-y-1">
-                                  {c.voice_notes.map((vn, idx) => (
-                                    <div
-                                      key={vn.id || idx}
-                                      className="p-2 bg-indigo-50/50 rounded-lg border border-indigo-100 flex items-center justify-between gap-2 text-xs"
+                              {/* Action Row: Atender, Cobrar, Mandar a Cobrar */}
+                              <div className="flex items-center justify-between gap-2 pt-2 border-t border-neutral-100 flex-wrap">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  {/* Evolution Status & Action */}
+                                  {!linkedConsultation ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAttendAppointment(apt)}
+                                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1.5"
+                                      title="Abrir ficha clínica para registrar evolución y marcar turno como atendido"
                                     >
-                                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                                      <Stethoscope className="w-3.5 h-3.5" />
+                                      <span>Atender / Iniciar Evolución</span>
+                                    </button>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setConsultationToEdit(linkedConsultation);
+                                          setConsultationAppointmentId(apt.id);
+                                          setIsConsultationModalOpen(true);
+                                        }}
+                                        className="px-2.5 py-1 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition-colors flex items-center gap-1"
+                                        title="Ver o editar la evolución clínica vinculada"
+                                      >
+                                        <Eye className="w-3 h-3" />
+                                        <span>Ver / Editar Evolución</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setExpandedConsultationId(isExpanded ? null : linkedConsultation.id)}
+                                        className="px-2 py-1 text-xs font-medium text-neutral-600 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-lg flex items-center gap-1"
+                                      >
+                                        {isExpanded ? (
+                                          <>
+                                            <ChevronUp className="w-3 h-3" />
+                                            <span>Ocultar resumen</span>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <ChevronDown className="w-3 h-3" />
+                                            <span>Resumen clínico</span>
+                                          </>
+                                        )}
+                                      </button>
+                                    </div>
+                                  )}
+
+                                   {/* Cashier / Payment Action Buttons if Pending, or Receipt if Paid */}
+                                  {apt.payment_status !== 'paid' ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCollectAppointment(apt)}
+                                        className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1"
+                                        title="Registrar cobro confirmado en caja / finanzas"
+                                      >
+                                        <DollarSign className="w-3.5 h-3.5" />
+                                        <span>Registrar Cobro</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSendPaymentRequest(apt)}
+                                        className="px-2.5 py-1 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors flex items-center gap-1"
+                                        title="Solicitar pago por WhatsApp con Alias, Link MP o QR"
+                                      >
+                                        <Send className="w-3.5 h-3.5" />
+                                        <span>Solicitar Pago</span>
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2">
+                                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded-lg">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        <span>Cobro Registrado</span>
+                                      </span>
+                                      {linkedPayment ? (
                                         <button
                                           type="button"
-                                          onClick={() => toggleAudio(vn.audio_url)}
-                                          className="p-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 shrink-0"
+                                          onClick={() => setActiveReceiptPayment(linkedPayment)}
+                                          className="px-2 py-0.5 text-xs font-medium text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                                          title="Ver e imprimir recibo oficial"
                                         >
-                                          {playingAudioUrl === vn.audio_url ? (
-                                            <Pause className="w-3 h-3" />
-                                          ) : (
-                                            <Play className="w-3 h-3" />
-                                          )}
+                                          <Receipt className="w-3 h-3 text-emerald-600" />
+                                          <span>Ver Recibo</span>
                                         </button>
-                                        <div className="min-w-0 flex-1">
-                                          <span className="font-medium text-indigo-950 block truncate">
-                                            {vn.title || `Nota de voz ${idx + 1}`} ({vn.duration_seconds || 0} seg)
-                                          </span>
-                                          {vn.transcription && (
-                                            <p className="text-[11px] text-neutral-600 line-clamp-1 italic">
-                                              "{vn.transcription}"
-                                            </p>
-                                          )}
-                                        </div>
-                                      </div>
-                                      <span className="text-[10px] text-neutral-400 shrink-0">
-                                        {new Date(vn.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
-                                      </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={() => setActiveTab('billing')}
+                                          className="px-2 py-0.5 text-xs font-medium text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
+                                          title="Ver comprobante en pestaña de Cobros & Recibos"
+                                        >
+                                          <Receipt className="w-3 h-3 text-emerald-600" />
+                                          <span>Ver Cobros</span>
+                                        </button>
+                                      )}
                                     </div>
-                                  ))}
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                                  {onOpenAppointment && (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenAppointment(apt.id)}
+                                      className="p-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-600"
+                                      title="Abrir turno en la agenda general"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setAppointmentToDelete(apt)}
+                                    className="p-1.5 rounded-lg border border-neutral-200 hover:bg-rose-50 text-neutral-400 hover:text-rose-600 transition-colors"
+                                    title="Eliminar turno"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </div>
                               </div>
-                            )}
 
-                            {/* Prescriptions Items Preview */}
-                            {c.prescriptions && c.prescriptions.length > 0 && (
-                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                                <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider">Recetado:</span>
-                                {c.prescriptions.map((p, idx) => (
-                                  <span key={idx} className="text-[10px] bg-sky-50 text-sky-900 border border-sky-200 px-2 py-0.5 rounded-full font-medium">
-                                    💊 {p.medication} ({p.dosage})
+                              {/* Accordion: Linked Consultation Preview */}
+                              {linkedConsultation && isExpanded && (
+                                <div className="p-3 bg-indigo-50/50 rounded-xl border border-indigo-100 text-xs space-y-2 mt-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-indigo-950 uppercase tracking-wider text-[10px]">
+                                      Resumen de la Evolución Clínica:
+                                    </span>
+                                    {linkedConsultation.prescriptions && linkedConsultation.prescriptions.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setActivePrescriptionToPrint({ consultation: linkedConsultation })}
+                                        className="text-[11px] text-sky-700 font-semibold hover:underline flex items-center gap-1"
+                                      >
+                                        <Pill className="w-3 h-3" />
+                                        <span>Imprimir Receta ({linkedConsultation.prescriptions.length})</span>
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  {(linkedConsultation.treatment_performed || linkedConsultation.clinical_evolution || linkedConsultation.soap_analysis) && (
+                                    <p className="text-neutral-800 leading-relaxed whitespace-pre-line bg-white p-2.5 rounded-lg border border-indigo-100/80">
+                                      {linkedConsultation.treatment_performed || linkedConsultation.clinical_evolution || linkedConsultation.soap_analysis}
+                                    </p>
+                                  )}
+
+                                  {linkedConsultation.soap_plan && (
+                                    <div>
+                                      <span className="font-bold text-emerald-900 block text-[10px] uppercase mb-0.5">Indicaciones / Próximos Pasos:</span>
+                                      <p className="text-neutral-700 bg-white p-2 rounded-lg border border-emerald-100">
+                                        {linkedConsultation.soap_plan}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {linkedConsultation.voice_notes && linkedConsultation.voice_notes.length > 0 && (
+                                    <div className="pt-1">
+                                      <span className="text-[10px] font-bold text-indigo-800 uppercase block mb-1">Audios asociados:</span>
+                                      {linkedConsultation.voice_notes.map((vn, idx) => (
+                                        <div key={idx} className="flex items-center gap-2 p-1.5 bg-white rounded-md border border-indigo-100">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleAudio(vn.audio_url)}
+                                            className="p-1 rounded-full bg-indigo-600 text-white"
+                                          >
+                                            {playingAudioUrl === vn.audio_url ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+                                          </button>
+                                          <span className="text-[11px] text-indigo-950 font-medium">{vn.title || `Nota de voz ${idx + 1}`}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* 2. CONSULTATIONS (either standalone when in 'all', or all when in 'consultations') */}
+                        {(selectedTimelineFilter === 'consultations' ? filteredConsultations : filteredStandalone).map(c => {
+                          const rawDate = c.date || c.created_at;
+                          const dateObj = new Date(rawDate);
+                          return (
+                            <div
+                              key={`cons-${c.id}`}
+                              className="p-3.5 rounded-xl border border-neutral-200/85 bg-white hover:border-indigo-300 hover:shadow-2xs transition-all space-y-2.5"
+                            >
+                              {/* Consultation Top Info */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-xs sm:text-sm text-neutral-900 flex items-center gap-1.5">
+                                      <Stethoscope className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                      {c.reason_for_visit || c.treatment_performed || (
+                                        professionInfo.id === 'legal_contable'
+                                          ? 'Actuación / Diligencia Judicial'
+                                          : professionInfo.id === 'educacion_clases'
+                                          ? 'Clase Dictada'
+                                          : 'Atención / Consulta'
+                                      )}
+                                    </span>
+                                    {c.consultation_type && (
+                                      <span className="px-1.5 py-0.2 text-[10px] font-semibold uppercase bg-indigo-50 text-indigo-700 rounded border border-indigo-100">
+                                        {c.consultation_type}
+                                      </span>
+                                    )}
+                                    {c.service_name && (
+                                      <span className="px-1.5 py-0.2 text-[10px] font-medium bg-neutral-100 text-neutral-700 rounded">
+                                        {c.service_name}
+                                      </span>
+                                    )}
+                                    {c.procedural_stage && (
+                                      <span className="px-1.5 py-0.2 text-[10px] font-medium bg-amber-50 text-amber-800 rounded border border-amber-200">
+                                        Etapa: {c.procedural_stage}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-neutral-500 flex items-center gap-1.5 mt-0.5">
+                                    <Calendar className="w-3 h-3 text-neutral-400" />
+                                    {dateObj.toLocaleDateString([], {
+                                      weekday: 'long',
+                                      day: 'numeric',
+                                      month: 'long',
+                                      year: 'numeric'
+                                    })}{' '}
+                                    a las {dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
+                                    {c.professional_name && (
+                                      <span>• {c.professional_name}</span>
+                                    )}
                                   </span>
-                                ))}
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0 whitespace-nowrap">
+                                  {c.prescriptions && c.prescriptions.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setActivePrescriptionToPrint({ consultation: c })}
+                                      className="px-2 py-1 rounded-lg text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shrink-0"
+                                      title="Imprimir / Ver Receta Médica"
+                                    >
+                                      <Pill className="w-3.5 h-3.5 shrink-0" />
+                                      <span className="hidden sm:inline">Receta ({c.prescriptions.length})</span>
+                                    </button>
+                                  )}
+
+                                  {c.certificates && c.certificates.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveCertificateToPrint({ certificate: c.certificates![0], patientPhone: selectedPatient.phone })}
+                                      className="px-2 py-1 rounded-lg text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-xs font-semibold flex items-center gap-1 whitespace-nowrap shrink-0"
+                                      title="Imprimir / Ver Certificado"
+                                    >
+                                      <Award className="w-3.5 h-3.5 shrink-0" />
+                                      <span className="hidden sm:inline">Certificado</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setConsultationToEdit(c);
+                                      setConsultationAppointmentId(c.appointment_id);
+                                      setIsConsultationModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 rounded-lg border border-neutral-200 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                                  >
+                                    <Eye className="w-3 h-3 shrink-0" />
+                                    <span>Ver / Editar</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => setConsultationToDelete(c)}
+                                    className="px-2.5 py-1 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg border border-rose-200 hover:border-rose-300 transition-colors flex items-center gap-1 whitespace-nowrap shrink-0"
+                                    title="Eliminar registro"
+                                  >
+                                    <Trash2 className="w-3 h-3 text-rose-500 shrink-0" />
+                                    <span>Eliminar</span>
+                                  </button>
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
+
+                              {/* Generic Session Notes & Plan */}
+                              {(c.treatment_performed || c.clinical_evolution || c.soap_analysis || c.soap_plan) && (
+                                <div className="space-y-2 text-xs bg-neutral-50/90 p-3 rounded-lg border border-neutral-200/80">
+                                  {(c.treatment_performed || c.clinical_evolution || c.soap_analysis) && (
+                                    <div>
+                                      <span className="font-bold text-neutral-800 block text-[11px] mb-1 uppercase tracking-wider">
+                                        Notas de la Sesión / Registro:
+                                      </span>
+                                      <p className="text-neutral-800 leading-relaxed whitespace-pre-line">
+                                        {c.treatment_performed || c.clinical_evolution || c.soap_analysis}
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {c.soap_plan && (
+                                    <div className="pt-1 border-t border-neutral-200/60">
+                                      <span className="font-bold text-emerald-800 block text-[11px] mb-0.5 uppercase tracking-wider">
+                                        Próximos Pasos / Indicaciones:
+                                      </span>
+                                      <p className="text-neutral-700 leading-relaxed whitespace-pre-line">
+                                        {c.soap_plan}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Voice Notes */}
+                              {c.voice_notes && c.voice_notes.length > 0 && (
+                                <div className="space-y-1.5 pt-1">
+                                  <span className="text-[11px] font-semibold text-neutral-600 flex items-center gap-1">
+                                    <Volume2 className="w-3 h-3 text-indigo-600" />
+                                    Audios y Notas de Voz:
+                                  </span>
+                                  <div className="space-y-1">
+                                    {c.voice_notes.map((vn, idx) => (
+                                      <div
+                                        key={vn.id || idx}
+                                        className="p-2 bg-indigo-50/50 rounded-lg border border-indigo-100 flex items-center justify-between gap-2 text-xs"
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleAudio(vn.audio_url)}
+                                            className="p-1 rounded-full bg-indigo-600 text-white hover:bg-indigo-700 shrink-0"
+                                          >
+                                            {playingAudioUrl === vn.audio_url ? (
+                                              <Pause className="w-3 h-3" />
+                                            ) : (
+                                              <Play className="w-3 h-3" />
+                                            )}
+                                          </button>
+                                          <div className="min-w-0 flex-1">
+                                            <span className="font-medium text-indigo-950 block truncate">
+                                              {vn.title || `Nota de voz ${idx + 1}`} ({vn.duration_seconds || 0} seg)
+                                            </span>
+                                            {vn.transcription && (
+                                              <p className="text-[11px] text-neutral-600 line-clamp-1 italic">
+                                                "{vn.transcription}"
+                                              </p>
+                                            )}
+                                          </div>
+                                        </div>
+                                        <span className="text-[10px] text-neutral-400 shrink-0">
+                                          {new Date(vn.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Prescriptions */}
+                              {c.prescriptions && c.prescriptions.length > 0 && (
+                                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                  <span className="text-[10px] font-bold text-sky-800 uppercase tracking-wider">Recetado:</span>
+                                  {c.prescriptions.map((p, idx) => (
+                                    <span key={idx} className="text-[10px] bg-sky-50 text-sky-900 border border-sky-200 px-2 py-0.5 rounded-full font-medium">
+                                      💊 {p.medication} ({p.dosage})
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Tab 2: Ficha & Antecedentes Detallados */}
               {activeTab === 'overview' && (
@@ -1442,120 +1761,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 </div>
               )}
 
-              {/* Tab 3: Historial de Turnos */}
-              {activeTab === 'appointments' && (
-                <div className="space-y-3 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-neutral-500">
-                      Historial cronológico de citas y reservas
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => onScheduleForPatient(selectedPatient)}
-                      className="px-2.5 py-1 text-xs font-semibold text-neutral-900 bg-neutral-100 hover:bg-neutral-200 rounded-lg border border-neutral-200 transition-colors flex items-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>
-                        Agendar {professionInfo.id === 'legal_contable' ? 'Cita / Audiencia' : professionInfo.id === 'educacion_clases' ? 'Clase' : 'Turno'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {patientAppointments.length === 0 ? (
-                    <div className="p-8 bg-neutral-50/70 rounded-xl border border-neutral-200/70 text-center text-xs text-neutral-500 space-y-2">
-                      <Calendar className="w-6 h-6 mx-auto text-neutral-400 stroke-1" />
-                      <p className="font-semibold text-neutral-700">
-                        Aún no tiene {professionInfo.id === 'legal_contable' ? 'citas o audiencias registradas' : professionInfo.id === 'educacion_clases' ? 'clases registradas' : 'turnos registrados'}
-                      </p>
-                      <p className="text-[11px] text-neutral-400">
-                        {professionInfo.id === 'legal_contable'
-                          ? 'Programa una nueva cita presencial, reunión virtual o audiencia judicial desde aquí.'
-                          : professionInfo.id === 'educacion_clases'
-                          ? 'Programa una nueva clase particular o grupal desde aquí.'
-                          : 'Programa una nueva cita presencial o videoconsulta desde aquí.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                      {patientAppointments.map(apt => (
-                        <div
-                          key={apt.id}
-                          className="p-3 rounded-xl border border-neutral-200/80 bg-white hover:bg-neutral-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-neutral-900">{apt.service_name}</span>
-                              {apt.origin === 'telemedicine' && (
-                                <span className="px-1.5 py-0.2 text-[9px] font-bold bg-sky-100 text-sky-800 rounded">
-                                  VIRTUAL / TELECONSULTA
-                                </span>
-                              )}
-                              {apt.patient_confirmed && (
-                                <span className="px-1.5 py-0.2 text-[9px] font-bold bg-emerald-100 text-emerald-800 rounded flex items-center gap-0.5">
-                                  <UserCheck className="w-2.5 h-2.5" />
-                                  CONFIRMADO
-                                </span>
-                              )}
-                            </div>
-                            <span className="text-neutral-500 text-[11px] block mt-0.5">
-                              {new Date(apt.start_datetime).toLocaleDateString([], {
-                                weekday: 'short',
-                                day: 'numeric',
-                                month: 'short'
-                              })}{' '}
-                              a las{' '}
-                              {new Date(apt.start_datetime).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              })}{' '}
-                              hs
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0 border-t sm:border-t-0 border-neutral-100">
-                            <div className="sm:text-right">
-                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                apt.status === 'confirmed'
-                                  ? 'bg-sky-50 text-sky-700 border border-sky-200'
-                                  : apt.status === 'completed'
-                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                  : 'bg-neutral-100 text-neutral-600'
-                              }`}>
-                                {apt.status}
-                              </span>
-                              <span className="block text-[11px] font-bold text-neutral-900 mt-0.5">
-                                ${apt.service_price?.toLocaleString('es-AR')}
-                              </span>
-                            </div>
-
-                            {onOpenAppointment && (
-                              <button
-                                type="button"
-                                onClick={() => onOpenAppointment(apt.id)}
-                                className="p-1.5 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-600"
-                                title="Abrir y ver detalles"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => setAppointmentToDelete(apt)}
-                              className="p-1.5 rounded-lg border border-neutral-200 hover:bg-rose-50 hover:border-rose-200 text-neutral-400 hover:text-rose-600 transition-colors"
-                              title="Eliminar turno"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Tab 4: Cobros & Recibos */}
+              {/* Tab 3: Cobros & Recibos */}
               {activeTab === 'billing' && (
                 <div className="space-y-3 animate-in fade-in duration-150">
                   <div className="flex items-center justify-between">
@@ -1568,7 +1774,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                       className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors flex items-center gap-1"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      <span>{professionInfo.id === 'legal_contable' ? 'Cobro de Honorarios / Recibo' : 'Cobrar / Emitir Recibo'}</span>
+                      <span>{professionInfo.id === 'legal_contable' ? 'Registrar Cobro de Honorarios' : 'Registrar Cobro / Emitir Recibo'}</span>
                     </button>
                   </div>
 
@@ -1666,13 +1872,16 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         <ConsultationModal
           consultation={consultationToEdit}
           patientId={selectedPatient.id}
+          appointmentId={consultationAppointmentId}
           onClose={() => {
             setIsConsultationModalOpen(false);
             setConsultationToEdit(null);
+            setConsultationAppointmentId(undefined);
           }}
           onSaved={() => {
             setIsConsultationModalOpen(false);
             setConsultationToEdit(null);
+            setConsultationAppointmentId(undefined);
           }}
         />
       )}
@@ -1680,10 +1889,15 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
       {isPaymentModalOpen && selectedPatient && (
         <NewPaymentModal
           isOpen={isPaymentModalOpen}
-          onClose={() => setIsPaymentModalOpen(false)}
+          onClose={() => {
+            setIsPaymentModalOpen(false);
+            setPreselectedAppointmentForPayment(null);
+          }}
           preselectedPatient={selectedPatient}
+          preselectedAppointment={preselectedAppointmentForPayment}
           onPaymentSuccess={payment => {
             setIsPaymentModalOpen(false);
+            setPreselectedAppointmentForPayment(null);
             setActiveReceiptPayment(payment);
           }}
         />
@@ -1739,6 +1953,21 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           onClose={() => setActiveCertificateToPrint(null)}
           certificate={activeCertificateToPrint.certificate}
           patientPhone={activeCertificateToPrint.patientPhone}
+        />
+      )}
+
+      {selectedPatient && (
+        <PaymentRequestModal
+          isOpen={isPaymentRequestModalOpen}
+          onClose={() => {
+            setIsPaymentRequestModalOpen(false);
+            setPaymentRequestDetails(null);
+          }}
+          patientName={`${selectedPatient.first_name} ${selectedPatient.last_name}`}
+          patientPhone={selectedPatient.phone}
+          concept={paymentRequestDetails?.concept || `Arancel / Consulta - ${selectedPatient.first_name} ${selectedPatient.last_name}`}
+          amount={paymentRequestDetails?.amount ?? (patientAppointments[0]?.service_price || 0)}
+          appointmentId={paymentRequestDetails?.appointmentId}
         />
       )}
 

@@ -774,7 +774,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs flex items-center gap-1"
                 >
                   <DollarSign className="w-3.5 h-3.5" />
-                  Cobrar Ahora
+                  Registrar Cobro
                 </button>
               )}
             </div>

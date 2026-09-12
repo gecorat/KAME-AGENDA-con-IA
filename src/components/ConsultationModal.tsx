@@ -49,11 +49,14 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
     patients,
     practiceSettings,
     consultations,
+    appointments,
     addConsultation,
     updateConsultation,
-    deleteConsultation
+    deleteConsultation,
+    updateAppointment
   } = useAgendaStore();
 
+  const linkedAppointment = appointmentId ? appointments.find(a => a.id === appointmentId) : undefined;
   const clientTermSingular = getClientTerm(practiceSettings, { plural: false, capitalize: true });
   const consultationTermSingular = getConsultationTerm(practiceSettings, { plural: false, capitalize: true });
 
@@ -61,6 +64,7 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
   const [selectedPatientId, setSelectedPatientId] = useState<string>(() => {
     if (initialConsultation) return initialConsultation.patient_id;
     if (initialPatientId) return initialPatientId;
+    if (linkedAppointment?.patient_id) return linkedAppointment.patient_id;
     return patients[0]?.id || '';
   });
 
@@ -94,9 +98,13 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
   // Form Fields
   const [date, setDate] = useState<string>(() => {
     if (initialConsultation?.date) return initialConsultation.date.split('T')[0];
+    if (linkedAppointment?.date) return linkedAppointment.date;
+    if (linkedAppointment?.start_datetime) return linkedAppointment.start_datetime.split('T')[0];
     return new Date().toISOString().split('T')[0];
   });
-  const [reasonForVisit, setReasonForVisit] = useState(initialConsultation?.reason_for_visit || '');
+  const [reasonForVisit, setReasonForVisit] = useState(
+    initialConsultation?.reason_for_visit || (linkedAppointment ? `${linkedAppointment.service_name}` : '')
+  );
   const [treatmentPerformed, setTreatmentPerformed] = useState(
     initialConsultation?.treatment_performed || initialConsultation?.clinical_evolution || initialConsultation?.soap_analysis || ''
   );
@@ -274,6 +282,11 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
     } else {
       savedRecord = addConsultation(payload as any);
       setActiveConsultationId(savedRecord.id);
+    }
+
+    // Automatically mark the linked appointment as completed (atendido)
+    if (appointmentId) {
+      updateAppointment(appointmentId, { status: 'completed' });
     }
 
     if (onSaved) {

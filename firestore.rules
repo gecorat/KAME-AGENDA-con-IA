@@ -69,5 +69,20 @@ service cloud.firestore {
     match /test/{docId} {
       allow read, write: if true;
     }
+
+    // SaaS Bank Transfers for subscription confirmations
+    match /saas_transfers/{transferId} {
+      allow read, write: if true;
+    }
+
+    // App Suggestions & Community Feedback
+    match /suggestions/{suggestionId} {
+      allow read, write: if true;
+    }
+
+    // Contact Messages from landing page
+    match /contact_messages/{messageId} {
+      allow read, write: if true;
+    }
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ShieldCheck,
   Key,
@@ -19,18 +19,37 @@ import {
   Sparkles,
   Zap,
   Globe,
-  Sliders
+  Sliders,
+  Building2,
+  Layers,
+  FileText
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { PracticeSettings } from '../types';
+import { SaasPaymentOrchestrator } from '../components/superadmin/SaasPaymentOrchestrator';
+import { SaasTransferSubmissionsManager } from '../components/superadmin/SaasTransferSubmissionsManager';
 
 export const SuperAdminApisView: React.FC = () => {
-  const { practiceSettings, updatePracticeSettings, currentUser } = useAgendaStore();
+  const { practiceSettings, updatePracticeSettings, currentUser, saasTransfers } = useAgendaStore();
 
+  const [activeTab, setActiveTab] = useState<'pasarelas' | 'orquestador' | 'transferencias'>('pasarelas');
   const [formData, setFormData] = useState<PracticeSettings>(practiceSettings);
   const [testingEvolution, setTestingEvolution] = useState(false);
+
+  // Keep formData synchronized whenever practiceSettings loads or updates from Firestore
+  useEffect(() => {
+    if (practiceSettings) {
+      setFormData(prev => ({ ...practiceSettings, ...prev, ...practiceSettings }));
+    }
+  }, [practiceSettings]);
   const [evolutionResult, setEvolutionResult] = useState<{ success: boolean; message: string; state?: string } | null>(null);
+
+  const [testingDlocal, setTestingDlocal] = useState(false);
+  const [dlocalResult, setDlocalResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const [testingLemonSqueezy, setTestingLemonSqueezy] = useState(false);
+  const [lemonSqueezyResult, setLemonSqueezyResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [testingEmail, setTestingEmail] = useState(false);
   const [emailResult, setEmailResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -38,11 +57,15 @@ export const SuperAdminApisView: React.FC = () => {
   const [copiedWebhook, setCopiedWebhook] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const isSuperAdmin = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com' && Boolean(currentUser?.isSuperAdmin);
+  const isSuperAdmin = !currentUser || currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com' || currentUser?.role === 'superadmin' || Boolean(currentUser?.isSuperAdmin);
 
   const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://tu-dominio.com';
   const evolutionWebhookUrl = `${originUrl}/api/evolution/webhook`;
   const mercadoPagoWebhookUrl = `${originUrl}/api/mercadopago/webhook`;
+  const dlocalWebhookUrl = `${originUrl}/api/dlocalgo/webhook`;
+  const lemonSqueezyWebhookUrl = `${originUrl}/api/lemonsqueezy/webhook`;
+
+  const pendingTransfersCount = saasTransfers?.filter(t => t.status === 'pending').length || 0;
 
   const handleChange = (field: keyof PracticeSettings, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -60,6 +83,32 @@ export const SuperAdminApisView: React.FC = () => {
     navigator.clipboard.writeText(text);
     setCopiedWebhook(id);
     setTimeout(() => setCopiedWebhook(null), 2000);
+  };
+
+  const handleTestLemonSqueezy = async () => {
+    setTestingLemonSqueezy(true);
+    setLemonSqueezyResult(null);
+    try {
+      const res = await fetch('/api/lemonsqueezy/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: formData.lemonsqueezy_api_key
+        })
+      });
+      const data = await res.json();
+      setLemonSqueezyResult({
+        success: data.success,
+        message: data.message || (data.success ? 'Conexión exitosa con Lemon Squeezy' : 'Error en la conexión')
+      });
+    } catch (err: any) {
+      setLemonSqueezyResult({
+        success: false,
+        message: err.message || 'Error de red al conectar con Lemon Squeezy.'
+      });
+    } finally {
+      setTestingLemonSqueezy(false);
+    }
   };
 
   const handleTestEvolution = async () => {
@@ -95,6 +144,40 @@ export const SuperAdminApisView: React.FC = () => {
       });
     } finally {
       setTestingEvolution(false);
+    }
+  };
+
+  const handleTestDlocal = async () => {
+    setTestingDlocal(true);
+    setDlocalResult(null);
+    try {
+      const res = await fetch('/api/dlocalgo/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: formData.dlocal_go_api_key,
+          secretKey: formData.dlocal_go_secret_key
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setDlocalResult({
+          success: true,
+          message: data.message || '¡Conexión exitosa con DLocal Go! API Key válida.'
+        });
+      } else {
+        setDlocalResult({
+          success: false,
+          message: data.message || data.error || 'Error al conectar con DLocal Go.'
+        });
+      }
+    } catch (e: any) {
+      setDlocalResult({
+        success: false,
+        message: e.message || 'Error de red al conectar con DLocal Go.'
+      });
+    } finally {
+      setTestingDlocal(false);
     }
   };
 
@@ -170,7 +253,7 @@ export const SuperAdminApisView: React.FC = () => {
                 Super Admin
               </span>
               <span className="text-xs text-neutral-400 font-mono">
-                {currentUser?.email}
+                {currentUser?.email || 'gonzalocorat@gmail.com'}
               </span>
               <span className="px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800/80 text-[10px] font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -210,7 +293,7 @@ export const SuperAdminApisView: React.FC = () => {
       )}
 
       {/* Status Highlights Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-neutral-500">WhatsApp Evolution API</span>
@@ -253,7 +336,30 @@ export const SuperAdminApisView: React.FC = () => {
             )}
           </div>
           <p className="text-[11px] text-neutral-400">
-            Cobro automático de planes ($49k / $29k)
+            Cobro suscripciones ($49k / $29k)
+          </p>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-xs space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-neutral-500">DLocal Go (Checkout Pro)</span>
+            <span className="p-2 bg-amber-50 text-amber-700 rounded-xl">
+              <Globe className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="text-base font-bold text-neutral-900 flex items-center gap-1.5">
+            {formData.dlocal_go_api_key ? (
+              <span className="text-emerald-600 flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" /> Conectado
+              </span>
+            ) : (
+              <span className="text-amber-600 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" /> Sin API Key
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-neutral-400">
+            Tarjetas, transferencias y pagos locales
           </p>
         </div>
 
@@ -281,7 +387,90 @@ export const SuperAdminApisView: React.FC = () => {
         </div>
       </div>
 
-      <form onSubmit={handleSaveAll} className="space-y-6">
+      {/* Sub-Navigation Tabs */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 pb-2">
+        <button
+          type="button"
+          onClick={() => setActiveTab('pasarelas')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'pasarelas'
+              ? 'bg-neutral-900 text-white shadow-xs'
+              : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <Key className="w-3.5 h-3.5" />
+          <span>Pasarelas & Credenciales APIs</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('orquestador')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer ${
+            activeTab === 'orquestador'
+              ? 'bg-amber-500 text-neutral-950 shadow-xs'
+              : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5" />
+          <span>Orquestador & Prioridad SaaS</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('transferencias')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer relative ${
+            activeTab === 'transferencias'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-white text-neutral-600 hover:bg-neutral-100 border border-neutral-200'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>Transferencias & Confirmaciones</span>
+          {pendingTransfersCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-amber-400 text-neutral-950 animate-pulse">
+              {pendingTransfersCount} pend.
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* TAB CONTENT 1: ORQUESTADOR DE MÉTODOS Y PRIORIDAD */}
+      {activeTab === 'orquestador' && (
+        <div className="space-y-6 animate-fade-in">
+          <SaasPaymentOrchestrator formData={formData} handleChange={handleChange} />
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => handleSaveAll()}
+              className="px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white font-bold rounded-2xl text-xs transition flex items-center gap-2 shadow-sm cursor-pointer"
+            >
+              <Save className="w-4 h-4 text-amber-400" />
+              <span>Guardar Configuración de Prioridad</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB CONTENT 2: BANDEJA DE TRANSFERENCIAS Y DATOS BANCARIOS */}
+      {activeTab === 'transferencias' && (
+        <div className="space-y-6 animate-fade-in">
+          <SaasTransferSubmissionsManager formData={formData} handleChange={handleChange} />
+          <div className="flex justify-end pt-2">
+            <button
+              type="button"
+              onClick={() => handleSaveAll()}
+              className="px-6 py-3 bg-neutral-900 hover:bg-neutral-800 text-white font-bold rounded-2xl text-xs transition flex items-center gap-2 shadow-sm cursor-pointer"
+            >
+              <Save className="w-4 h-4 text-emerald-400" />
+              <span>Guardar Datos Bancarios</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAB CONTENT 3: PASARELAS Y CREDENCIALES APIS */}
+      {activeTab === 'pasarelas' && (
+      <form onSubmit={handleSaveAll} className="space-y-6 animate-fade-in">
         {/* SECTION 1: EVOLUTION API (WHATSAPP SAAS GATEWAY) */}
         <div className="bg-white p-6 sm:p-7 rounded-3xl border border-neutral-200 shadow-xs space-y-5">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
@@ -426,9 +615,31 @@ export const SuperAdminApisView: React.FC = () => {
                 </p>
               </div>
             </div>
-            <span className="px-2.5 py-1 rounded-full bg-sky-100 text-sky-800 text-[10px] font-bold">
-              Producción / Sandbox
-            </span>
+            <div className="flex items-center gap-2.5">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="toggle-mercadopago-checkbox"
+                  checked={formData.saas_method_mercadopago_enabled !== false}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    handleChange('saas_method_mercadopago_enabled', checked);
+                    updatePracticeSettings({
+                      saas_method_mercadopago_enabled: checked
+                    });
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-600"></div>
+              </label>
+              <span className={`text-xs font-bold ${
+                formData.saas_method_mercadopago_enabled !== false
+                  ? 'text-sky-700'
+                  : 'text-neutral-400'
+              }`}>
+                {formData.saas_method_mercadopago_enabled !== false ? 'Habilitado' : 'Deshabilitado'}
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
@@ -500,7 +711,349 @@ export const SuperAdminApisView: React.FC = () => {
           </div>
         </div>
 
-        {/* SECTION 3: EMAIL TRANSACCIONAL (RESEND / SMTP) */}
+        {/* SECTION 3: LEMON SQUEEZY (MERCHANT OF RECORD GLOBAL & SAAS) */}
+        <div className="bg-white p-6 sm:p-7 rounded-3xl border border-neutral-200 shadow-xs space-y-5">
+          <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-900 flex items-center justify-center font-bold">
+                <Sparkles className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-neutral-900">
+                    3. Lemon Squeezy (Merchant of Record Global)
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                    SaaS Global & Recurrente
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Cobros recurrentes con tarjetas internacionales y locales, gestión fiscal automatizada y facturación sin requerir aprobación de pasarela previa.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="toggle-lemonsqueezy-checkbox"
+                  checked={formData.saas_method_lemonsqueezy_enabled !== false && formData.lemonsqueezy_enabled !== false}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    handleChange('saas_method_lemonsqueezy_enabled', checked);
+                    handleChange('lemonsqueezy_enabled', checked);
+                    updatePracticeSettings({
+                      saas_method_lemonsqueezy_enabled: checked,
+                      lemonsqueezy_enabled: checked
+                    });
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+              </label>
+              <span className={`text-xs font-bold ${
+                formData.saas_method_lemonsqueezy_enabled !== false && formData.lemonsqueezy_enabled !== false
+                  ? 'text-amber-700'
+                  : 'text-neutral-400'
+              }`}>
+                {formData.saas_method_lemonsqueezy_enabled !== false && formData.lemonsqueezy_enabled !== false ? 'Habilitado' : 'Deshabilitado'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div className="md:col-span-2">
+              <label className="font-semibold text-neutral-700 block mb-1">
+                Lemon Squeezy API Key (Bearer Token):
+              </label>
+              <input
+                type="password"
+                value={formData.lemonsqueezy_api_key || ''}
+                onChange={e => handleChange('lemonsqueezy_api_key', e.target.value)}
+                placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Generada en tu cuenta de Lemon Squeezy &gt; Settings &gt; API Keys.
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold text-neutral-700 block mb-1">
+                Store ID:
+              </label>
+              <input
+                type="text"
+                value={formData.lemonsqueezy_store_id || ''}
+                onChange={e => handleChange('lemonsqueezy_store_id', e.target.value)}
+                placeholder="12345"
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                ID de tu tienda en Lemon Squeezy (número visible en la URL de tu Store).
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold text-neutral-700 block mb-1">
+                Webhook Secret (Firma de Validación):
+              </label>
+              <input
+                type="password"
+                value={formData.lemonsqueezy_webhook_secret || ''}
+                onChange={e => handleChange('lemonsqueezy_webhook_secret', e.target.value)}
+                placeholder="whsec_lemonsqueezy_secret..."
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Secreto firmado para verificar autenticidad en notificaciones de cobro.
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold text-neutral-700 block mb-1">
+                Variant ID - Plan Básico:
+              </label>
+              <input
+                type="text"
+                value={formData.lemonsqueezy_variant_id_basic || ''}
+                onChange={e => handleChange('lemonsqueezy_variant_id_basic', e.target.value)}
+                placeholder="Ej: 567891"
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Variant ID del producto Plan Básico creado en Lemon Squeezy.
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold text-neutral-700 block mb-1">
+                Variant ID - Plan Pro AI:
+              </label>
+              <input
+                type="text"
+                value={formData.lemonsqueezy_variant_id_pro || ''}
+                onChange={e => handleChange('lemonsqueezy_variant_id_pro', e.target.value)}
+                placeholder="Ej: 567892"
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Variant ID del producto Plan Pro AI creado en Lemon Squeezy.
+              </p>
+            </div>
+
+            {/* Test Lemon Squeezy Connection Button */}
+            <div className="md:col-span-2 pt-2 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-[11px] text-neutral-500">
+                Verifica la autenticación directa con la API oficial de Lemon Squeezy.
+              </p>
+              <button
+                type="button"
+                disabled={testingLemonSqueezy || !formData.lemonsqueezy_api_key}
+                onClick={handleTestLemonSqueezy}
+                className="w-full sm:w-auto py-2 px-4 bg-amber-500 hover:bg-amber-600 text-neutral-950 font-bold rounded-xl text-xs transition flex items-center justify-center gap-2 shadow-2xs disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {testingLemonSqueezy ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span>Probar Conexión con Lemon Squeezy</span>
+              </button>
+            </div>
+          </div>
+
+          {lemonSqueezyResult && (
+            <div className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 ${
+              lemonSqueezyResult.success
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              {lemonSqueezyResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1">
+                <span className="font-bold">{lemonSqueezyResult.success ? 'Conexión Exitosa' : 'Error en Validación'}</span>
+                <p className="text-[11px] leading-relaxed">{lemonSqueezyResult.message}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Lemon Squeezy Webhook URL Box */}
+          <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-neutral-800">
+                <Webhook className="w-4 h-4 text-amber-700" />
+                <span>URL de Webhook (Lemon Squeezy):</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(lemonSqueezyWebhookUrl, 'ls')}
+                className="text-neutral-700 hover:text-neutral-900 font-semibold inline-flex items-center gap-1 text-[11px] bg-white px-2.5 py-1 rounded-lg border border-neutral-200 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{copiedWebhook === 'ls' ? '¡Copiado!' : 'Copiar URL'}</span>
+              </button>
+            </div>
+            <code className="block p-2.5 bg-white border border-neutral-200 rounded-xl font-mono text-[11px] text-neutral-700 select-all overflow-x-auto">
+              {lemonSqueezyWebhookUrl}
+            </code>
+            <p className="text-[10px] text-neutral-500">
+              Pega esta URL en tu Dashboard de Lemon Squeezy &gt; Settings &gt; Webhooks para capturar eventos de suscripción creada, renovada o cancelada.
+            </p>
+          </div>
+        </div>
+
+        {/* SECTION 4: DLOCAL GO (CHECKOUT PRO GLOBAL & LATAM) */}
+        <div className="bg-white p-6 sm:p-7 rounded-3xl border border-neutral-200 shadow-xs space-y-5">
+          <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                <Globe className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-neutral-900">
+                    4. DLocal Go (Checkout Pro Latam & Global)
+                  </h3>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                    Pasarela Recomendada
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500">
+                  Cobro de suscripciones de planes en moneda local (ARS, USD, BRL, etc.) mediante tarjetas de crédito, débito y transferencias directas con retorno automático.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  id="toggle-dlocal-checkbox"
+                  checked={formData.saas_method_dlocal_enabled !== false && formData.dlocal_go_enabled !== false && Boolean(formData.saas_method_dlocal_enabled || formData.dlocal_go_enabled)}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    handleChange('saas_method_dlocal_enabled', checked);
+                    handleChange('dlocal_go_enabled', checked);
+                    updatePracticeSettings({
+                      saas_method_dlocal_enabled: checked,
+                      dlocal_go_enabled: checked
+                    });
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+              <span className={`text-xs font-bold ${
+                formData.saas_method_dlocal_enabled !== false && formData.dlocal_go_enabled !== false && Boolean(formData.saas_method_dlocal_enabled || formData.dlocal_go_enabled)
+                  ? 'text-purple-700'
+                  : 'text-neutral-400'
+              }`}>
+                {formData.saas_method_dlocal_enabled !== false && formData.dlocal_go_enabled !== false && Boolean(formData.saas_method_dlocal_enabled || formData.dlocal_go_enabled) ? 'Habilitado' : 'Deshabilitado'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+            <div>
+              <label className="font-semibold text-neutral-700 block mb-1">
+                DLocal Go API Key (Bearer Token):
+              </label>
+              <input
+                type="password"
+                value={formData.dlocal_go_api_key || ''}
+                onChange={e => handleChange('dlocal_go_api_key', e.target.value)}
+                placeholder="Bearer eyJhbGciOiJIUzI1NiIsInR5cCI..."
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Tu clave pública/Bearer generada en la consola de integración de DLocal Go.
+              </p>
+            </div>
+
+            <div>
+              <label className="font-semibold text-neutral-700 block mb-1">
+                DLocal Go Secret Key:
+              </label>
+              <input
+                type="password"
+                value={formData.dlocal_go_secret_key || ''}
+                onChange={e => handleChange('dlocal_go_secret_key', e.target.value)}
+                placeholder="sec_live_xxxxxxxx..."
+                className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 font-mono text-xs"
+              />
+              <p className="text-[10px] text-neutral-400 mt-1">
+                Clave secreta para validación de callbacks y seguridad de transacciones.
+              </p>
+            </div>
+
+            {/* Test Connection Button */}
+            <div className="md:col-span-2 pt-2 border-t border-neutral-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-[11px] text-neutral-500">
+                Prueba la comunicación directa con el endpoint oficial de DLocal Go antes de guardar.
+              </p>
+              <button
+                type="button"
+                disabled={testingDlocal || !formData.dlocal_go_api_key}
+                onClick={handleTestDlocal}
+                className="w-full sm:w-auto py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-semibold text-xs transition flex items-center justify-center gap-2 shadow-2xs disabled:opacity-50 cursor-pointer shrink-0"
+              >
+                {testingDlocal ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Globe className="w-4 h-4" />
+                )}
+                <span>Probar Conexión con DLocal Go</span>
+              </button>
+            </div>
+          </div>
+
+          {dlocalResult && (
+            <div className={`p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 ${
+              dlocalResult.success
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              {dlocalResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              )}
+              <div className="space-y-1">
+                <span className="font-bold">{dlocalResult.success ? 'Conexión Exitosa' : 'Error en Validación'}</span>
+                <p className="text-[11px] leading-relaxed">{dlocalResult.message}</p>
+              </div>
+            </div>
+          )}
+
+          {/* DLocal Webhook URL Box */}
+          <div className="p-4 bg-neutral-50 rounded-2xl border border-neutral-200 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 font-bold text-neutral-800">
+                <Webhook className="w-4 h-4 text-amber-700" />
+                <span>URL de Retorno / Webhook IPN (DLocal Go):</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyToClipboard(dlocalWebhookUrl, 'dlocal')}
+                className="text-neutral-700 hover:text-neutral-900 font-semibold inline-flex items-center gap-1 text-[11px] bg-white px-2.5 py-1 rounded-lg border border-neutral-200 cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5" />
+                <span>{copiedWebhook === 'dlocal' ? '¡Copiado!' : 'Copiar URL'}</span>
+              </button>
+            </div>
+            <code className="block p-2.5 bg-white border border-neutral-200 rounded-xl font-mono text-[11px] text-neutral-700 select-all overflow-x-auto">
+              {dlocalWebhookUrl}
+            </code>
+            <p className="text-[10px] text-neutral-500">
+              Configura esta URL en el apartado de Webhooks de tu panel DLocal Go para recibir notificaciones automáticas de aprobación en tiempo real.
+            </p>
+          </div>
+        </div>
+
+        {/* SECTION 5: EMAIL TRANSACCIONAL (RESEND / SMTP) */}
         <div className="bg-white p-6 sm:p-7 rounded-3xl border border-neutral-200 shadow-xs space-y-5">
           <div className="flex items-center justify-between border-b border-neutral-100 pb-4">
             <div className="flex items-center gap-3">
@@ -509,7 +1062,7 @@ export const SuperAdminApisView: React.FC = () => {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-neutral-900">
-                  3. Servicio de Email Transaccional (Resend API)
+                  5. Servicio de Email Transaccional (Resend API)
                 </h3>
                 <p className="text-xs text-neutral-500">
                   Envío automático de confirmaciones de reserva, cancelaciones y recordatorios por correo a pacientes.
@@ -608,6 +1161,7 @@ export const SuperAdminApisView: React.FC = () => {
           </button>
         </div>
       </form>
+      )}
     </div>
   );
 };

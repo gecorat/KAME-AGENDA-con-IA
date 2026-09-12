@@ -237,6 +237,215 @@ Responde ÚNICAMENTE con el texto sugerido en español rioplatense o neutro, sin
     }
   });
 
+  // Doctor & Staff Internal Copilot AI (Strictly isolated per authenticated professional)
+  app.post("/api/copilot/chat", async (req, res) => {
+    try {
+      const {
+        message,
+        history = [],
+        context = {}
+      } = req.body;
+
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({ error: "El mensaje es requerido" });
+      }
+
+      const {
+        doctorName = "Doctor/a",
+        doctorEmail = "",
+        practiceName = "Consultorio Médico",
+        specialty = "Medicina",
+        todayDateStr = new Date().toLocaleDateString("es-AR", { weekday: "long", year: "numeric", month: "long", day: "numeric" }),
+        todayAppointments = [],
+        upcomingAppointments = [],
+        financials = {},
+        services = [],
+        patientsCount = 0,
+        settingsSummary = {}
+      } = context;
+
+      // Prepare clear, deterministic context representations
+      const todayAptsFormatted = (todayAppointments.length > 0)
+        ? todayAppointments.map((a: any, idx: number) => 
+            `${idx + 1}. [${a.time || a.start_datetime?.split("T")[1]?.slice(0, 5) || "Horario a confirmar"}] Paciente: ${a.patient_name} | Servicio: ${a.service_name || "Consulta"} | Estado: ${a.status === "confirmed" ? "Confirmado" : a.status === "pending" ? "Pendiente" : a.status} | Pago: ${a.payment_status === "paid" ? "Abonado" : "Pendiente"}${a.deposit_amount ? ` (Seña: $${a.deposit_amount.toLocaleString("es-AR")})` : ""}`
+          ).join("\n")
+        : "Sin turnos agendados para el día de hoy.";
+
+      const upcomingAptsFormatted = (upcomingAppointments.length > 0)
+        ? upcomingAppointments.map((a: any, idx: number) => 
+            `${idx + 1}. ${a.date || a.start_datetime?.split("T")[0]} a las ${a.time || a.start_datetime?.split("T")[1]?.slice(0, 5)} - ${a.patient_name} (${a.service_name})`
+          ).join("\n")
+        : "No hay turnos agendados para los próximos días.";
+
+      const servicesFormatted = (services.length > 0)
+        ? services.map((s: any) => `- ${s.name}: $${(s.price || 0).toLocaleString("es-AR")} (${s.duration_minutes || 30} min)`).join("\n")
+        : "No hay aranceles de servicios configurados aún.";
+
+      const pendingPatientsFormatted = (financials.pending_patients && financials.pending_patients.length > 0)
+        ? financials.pending_patients.map((p: any) => `- ${p.patient_name}: $${(p.amount || p.price || 0).toLocaleString("es-AR")} (${p.service_name || "Consulta"}${p.date ? ` del ${p.date}` : ""})`).join("\n")
+        : "No hay pacientes con pagos pendientes.";
+
+      const systemInstruction = `Eres el Copiloto Inteligente de Agenfacil para ${doctorName}, en su consultorio "${practiceName}" (${specialty || "Salud / Consultorio"}).
+Tu misión es asistir de forma ejecutiva, rápida y precisa al profesional sobre todo lo relativo a su cuenta, consultorio y funcionamiento de la aplicación.
+
+POLÍTICA ESTRICTA DE PRIVACIDAD Y SEGURIDAD MULTI-CUENTA (REGLA FUNDAMENTAL):
+- Toda la información proporcionada pertenece EXCLUSIVAMENTE al consultorio de ${doctorName} (cuenta: ${doctorEmail || "profesional"}).
+- TIENES PROHIBIDO mezclar, deducir o mencionar información de cualquier otra cuenta, médico, consultorio o usuario del sistema.
+- Basa tus respuestas de forma ESTRICTA en los datos reales del consultorio provistos abajo. Si algo no existe o está en cero, dilo claramente sin inventar.
+
+DATOS EN TIEMPO REAL DEL CONSULTORIO (${todayDateStr}):
+- Nombre del profesional: ${doctorName}
+- Consultorio: ${practiceName} (${specialty})
+- Total de pacientes registrados en la ficha: ${patientsCount}
+
+MÉTRICAS FINANCIERAS REALES DEL PROFESIONAL:
+- Facturación total del mes en curso: $${(financials.month_revenue || 0).toLocaleString("es-AR")} ARS
+- Recaudación cobrada hoy: $${(financials.today_revenue || 0).toLocaleString("es-AR")} ARS
+- Saldo pendiente de cobro: $${(financials.pending_amount || 0).toLocaleString("es-AR")} ARS (${financials.pending_appointments_count || 0} turnos sin abonar)
+- Detalle de pacientes con deuda / pago pendiente:
+${pendingPatientsFormatted}
+
+AGENDA DE HOY:
+${todayAptsFormatted}
+
+PRÓXIMOS TURNOS:
+${upcomingAptsFormatted}
+
+SERVICIOS Y ARANCELES OFICIALES:
+${servicesFormatted}
+
+CONFIGURACIÓN DE LA APP:
+- Señas por adelantado: ${settingsSummary.patient_deposit_enabled ? `ACTIVADAS (${settingsSummary.patient_deposit_type === "percent" ? `${settingsSummary.patient_deposit_percent}%` : `$${settingsSummary.patient_deposit_fixed_amount} fijo`} vía ${settingsSummary.patient_deposit_method || "Mercado Pago / Alias"})` : "Desactivadas"}
+- Alias/CBU para señas: ${settingsSummary.patient_deposit_alias || "No configurado"}
+- WhatsApp Bot: ${settingsSummary.bot_assistant_name || "Asistente Virtual"} (Activo en pestaña Asistente)
+- Enlace público de reserva: /u/${settingsSummary.handle || "consultorio"}
+- Recordatorios automáticos: WhatsApp y Email (24h y 2h antes del turno).
+
+GUÍA RÁPIDA DE USO DE AGENFACIL (Para responder dudas sobre la app):
+- ¿Cómo agendar un turno? En el botón "+ Nuevo Turno" arriba a la derecha o en la pestaña "Agenda".
+- ¿Cómo cobrar señas automáticas? En la pestaña "Cobros" o "Configuración", sección "Señas y Depósitos": se puede pedir porcentaje o monto fijo por Mercado Pago o Alias CBU.
+- ¿Cómo ver o crear historias clínicas? En la pestaña "Consultas / Historias Clínicas" o dentro del turno haciendo clic en "Iniciar Consulta SOAP" con opción de dictado por voz.
+- ¿Cómo conectar WhatsApp? En la pestaña "Asistente Virtual", mediante escaneo de código QR.
+- ¿Dónde ver balances de caja diaria? En la pestaña "Cobros", subpestaña "Caja Diaria", permite abrir caja, registrar ingresos/egresos y cerrar caja con arqueo.
+- ¿Dónde proponer mejoras o sugerencias? En la pestaña "Buzón de Sugerencias" (tab: "sugerencias"), donde se pueden proponer nuevas funciones, votar ideas y seguir el roadmap de la app.
+
+INSTRUCCIONES DE RESPUESTA:
+1. Responde de forma muy clara, concisa, profesional y amigable en español rioplatense o neutro.
+2. Usa viñetas y negritas para que la información se lea de un vistazo rápido.
+3. Si el doctor pide agendar un turno o consultar turnos, facilítale los datos y si es oportuno ofrece un bloque de acción JSON al final:
+\`\`\`copilot_action
+{
+  "label": "Ir a Agenda",
+  "tab": "agenda" 
+}
+\`\`\`
+Opciones de tab válidas: "agenda", "cobros", "pacientes", "consultas", "servicios", "horarios", "asistente", "configuracion".
+Si te pide agendar un turno para alguien específico:
+\`\`\`copilot_action
+{
+  "label": "Agendar Turno",
+  "actionType": "new_appointment",
+  "patientName": "Nombre",
+  "date": "YYYY-MM-DD"
+}
+\`\`\`
+Si no requiere acción, no agregues el bloque de código.`;
+
+      const ai = getAI();
+      let aiHandled = false;
+      if (ai) {
+        try {
+          // Build multi-turn chat contents
+          const conversationText = history
+            .slice(-8)
+            .map((m: any) => `${m.role === "user" ? "Doctor" : "Copiloto"}: ${m.content}`)
+            .join("\n");
+
+          const fullPrompt = `${systemInstruction}\n\n=== CONVERSACIÓN RECIENTE ===\n${conversationText}\n\nDoctor: ${message}\nCopiloto:`;
+
+          const response = await ai.models.generateContent({
+            model: "gemini-3.8-flash",
+            contents: fullPrompt,
+          });
+
+          const replyRaw = response.text || "Disculpa, no pude procesar la consulta en este momento.";
+
+          // Extract copilot_action if present
+          let actionData: any = null;
+          let cleanReply = replyRaw;
+          const match = replyRaw.match(/```(?:copilot_action|json_action)?\s*([\s\S]*?)\s*```/);
+          if (match && match[1]) {
+            try {
+              actionData = JSON.parse(match[1]);
+              cleanReply = replyRaw.replace(/```(?:copilot_action|json_action)?\s*[\s\S]*?\s*```/, "").trim();
+            } catch (e) {
+              // Ignored if not valid json
+            }
+          }
+
+          return res.json({
+            reply: cleanReply,
+            action: actionData,
+            aiPowered: true
+          });
+        } catch (geminiErr: any) {
+          console.warn("Gemini model unavailable or high demand, falling back to local copilot engine:", geminiErr?.message || geminiErr);
+          // Fall through to deterministic engine
+        }
+      }
+
+      // Intelligent deterministic fallback if GEMINI_API_KEY is not set or temporary model outage
+      const lower = message.toLowerCase();
+        let reply = "";
+        let actionData: any = null;
+
+        if (lower.includes("factura") || lower.includes("ingreso") || lower.includes("cuanto llevo") || lower.includes("plata") || lower.includes("dinero") || lower.includes("recaud")) {
+          reply = `📊 **Estado Financiero de tu Consultorio:**\n\n• **Facturación del mes actual:** $${(financials.month_revenue || 0).toLocaleString("es-AR")} ARS\n• **Cobrado hoy:** $${(financials.today_revenue || 0).toLocaleString("es-AR")} ARS\n• **Saldos pendientes de cobro:** $${(financials.pending_amount || 0).toLocaleString("es-AR")} ARS (${financials.pending_appointments_count || 0} turnos pendientes)`;
+          actionData = { label: "Ver Detalle en Cobros", tab: "cobros" };
+        } else if (lower.includes("hoy") || lower.includes("agenda") || lower.includes("quien viene") || lower.includes("proximo paciente") || lower.includes("citas")) {
+          if (todayAppointments.length > 0) {
+            reply = `📅 **Agenda de Hoy (${todayDateStr}):**\nTienes ${todayAppointments.length} turno(s) agendado(s):\n\n` +
+              todayAppointments.map((a: any) => `• **${a.time || "Horario"}**: ${a.patient_name} - *${a.service_name}* (${a.status === "confirmed" ? "✅ Confirmado" : "⏳ Pendiente"})`).join("\n");
+          } else {
+            reply = `📅 **Agenda de Hoy:**\nNo tienes turnos agendados para el día de hoy (${todayDateStr}). ¡Tienes la jornada despejada o puedes agendar nuevas consultas!`;
+          }
+          actionData = { label: "Abrir Agenda", tab: "agenda" };
+        } else if (lower.includes("pendiente") || lower.includes("deuda") || lower.includes("quien debe") || lower.includes("falta pagar")) {
+          if (financials.pending_patients && financials.pending_patients.length > 0) {
+            reply = `⚠️ **Pacientes con Pagos Pendientes:**\n\n` +
+              financials.pending_patients.map((p: any) => `• **${p.patient_name}**: $${(p.amount || p.price || 0).toLocaleString("es-AR")} (${p.service_name || "Consulta"})`).join("\n") +
+              `\n\nTotal pendiente acumulado: **$${(financials.pending_amount || 0).toLocaleString("es-AR")} ARS**.`;
+          } else {
+            reply = `✨ **Al día:** No registras turnos ni pacientes con pagos pendientes en tu consultorio.`;
+          }
+          actionData = { label: "Gestionar Cobros", tab: "cobros" };
+        } else if (lower.includes("agendar") || lower.includes("nuevo turno") || lower.includes("crear cita")) {
+          reply = `➕ **Agendar un Turno:**\nPuedes hacer clic en el botón "+ Nuevo Turno" en la barra superior o ir a la Agenda interactiva para elegir el horario y servicio.`;
+          actionData = { label: "Crear Nuevo Turno", actionType: "new_appointment" };
+        } else if (lower.includes("whatsapp") || lower.includes("bot")) {
+          reply = `🤖 **Bot de WhatsApp:**\nTu bot responde automáticamente preguntas sobre precios, horarios disponibles y reserva citas por WhatsApp. Puedes ver los chats y configurarlo en la sección **"Asistente Virtual"**.`;
+          actionData = { label: "Ir a Asistente", tab: "asistente" };
+        } else if (lower.includes("seña") || lower.includes("deposito") || lower.includes("mercado pago")) {
+          reply = `💳 **Cobro de Señas:**\nPuedes exigir una seña obligatoria (porcentaje o monto fijo) a los pacientes al reservar. Se configura en la pestaña **"Cobros"** o **"Configuración"** vinculando tu cuenta de Mercado Pago o indicando tu Alias CBU bancario.`;
+          actionData = { label: "Configurar Señas", tab: "cobros" };
+        } else if (lower.includes("suger") || lower.includes("mejora") || lower.includes("idea") || lower.includes("roadmap") || lower.includes("buzon") || lower.includes("feedback")) {
+          reply = `💡 **Buzón de Sugerencias & Hoja de Ruta:**\n¡Tu opinión es fundamental para nosotros! Puedes proponer nuevas funciones, reportar mejoras o votar por las ideas más solicitadas por la comunidad médica en nuestra sección de sugerencias.`;
+          actionData = { label: "Abrir Buzón de Sugerencias", tab: "sugerencias" };
+        } else {
+          reply = `👋 ¡Hola ${doctorName}! Soy tu **Copiloto Inteligente de Agenfacil**.\nPuedo ayudarte en tiempo real con:\n• **Facturación**: "¿Cuánto llevo facturado este mes?"\n• **Agenda**: "¿Qué turnos tengo hoy?" o "¿Quién es mi próximo paciente?"\n• **Cobros**: "¿Quiénes tienen pagos pendientes?"\n• **Sugerencias**: "¿Cómo propongo una mejora para la app?"\n• **Uso de la App**: "¿Cómo configuro las señas?" o "¿Cómo agendo un turno?"\n\n¿En qué te puedo colaborar ahora?`;
+        }
+
+        return res.json({
+          reply,
+          action: actionData,
+          aiPowered: false
+        });
+    } catch (err: any) {
+      console.error("Error in /api/copilot/chat:", err);
+      res.status(500).json({ error: err.message || "Error procesando consulta con el Copiloto" });
+    }
+  });
+
   // Audio Voice Note Transcription & Clinical SOAP Structuring
   app.post("/api/consultations/transcribe-voice", async (req, res) => {
     try {
@@ -659,54 +868,74 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   // MERCADO PAGO API (Deposit & Payment Checkout)
   // ==========================================
 
-  // Create Checkout Preference for Deposit / Seña
+  // Helper to dynamically get application base URL for callbacks & webhooks
+  const getAppBaseUrl = (req: express.Request): string => {
+    const origin = req.headers.origin || (req.headers.referer ? new URL(req.headers.referer).origin : null);
+    if (origin && !origin.includes("localhost:3000")) {
+      return origin.replace(/\/$/, "");
+    }
+    const host = req.headers.host;
+    if (host && !host.includes("localhost:3000")) {
+      const proto = req.headers["x-forwarded-proto"] || "https";
+      return `${proto}://${host}`.replace(/\/$/, "");
+    }
+    return (process.env.APP_URL || "https://agenfacil.com").replace(/\/$/, "");
+  };
+
+  // Create Checkout Preference for Deposit / Seña or Full Appointment Payment
   app.post("/api/mercadopago/create-preference", async (req, res) => {
     try {
       const {
-        title = "Seña de Consulta Médica",
+        title = "Consulta Médica",
         price = 5000,
+        amount,
         appointmentId,
         patientName = "Paciente",
         patientEmail = "paciente@email.com",
+        patientPhone = "",
         accessToken
       } = req.body;
 
+      const finalAmount = Number(amount !== undefined ? amount : price);
       const token = accessToken || process.env.MERCADOPAGO_ACCESS_TOKEN;
-      const appUrl = (process.env.APP_URL || "https://agenfacil.com").replace(/\/$/, "");
+      const appUrl = getAppBaseUrl(req);
+      const aptId = appointmentId || `apt-${Date.now()}`;
 
       if (!token) {
-        // Fallback simulation link for testing
+        // Fallback simulation link for testing and instant preview
         return res.json({
           success: true,
           simulated: true,
-          init_point: `${appUrl}/#demo-mercadopago-success?apt=${appointmentId || "new"}&amount=${price}`,
+          init_point: `${appUrl}/#payment-success?apt=${aptId}&amount=${finalAmount}&status=approved`,
+          sandbox_init_point: `${appUrl}/#payment-success?apt=${aptId}&amount=${finalAmount}&status=approved`,
           preferenceId: `pref-demo-${Date.now()}`,
-          message: "Preferencia de pago simulada (agregue MERCADOPAGO_ACCESS_TOKEN para checkout real en vivo)."
+          message: "Preferencia generada en modo desarrollo/simulación con retorno automático."
         });
       }
 
       const preferenceData = {
         items: [
           {
-            id: appointmentId || `apt-${Date.now()}`,
+            id: aptId,
             title: title,
             quantity: 1,
-            unit_price: Number(price),
+            unit_price: finalAmount,
             currency_id: "ARS"
           }
         ],
         payer: {
           name: patientName,
-          email: patientEmail
+          email: patientEmail || "paciente@consultorio.com",
+          phone: patientPhone ? { number: patientPhone.replace(/\D/g, "") } : undefined
         },
         back_urls: {
-          success: `${appUrl}/#payment-success?apt=${appointmentId}`,
-          pending: `${appUrl}/#payment-pending?apt=${appointmentId}`,
-          failure: `${appUrl}/#payment-failure?apt=${appointmentId}`
+          success: `${appUrl}/#payment-success?apt=${aptId}&status=approved`,
+          pending: `${appUrl}/#payment-pending?apt=${aptId}&status=pending`,
+          failure: `${appUrl}/#payment-failure?apt=${aptId}&status=failure`
         },
         auto_return: "approved",
-        external_reference: appointmentId || `apt-${Date.now()}`,
-        statement_descriptor: "AGENDA PRO",
+        external_reference: aptId,
+        statement_descriptor: "AGENFACIL",
         notification_url: `${appUrl}/api/mercadopago/webhook`
       };
 
@@ -740,6 +969,110 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     }
   });
 
+  // Mercado Pago Subscription / Preapproval for SaaS Plans
+  app.post("/api/mercadopago/create-subscription", async (req, res) => {
+    try {
+      const {
+        planId = "pro",
+        planName = "Plan Pro AI",
+        billingCycle = "monthly",
+        amount = 49000,
+        currency = "ARS",
+        payerEmail = "gonzalocorat@gmail.com",
+        accessToken
+      } = req.body;
+
+      const appUrl = getAppBaseUrl(req);
+      const effectiveToken = accessToken || process.env.MERCADOPAGO_ACCESS_TOKEN;
+      const orderId = `mp_sub_${planId}_${Date.now()}`;
+      const backUrl = `${appUrl}/#mercadopago-success?plan=${planId}&cycle=${billingCycle}&order=${orderId}&status=PAID`;
+
+      if (!effectiveToken) {
+        return res.json({
+          success: true,
+          simulated: true,
+          orderId,
+          init_point: `${appUrl}/#mercadopago-checkout-simulate?plan=${planId}&cycle=${billingCycle}&amount=${amount}&currency=${currency}&order=${orderId}&email=${encodeURIComponent(payerEmail)}`,
+          message: "Modo simulado activo. Conecta tus credenciales de Mercado Pago en Super Admin para cobro real en producción."
+        });
+      }
+
+      // Try creating recurring preapproval (subscription)
+      const subPayload = {
+        reason: `Suscripción ${planName} (${billingCycle === 'annual' ? 'Anual' : 'Mensual'}) - Agenfacil`,
+        auto_recurring: {
+          frequency: billingCycle === 'annual' ? 12 : 1,
+          frequency_type: "months",
+          transaction_amount: Number(amount),
+          currency_id: currency
+        },
+        back_url: backUrl,
+        payer_email: payerEmail
+      };
+
+      const mpResponse = await fetch("https://api.mercadopago.com/preapproval", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${effectiveToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(subPayload)
+      });
+
+      const data = await mpResponse.json();
+
+      if (mpResponse.ok && data.init_point) {
+        return res.json({
+          success: true,
+          init_point: data.init_point,
+          preapproval_id: data.id,
+          orderId
+        });
+      }
+
+      // Fallback to standard preference if preapproval fails (e.g., test accounts)
+      const prefPayload = {
+        items: [
+          {
+            id: `plan_${planId}`,
+            title: `Suscripción ${planName} - Agenfacil`,
+            unit_price: Number(amount),
+            quantity: 1,
+            currency_id: currency
+          }
+        ],
+        payer: {
+          email: payerEmail
+        },
+        back_urls: {
+          success: backUrl,
+          failure: `${appUrl}/#subscription-plans`,
+          pending: backUrl
+        },
+        auto_return: "approved"
+      };
+
+      const prefRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${effectiveToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(prefPayload)
+      });
+
+      const prefData = await prefRes.json();
+      return res.json({
+        success: true,
+        init_point: prefData.init_point || prefData.sandbox_init_point,
+        orderId
+      });
+    } catch (err: any) {
+      console.error("Error in /api/mercadopago/create-subscription:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Mercado Pago IPN / Webhook endpoint
   app.post("/api/mercadopago/webhook", async (req, res) => {
     try {
@@ -762,6 +1095,315 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       return res.status(200).json({ status: "ok" });
     } catch (err: any) {
       console.error("Error in /api/mercadopago/webhook:", err);
+      return res.status(200).json({ received: true });
+    }
+  });
+
+  // ==========================================
+  // DLOCAL GO (Checkout Pro Latam & Global)
+  // ==========================================
+
+  // Create DLocal Go Checkout Session for Subscriptions or Payments
+  app.post("/api/dlocalgo/create-checkout", async (req, res) => {
+    try {
+      const {
+        planId = "pro",
+        planName = "Plan Pro AI",
+        billingCycle = "monthly",
+        amount = 49000,
+        currency = "ARS",
+        country = "AR",
+        userEmail = "gonzalocorat@gmail.com",
+        userName = "Usuario Agenfacil",
+        apiKey,
+        secretKey
+      } = req.body;
+
+      const appUrl = getAppBaseUrl(req);
+      const effectiveApiKey = apiKey || process.env.DLOCAL_GO_API_KEY;
+      const effectiveSecret = secretKey || process.env.DLOCAL_GO_SECRET_KEY;
+      const orderId = `order_dlocal_${planId}_${Date.now()}`;
+
+      const successUrl = `${appUrl}/#dlocal-success?plan=${planId}&cycle=${billingCycle}&order=${orderId}&status=PAID`;
+      const backUrl = `${appUrl}/#subscription-plans`;
+      const notificationUrl = `${appUrl}/api/dlocalgo/webhook`;
+
+      // If no DLocal Go live key is provided, provide Checkout Pro experience with immediate automatic return
+      if (!effectiveApiKey) {
+        return res.json({
+          success: true,
+          simulated: true,
+          orderId: orderId,
+          redirect_url: `${appUrl}/#dlocal-checkout-simulate?plan=${planId}&cycle=${billingCycle}&amount=${amount}&currency=${currency}&order=${orderId}&email=${encodeURIComponent(userEmail)}`,
+          success_url: successUrl,
+          message: "Sesión de DLocal Go Checkout Pro generada (Modo interactivo/simulación con redirección automática al confirmar)."
+        });
+      }
+
+      // Call DLocal Go Payments API
+      const dlocalPayload = {
+        amount: Number(amount),
+        currency: currency,
+        country: country,
+        payment_method_flow: "REDIRECT",
+        order_id: orderId,
+        description: `Suscripción ${planName} (${billingCycle === 'annual' ? 'Anual' : 'Mensual'}) - Agenfacil`,
+        payer: {
+          name: userName,
+          email: userEmail
+        },
+        success_url: successUrl,
+        back_url: backUrl,
+        notification_url: notificationUrl
+      };
+
+      const response = await fetch("https://api.dlocalgo.com/v1/payments", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${effectiveApiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(dlocalPayload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("DLocal Go API Error:", data);
+        return res.status(response.status).json({
+          success: false,
+          error: data?.message || data?.error || "Error al generar Checkout con DLocal Go",
+          details: data
+        });
+      }
+
+      return res.json({
+        success: true,
+        orderId: orderId,
+        paymentId: data.id,
+        redirect_url: data.redirect_url || data.url,
+        status: data.status
+      });
+    } catch (err: any) {
+      console.error("Error in /api/dlocalgo/create-checkout:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Test DLocal Go API Connection
+  app.post("/api/dlocalgo/test-connection", async (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      const keyToTest = apiKey || process.env.DLOCAL_GO_API_KEY;
+
+      if (!keyToTest) {
+        return res.status(400).json({
+          success: false,
+          error: "No se proporcionó API Key de DLocal Go."
+        });
+      }
+
+      // Try fetching account or payments endpoint
+      const response = await fetch("https://api.dlocalgo.com/v1/payments?limit=1", {
+        headers: {
+          "Authorization": `Bearer ${keyToTest}`,
+          "Content-Type": "application/json"
+        }
+      });
+
+      if (response.ok || response.status === 200 || response.status === 404) {
+        return res.json({
+          success: true,
+          message: "¡Conexión exitosa con la API de DLocal Go! Credenciales válidas."
+        });
+      }
+
+      const errData = await response.json().catch(() => ({}));
+      return res.json({
+        success: false,
+        message: errData.message || `DLocal Go respondió con estado ${response.status}. Verifica tus credenciales.`
+      });
+    } catch (e: any) {
+      return res.status(500).json({
+        success: false,
+        message: e.message || "Error al conectar con DLocal Go."
+      });
+    }
+  });
+
+  // DLocal Go Webhook IPN
+  app.post("/api/dlocalgo/webhook", async (req, res) => {
+    try {
+      console.log("DLocal Go Webhook Notification received:", JSON.stringify(req.body));
+      return res.status(200).json({ status: "ok" });
+    } catch (err: any) {
+      console.error("Error in /api/dlocalgo/webhook:", err);
+      return res.status(200).json({ received: true });
+    }
+  });
+
+  // ==========================================
+  // LEMON SQUEEZY (Merchant of Record SaaS)
+  // ==========================================
+
+  // Create Lemon Squeezy Checkout Session
+  app.post("/api/lemonsqueezy/create-checkout", async (req, res) => {
+    try {
+      const {
+        planId = "pro",
+        planName = "Plan Pro AI",
+        billingCycle = "monthly",
+        amount = 49000,
+        currency = "ARS",
+        userEmail = "gonzalocorat@gmail.com",
+        userName = "Doctor Agenfacil",
+        variantId,
+        storeId,
+        apiKey
+      } = req.body;
+
+      const appUrl = getAppBaseUrl(req);
+      const effectiveApiKey = apiKey || process.env.LEMONSQUEEZY_API_KEY;
+      const effectiveStoreId = storeId || process.env.LEMONSQUEEZY_STORE_ID;
+      const effectiveVariantId = variantId || process.env[`LEMONSQUEEZY_VARIANT_${planId.toUpperCase()}`];
+      const orderId = `ls_order_${planId}_${Date.now()}`;
+      const successUrl = `${appUrl}/#lemon-success?plan=${planId}&cycle=${billingCycle}&order=${orderId}&status=PAID`;
+
+      // If no live credentials provided, provide seamless interactive checkout experience
+      if (!effectiveApiKey || !effectiveStoreId || !effectiveVariantId) {
+        return res.json({
+          success: true,
+          simulated: true,
+          orderId,
+          checkout_url: `${appUrl}/#lemonsqueezy-checkout-simulate?plan=${planId}&cycle=${billingCycle}&amount=${amount}&currency=${currency}&order=${orderId}&email=${encodeURIComponent(userEmail)}`,
+          success_url: successUrl,
+          message: "Sesión de Lemon Squeezy generada en modo simulación (con redirección automática y confirmación de suscripción)."
+        });
+      }
+
+      // Call real Lemon Squeezy Checkouts API
+      const lsPayload = {
+        data: {
+          type: "checkouts",
+          attributes: {
+            checkout_data: {
+              email: userEmail,
+              name: userName,
+              custom: {
+                user_email: userEmail,
+                plan_id: planId,
+                billing_cycle: billingCycle,
+                order_id: orderId
+              }
+            },
+            product_options: {
+              redirect_url: successUrl,
+              receipt_button_text: "Regresar a Agenfacil"
+            }
+          },
+          relationships: {
+            store: {
+              data: {
+                type: "stores",
+                id: String(effectiveStoreId)
+              }
+            },
+            variant: {
+              data: {
+                type: "variants",
+                id: String(effectiveVariantId)
+              }
+            }
+          }
+        }
+      };
+
+      const response = await fetch("https://api.lemonsqueezy.com/v1/checkouts", {
+        method: "POST",
+        headers: {
+          "Accept": "application/vnd.api+json",
+          "Content-Type": "application/vnd.api+json",
+          "Authorization": `Bearer ${effectiveApiKey}`
+        },
+        body: JSON.stringify(lsPayload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("Lemon Squeezy API Error:", data);
+        return res.status(response.status).json({
+          success: false,
+          error: data?.errors?.[0]?.detail || "Error al crear checkout con Lemon Squeezy",
+          details: data
+        });
+      }
+
+      const checkoutUrl = data?.data?.attributes?.url;
+      return res.json({
+        success: true,
+        orderId,
+        checkout_url: checkoutUrl,
+        data: data.data
+      });
+    } catch (err: any) {
+      console.error("Error in /api/lemonsqueezy/create-checkout:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Test Lemon Squeezy API Connection
+  app.post("/api/lemonsqueezy/test-connection", async (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      const keyToTest = apiKey || process.env.LEMONSQUEEZY_API_KEY;
+
+      if (!keyToTest) {
+        return res.status(400).json({
+          success: false,
+          error: "No se proporcionó API Key de Lemon Squeezy."
+        });
+      }
+
+      const response = await fetch("https://api.lemonsqueezy.com/v1/users/me", {
+        headers: {
+          "Accept": "application/vnd.api+json",
+          "Authorization": `Bearer ${keyToTest}`
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const userName = data?.data?.attributes?.name || "Usuario de Lemon Squeezy";
+        const userEmail = data?.data?.attributes?.email || "";
+        return res.json({
+          success: true,
+          message: `¡Conexión exitosa con Lemon Squeezy! Autenticado como ${userName}${userEmail ? ` (${userEmail})` : ''}.`
+        });
+      }
+
+      const errData = await response.json().catch(() => ({}));
+      const errorMsg = errData?.errors?.[0]?.detail || `Error de autenticación HTTP ${response.status}. Revisa que tu API Key sea correcta.`;
+      return res.json({
+        success: false,
+        message: errorMsg
+      });
+    } catch (e: any) {
+      return res.status(500).json({
+        success: false,
+        message: e.message || "Error al conectar con Lemon Squeezy."
+      });
+    }
+  });
+
+  // Lemon Squeezy Webhook
+  app.post("/api/lemonsqueezy/webhook", async (req, res) => {
+    try {
+      const eventName = req.headers["x-event-name"] || req.body?.meta?.event_name;
+      console.log(`Lemon Squeezy Webhook received [${eventName}]:`, JSON.stringify(req.body));
+      return res.status(200).json({ received: true });
+    } catch (err: any) {
+      console.error("Error in /api/lemonsqueezy/webhook:", err);
       return res.status(200).json({ received: true });
     }
   });

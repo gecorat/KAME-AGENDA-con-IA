@@ -15,7 +15,8 @@ import {
   MedicalPrescription,
   MedicalCertificate,
   VoiceNote,
-  SaasTenantUser
+  SaasTenantUser,
+  SaasTransferSubmission
 } from '../types';
 
 export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
@@ -52,6 +53,39 @@ export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
   mercadopago_deposit_percent: 30,
   mercadopago_public_key: '',
   mercadopago_access_token: '',
+  // DLocal Go Defaults
+  dlocal_go_api_key: '',
+  dlocal_go_secret_key: '',
+  dlocal_go_enabled: true,
+  // Lemon Squeezy Defaults
+  lemonsqueezy_api_key: '',
+  lemonsqueezy_store_id: '',
+  lemonsqueezy_variant_id_basic: '',
+  lemonsqueezy_variant_id_pro: '',
+  lemonsqueezy_webhook_secret: '',
+  lemonsqueezy_enabled: true,
+  // Superadmin SaaS Bank Details (Transferencia Bancaria para el SaaS)
+  saas_bank_alias: 'agenfacil.saas.mp',
+  saas_bank_cbu_cvu: '0000003100098765432100',
+  saas_bank_account_holder: 'Gonzalo Corat',
+  saas_bank_name: 'Mercado Pago / Banco Galicia',
+  saas_bank_cuit: '20-38491029-4',
+  saas_bank_whatsapp_proof: '+54 9 11 5000-0000',
+  saas_bank_instructions: 'Una vez transferido, ingresa el número de referencia aquí o envíanos el comprobante por WhatsApp para activación inmediata.',
+  saas_bank_enabled: true,
+  // SaaS Payment Methods Priority & Active status
+  saas_method_mercadopago_enabled: true,
+  saas_method_lemonsqueezy_enabled: true,
+  saas_method_dlocal_enabled: true,
+  saas_method_transfer_enabled: true,
+  saas_primary_payment_method: 'mercadopago',
+  saas_methods_priority: ['mercadopago', 'transfer', 'lemonsqueezy', 'dlocal_go'],
+  // Migration notice defaults (para no interrumpir clientes existentes)
+  saas_migration_notice_enabled: false,
+  saas_migration_notice_title: 'Actualización en tu medio de pago',
+  saas_migration_notice_message: 'Tu suscripción actual sigue 100% activa. Para tu próxima renovación, te invitamos a asociar tu tarjeta o medio preferido en el nuevo canal habilitado.',
+  saas_migration_notice_target_method: 'mercadopago',
+  saas_migration_affected_methods: ['dlocal_go'],
   // Professional patient deposit settings (no technical API knowledge required)
   patient_deposit_enabled: true,
   patient_deposit_percent: 30,
@@ -983,6 +1017,45 @@ export const DEMO_SAAS_TENANTS: SaasTenantUser[] = [
     total_paid_ars: 0,
     appointments_count: 36,
     whatsapp_status: 'connected'
+  }
+];
+
+export const DEMO_SAAS_TRANSFERS: SaasTransferSubmission[] = [
+  {
+    id: 'trans-demo-1',
+    tenant_id: 'tenant-9',
+    doctor_name: 'Lic. Gabriel Montero',
+    practice_name: 'Centro Kinesiológico Belgrano',
+    email: 'gabriel.montero.kine@gmail.com',
+    phone: '+54 9 11 3322-8811',
+    plan: 'pro',
+    billing_cycle: 'monthly',
+    amount: 49000,
+    currency: 'ARS',
+    reference_number: 'OP-78942105',
+    transfer_date: new Date().toISOString().split('T')[0],
+    notes: 'Transferencia realizada desde cuenta Banco Santander a alias agenfacil.saas.mp',
+    status: 'pending',
+    created_at: new Date(Date.now() - 3600000 * 2).toISOString()
+  },
+  {
+    id: 'trans-demo-2',
+    tenant_id: 'tenant-7',
+    doctor_name: 'Dra. Luciana Benítez',
+    practice_name: 'Ginecología Integral Madero',
+    email: 'lucianabenitez.gineco@gmail.com',
+    phone: '+54 9 11 9900-4455',
+    plan: 'pro',
+    billing_cycle: 'annual',
+    amount: 499000,
+    currency: 'ARS',
+    reference_number: 'TRF-BBVA-901844',
+    transfer_date: '2026-04-03',
+    notes: 'Pago anual Plan Pro AI verificado y confirmado',
+    status: 'approved',
+    created_at: '2026-04-03T14:30:00Z',
+    reviewed_at: '2026-04-03T15:10:00Z',
+    reviewed_by: 'Gonzalo Corat'
   }
 ];
 

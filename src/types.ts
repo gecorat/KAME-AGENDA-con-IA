@@ -156,6 +156,48 @@ export interface PracticeSettings {
   mercadopago_webhook_secret?: string;
   mercadopago_deposit_enabled?: boolean;
   mercadopago_deposit_percent?: number;
+  // DLocal Go (Checkout Pro Latam & Global)
+  dlocal_go_api_key?: string;
+  dlocal_go_secret_key?: string;
+  dlocal_go_enabled?: boolean;
+  // Lemon Squeezy (Checkout SaaS Global MoR)
+  lemonsqueezy_api_key?: string;
+  lemonsqueezy_store_id?: string;
+  lemonsqueezy_variant_id_basic?: string;
+  lemonsqueezy_variant_id_pro?: string;
+  lemonsqueezy_webhook_secret?: string;
+  lemonsqueezy_checkout_url_basic?: string;
+  lemonsqueezy_checkout_url_pro?: string;
+  lemonsqueezy_enabled?: boolean;
+  // Superadmin SaaS Bank Transfer details (Para cobrar las suscripciones a los profesionales)
+  saas_bank_alias?: string;
+  saas_bank_cbu_cvu?: string;
+  saas_bank_account_holder?: string;
+  saas_bank_name?: string;
+  saas_bank_cuit?: string;
+  saas_bank_whatsapp_proof?: string;
+  saas_bank_instructions?: string;
+  saas_bank_enabled?: boolean;
+  // Superadmin SaaS Payment Gateway Rules & Priority Order
+  saas_method_mercadopago_enabled?: boolean;
+  saas_method_lemonsqueezy_enabled?: boolean;
+  saas_method_dlocal_enabled?: boolean;
+  saas_method_transfer_enabled?: boolean;
+  saas_primary_payment_method?: 'mercadopago' | 'lemonsqueezy' | 'dlocal_go' | 'transfer' | 'dlocalgo' | 'transferencia';
+  saas_methods_priority?: ('mercadopago' | 'lemonsqueezy' | 'dlocal_go' | 'transfer')[];
+  saas_payment_methods_priority?: string[];
+  saas_enabled_payment_methods?: string[];
+  // Migration notice for existing subscribers if a payment method is deprecated or changed
+  saas_migration_notice_enabled?: boolean;
+  saas_migration_notice_active?: boolean;
+  saas_migration_notice_title?: string;
+  saas_migration_notice_message?: string;
+  saas_migration_notice_text?: string;
+  saas_migration_notice_target_method?: 'mercadopago' | 'lemonsqueezy' | 'dlocal_go' | 'transfer';
+  saas_migration_target_method?: string;
+  saas_migration_affected_methods?: ('mercadopago' | 'lemonsqueezy' | 'dlocal_go' | 'transfer')[];
+  saas_migration_deadline?: string;
+  saas_migration_last_sent_at?: string;
   // Professional's deposit payment setup for their patients (No API keys needed for doctors)
   patient_deposit_enabled?: boolean;
   patient_deposit_type?: 'percent' | 'fixed';
@@ -207,11 +249,12 @@ export interface PracticeSettings {
 
 export interface AppNotification {
   id: string;
-  type: 'bot_booking' | 'patient_confirm' | 'public_booking' | 'test';
+  type: 'bot_booking' | 'patient_confirm' | 'public_booking' | 'payment' | 'subscription' | 'test';
   title: string;
   message: string;
   appointment_id?: string;
-  patient_name: string;
+  patient_name?: string;
+  doctor_name?: string;
   service_name?: string;
   datetime?: string;
   created_at: string;
@@ -230,7 +273,7 @@ export interface SaasTenantUser {
   subscription_started_at?: string;
   next_billing_date?: string;
   amount_monthly_ars?: number;
-  payment_method?: 'mercadopago' | 'transfer';
+  payment_method?: 'mercadopago' | 'lemonsqueezy' | 'dlocal_go' | 'transfer';
   last_payment_date?: string;
   last_payment_amount?: number;
   total_paid_ars?: number;
@@ -241,8 +284,31 @@ export interface SaasTenantUser {
   trial_active?: boolean;
   is_permanent?: boolean;
   access_expires_at?: string | null;
+  last_reminder_sent_at?: string;
   created_at?: string;
   last_active_at?: string;
+}
+
+export interface SaasTransferSubmission {
+  id: string;
+  tenant_id: string;
+  doctor_name: string;
+  practice_name: string;
+  email: string;
+  phone?: string;
+  plan: 'basic' | 'pro';
+  billing_cycle: 'monthly' | 'annual';
+  amount: number;
+  currency: 'ARS' | 'USD';
+  reference_number: string;
+  transfer_date: string;
+  notes?: string;
+  proof_file_url?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason?: string;
+  created_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
 }
 
 export type UserRole = 'superadmin' | 'professional' | 'assistant';
@@ -516,4 +582,43 @@ export interface ConsultationRecord {
   created_at: string;
   updated_at?: string;
 }
+
+export type SuggestionCategory = 'new_feature' | 'improvement' | 'integration' | 'bug' | 'other';
+export type SuggestionStatus = 'review' | 'planned' | 'in_progress' | 'completed' | 'declined';
+export type SuggestionPriority = 'low' | 'medium' | 'high' | 'critical';
+
+export interface AppSuggestion {
+  id: string;
+  user_id: string;
+  user_email: string;
+  user_name: string;
+  practice_name?: string;
+  title: string;
+  description: string;
+  category: SuggestionCategory;
+  priority: SuggestionPriority;
+  status: SuggestionStatus;
+  upvotes: number;
+  upvoted_by?: string[];
+  admin_reply?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export type ContactMessageStatus = 'pending' | 'read' | 'replied' | 'archived';
+
+export interface ContactMessage {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  subject: string;
+  message: string;
+  created_at: string;
+  status: ContactMessageStatus;
+  human_verified: boolean;
+  notes?: string;
+  source?: string;
+}
+
 

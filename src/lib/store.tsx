@@ -22,7 +22,14 @@ import {
   UserSession,
   UserRole,
   SaasTenantUser,
-  AppNotification
+  SaasTransferSubmission,
+  AppNotification,
+  AppSuggestion,
+  SuggestionCategory,
+  SuggestionPriority,
+  SuggestionStatus,
+  ContactMessage,
+  ContactMessageStatus
 } from '../types';
 import {
   isNotificationSupported,
@@ -46,7 +53,8 @@ import {
   INITIAL_CASH_REGISTER,
   INITIAL_CASH_MOVEMENTS,
   INITIAL_CONSULTATIONS,
-  DEMO_SAAS_TENANTS
+  DEMO_SAAS_TENANTS,
+  DEMO_SAAS_TRANSFERS
 } from './demo-data';
 import {
   saveAppointmentToFirestore,
@@ -76,6 +84,17 @@ import {
   subscribeToPayments,
   subscribeToConsultations,
   subscribeToWaitlist,
+  subscribeToSaasTransfers,
+  saveSaasTransferToFirestore,
+  updateSaasTransferInFirestore,
+  subscribeToSuggestions,
+  saveSuggestionToFirestore,
+  updateSuggestionInFirestore,
+  deleteSuggestionFromFirestore,
+  subscribeToContactMessages,
+  saveContactMessageToFirestore,
+  updateContactMessageInFirestore,
+  deleteContactMessageFromFirestore,
   auth,
   googleProvider,
   signInWithPopup,
@@ -174,6 +193,11 @@ interface AgendaStoreContextType {
   deleteSaasTenant: (id: string) => Promise<boolean>;
   extendUserTrial: (id: string, daysToAdd: number) => Promise<boolean>;
   grantUserPlan: (id: string, plan: 'basic' | 'pro', isPermanent: boolean, days?: number) => Promise<boolean>;
+  saasTransfers: SaasTransferSubmission[];
+  submitSaasTransfer: (data: Omit<SaasTransferSubmission, 'id' | 'status' | 'created_at'>) => Promise<SaasTransferSubmission>;
+  approveSaasTransfer: (id: string, customDays?: number) => Promise<boolean>;
+  rejectSaasTransfer: (id: string, reason?: string) => Promise<boolean>;
+  recordTenantReminderSent: (tenantId: string) => Promise<void>;
 
   // Browser & App Notifications
   notifications: AppNotification[];
@@ -189,7 +213,7 @@ interface AgendaStoreContextType {
   clearReadNotifications: () => void;
   clearNotifications: () => void;
   dismissToastNotification: () => void;
-  triggerNotification: (notif: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => void;
+  triggerNotification: (notif: Omit<AppNotification, 'id' | 'created_at' | 'read'> & { force?: boolean }) => void;
 
   // Example / Demo data management
   hasExampleData: boolean;
@@ -198,6 +222,33 @@ interface AgendaStoreContextType {
   deleteReminderLog: (logId: string) => void;
   clearAllReminderLogs: () => void;
   clearAllPendingAppointments: () => void;
+
+  // App Suggestions and Community Improvements
+  suggestions: AppSuggestion[];
+  addSuggestion: (data: {
+    title: string;
+    description: string;
+    category: SuggestionCategory;
+    priority: SuggestionPriority;
+  }) => Promise<string>;
+  upvoteSuggestion: (suggestionId: string) => Promise<void>;
+  updateSuggestionStatus: (suggestionId: string, status: SuggestionStatus, adminReply?: string) => Promise<void>;
+  deleteSuggestion: (suggestionId: string) => Promise<void>;
+
+  // Public Contact Messages (Landing Page & Prospective clients)
+  contactMessages: ContactMessage[];
+  unreadContactMessagesCount: number;
+  addContactMessage: (data: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    subject: string;
+    message: string;
+    human_verified: boolean;
+  }) => Promise<string>;
+  updateContactMessageStatus: (id: string, status: ContactMessageStatus, notes?: string) => Promise<void>;
+  updateContactMessageNote: (id: string, notes: string) => Promise<void>;
+  deleteContactMessage: (id: string) => Promise<void>;
 
   // Utilities
   resetToDemoData: () => void;
@@ -332,8 +383,106 @@ const STORAGE_KEYS = {
   CASH_REGISTER: 'agendapro_cash_register_v1',
   CASH_MOVEMENTS: 'agendapro_cash_movements_v1',
   CONSULTATIONS: 'agendapro_consultations_v1',
-  NOTIFICATIONS: 'agendapro_notifications_v1'
+  NOTIFICATIONS: 'agendapro_notifications_v1',
+  SAAS_TRANSFERS: 'agendapro_saas_transfers_v1',
+  SUGGESTIONS: 'agendapro_suggestions_v1',
+  CONTACT_MESSAGES: 'agendapro_contact_messages_v1'
 };
+
+export const INITIAL_CONTACT_MESSAGES: ContactMessage[] = [
+  {
+    id: 'msg-demo-1',
+    name: 'Dra. Silvina Romero',
+    email: 'silvina.romero@consultoriosur.com.ar',
+    phone: '+54 9 351 688-2341',
+    subject: 'Dudas antes de contratar / Planes',
+    message: 'Hola! Somos un centro odontológico con 3 consultorios en Córdoba. Queríamos consultar si el plan PRO nos permite conectar un número central de WhatsApp para gestionar los turnos de todos los profesionales y configurar recordatorios automáticos.',
+    created_at: '2026-09-10T15:20:00.000Z',
+    status: 'pending',
+    human_verified: true,
+    notes: 'Clínica interesada en plan PRO anual para 3 odontólogos.',
+    source: 'contact_page'
+  },
+  {
+    id: 'msg-demo-2',
+    name: 'Lic. Marcos Dellacqua',
+    email: 'marcos.kine@gmail.com',
+    phone: '+54 9 11 4455-8910',
+    subject: 'Soporte sobre Pasarelas de Pago (DLocal Go / MP)',
+    message: 'Buenas tardes. Me interesa cobrar señas obligatorias del 30% antes de confirmar el turno de kinesiología. ¿Se puede configurar que el paciente pague por DLocal Go o Mercado Pago antes de que la agenda reserve el hueco horario?',
+    created_at: '2026-09-09T18:45:00.000Z',
+    status: 'replied',
+    human_verified: true,
+    notes: 'Respondido por email explicando la configuración de señas automáticas en Cobros.',
+    source: 'contact_page'
+  }
+];
+
+export const INITIAL_SUGGESTIONS: AppSuggestion[] = [
+  {
+    id: 'sug-1',
+    user_id: 'community-1',
+    user_email: 'dr.martinez@salud.ar',
+    user_name: 'Dr. Alejandro Martínez',
+    practice_name: 'Centro Médico Belgrano',
+    title: 'Facturación Electrónica AFIP automática',
+    description: 'Generar comprobante fiscal AFIP (Factura B / C) automáticamente al confirmar el pago o seña de un turno, con envío directo al paciente.',
+    category: 'integration',
+    priority: 'high',
+    status: 'planned',
+    upvotes: 24,
+    upvoted_by: [],
+    admin_reply: '¡Prioridad confirmada! Estamos integrando el Web Service de AFIP (WSFE) para emitir comprobantes directamente con un clic.',
+    created_at: '2026-08-20T14:30:00.000Z'
+  },
+  {
+    id: 'sug-2',
+    user_id: 'community-2',
+    user_email: 'valeria.kine@gmail.com',
+    user_name: 'Lic. Valeria Rossi',
+    practice_name: 'Kinesiología & Fisioterapia',
+    title: 'Sincronización con Google Calendar bidireccional',
+    description: 'Poder ver los turnos agendados en Agenfacil en el Google Calendar del celular y que bloquee horarios si agrego un evento personal.',
+    category: 'integration',
+    priority: 'high',
+    status: 'in_progress',
+    upvotes: 31,
+    upvoted_by: [],
+    admin_reply: 'En desarrollo activo mediante la integración oficial de Google Workspace Calendar OAuth.',
+    created_at: '2026-08-15T11:00:00.000Z'
+  },
+  {
+    id: 'sug-3',
+    user_id: 'community-3',
+    user_email: 'laura.dental@outlook.com',
+    user_name: 'Dra. Laura Gómez',
+    practice_name: 'OdontoSalud',
+    title: 'Odontograma interactivo en la Historia Clínica',
+    description: 'Tener una representación gráfica de las piezas dentales para marcar caries, arreglos, extracciones o implantes en cada consulta.',
+    category: 'new_feature',
+    priority: 'medium',
+    status: 'review',
+    upvotes: 18,
+    upvoted_by: [],
+    created_at: '2026-09-02T16:20:00.000Z'
+  },
+  {
+    id: 'sug-4',
+    user_id: 'community-4',
+    user_email: 'nutri.matias@gmail.com',
+    user_name: 'Lic. Matías Silva',
+    practice_name: 'Nutrición Deportiva',
+    title: 'Recordatorio por WhatsApp con botón de reprogramación automática',
+    description: 'Que el mensaje de WhatsApp le dé la opción al paciente de reprogramar el turno por sí mismo si no puede asistir, liberando el turno previo.',
+    category: 'improvement',
+    priority: 'high',
+    status: 'completed',
+    upvotes: 42,
+    upvoted_by: [],
+    admin_reply: '¡Ya implementado! El bot de WhatsApp ahora reconoce cancelaciones y ofrece los próximos huecos disponibles.',
+    created_at: '2026-07-28T09:15:00.000Z'
+  }
+];
 
 // Helper functions for normalization and deduplication
 export function normalizeText(str?: string): string {
@@ -918,7 +1067,337 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return await updateUserInFirestore(id, updates);
   };
 
-  // Sync to local storage
+  // SaaS Transfer Submissions for Bank Transfers
+  const [saasTransfers, setSaasTransfers] = useState<SaasTransferSubmission[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SAAS_TRANSFERS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return DEMO_SAAS_TRANSFERS;
+    } catch {
+      return DEMO_SAAS_TRANSFERS;
+    }
+  });
+
+  useEffect(() => {
+    const unsub = subscribeToSaasTransfers((remoteTransfers) => {
+      if (remoteTransfers && remoteTransfers.length > 0) {
+        setSaasTransfers(remoteTransfers);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.SAAS_TRANSFERS, JSON.stringify(saasTransfers));
+  }, [saasTransfers]);
+
+  const submitSaasTransfer = async (
+    data: Omit<SaasTransferSubmission, 'id' | 'status' | 'created_at'>
+  ): Promise<SaasTransferSubmission> => {
+    const newTransfer: SaasTransferSubmission = {
+      ...data,
+      id: `trans-${Date.now()}`,
+      status: 'pending',
+      created_at: new Date().toISOString()
+    };
+    setSaasTransfers(prev => [newTransfer, ...prev]);
+    await saveSaasTransferToFirestore(newTransfer);
+
+    triggerNotification({
+      title: 'Comprobante de Transferencia Recibido',
+      message: `${data.doctor_name} (${data.practice_name}) envió el comprobante por $${data.amount.toLocaleString('es-AR')} para el Plan ${data.plan.toUpperCase()}.`,
+      type: 'payment',
+      doctor_name: data.doctor_name
+    });
+
+    return newTransfer;
+  };
+
+  const approveSaasTransfer = async (id: string, customDays?: number): Promise<boolean> => {
+    const transfer = saasTransfers.find(t => t.id === id);
+    if (!transfer) return false;
+
+    const days = customDays || (transfer.billing_cycle === 'annual' ? 365 : 30);
+    const expiresAt = new Date(Date.now() + days * 86400000).toISOString();
+    const nextBilling = expiresAt.split('T')[0];
+
+    // Find and update tenant
+    const targetTenant = saasTenants.find(
+      t => t.id === transfer.tenant_id || t.email.toLowerCase() === transfer.email.toLowerCase()
+    );
+    if (targetTenant) {
+      const currentTotalPaid = targetTenant.total_paid_ars || 0;
+      const tenantUpdates: Partial<SaasTenantUser> = {
+        plan: transfer.plan,
+        status: 'active',
+        trial_active: false,
+        payment_method: 'transfer',
+        last_payment_date: new Date().toISOString(),
+        last_payment_amount: transfer.amount,
+        total_paid_ars: currentTotalPaid + transfer.amount,
+        next_billing_date: nextBilling,
+        access_expires_at: expiresAt,
+        amount_monthly_ars: transfer.plan === 'pro' ? 49000 : 29000
+      };
+      setSaasTenants(prev => prev.map(t => t.id === targetTenant.id ? { ...t, ...tenantUpdates } : t));
+      await updateUserInFirestore(targetTenant.id, tenantUpdates);
+    }
+
+    const transferUpdates: Partial<SaasTransferSubmission> = {
+      status: 'approved',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: currentUser?.name || 'Super Admin Gonzalo'
+    };
+
+    setSaasTransfers(prev => prev.map(t => t.id === id ? { ...t, ...transferUpdates } : t));
+    await updateSaasTransferInFirestore(id, transferUpdates);
+
+    // If current doctor user is the one subscribed, update their settings plan
+    if (
+      currentUser?.email?.toLowerCase() === transfer.email.toLowerCase() ||
+      practiceSettings.email?.toLowerCase() === transfer.email.toLowerCase()
+    ) {
+      updatePracticeSettings({
+        subscription_plan: transfer.plan,
+        trial_active: false
+      });
+    }
+
+    return true;
+  };
+
+  const rejectSaasTransfer = async (id: string, reason?: string): Promise<boolean> => {
+    const transfer = saasTransfers.find(t => t.id === id);
+    if (!transfer) return false;
+
+    const transferUpdates: Partial<SaasTransferSubmission> = {
+      status: 'rejected',
+      rejection_reason: reason || 'Comprobante no legible o monto no coincidente con el plan',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: currentUser?.name || 'Super Admin Gonzalo'
+    };
+
+    setSaasTransfers(prev => prev.map(t => t.id === id ? { ...t, ...transferUpdates } : t));
+    await updateSaasTransferInFirestore(id, transferUpdates);
+    return true;
+  };
+
+  const recordTenantReminderSent = async (tenantId: string): Promise<void> => {
+    const updates: Partial<SaasTenantUser> = {
+      last_reminder_sent_at: new Date().toISOString()
+    };
+    setSaasTenants(prev => prev.map(t => t.id === tenantId ? { ...t, ...updates } : t));
+    await updateUserInFirestore(tenantId, updates);
+  };
+
+  // App Suggestions and Community Improvements
+  const [suggestions, setSuggestions] = useState<AppSuggestion[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SUGGESTIONS);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_SUGGESTIONS;
+    } catch {
+      return INITIAL_SUGGESTIONS;
+    }
+  });
+
+  useEffect(() => {
+    const unsub = subscribeToSuggestions((remote) => {
+      if (remote && remote.length > 0) {
+        setSuggestions(prev => {
+          const map = new Map<string, AppSuggestion>();
+          INITIAL_SUGGESTIONS.forEach(s => map.set(s.id, s));
+          prev.forEach(s => map.set(s.id, s));
+          remote.forEach(s => map.set(s.id, s));
+          return Array.from(map.values()).sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUGGESTIONS, JSON.stringify(suggestions));
+    } catch {}
+  }, [suggestions]);
+
+  const addSuggestion = async (data: {
+    title: string;
+    description: string;
+    category: SuggestionCategory;
+    priority: SuggestionPriority;
+  }): Promise<string> => {
+    const id = `sug-${Date.now()}`;
+    const newSug: AppSuggestion = {
+      id,
+      user_id: currentUser?.uid || 'user-anon',
+      user_email: currentUser?.email || practiceSettings.email || 'usuario@agenfacil.app',
+      user_name: currentUser?.name || practiceSettings.professional_name || 'Profesional',
+      practice_name: practiceSettings.practice_name || 'Consultorio',
+      title: data.title.trim(),
+      description: data.description.trim(),
+      category: data.category,
+      priority: data.priority,
+      status: 'review',
+      upvotes: 1,
+      upvoted_by: [currentUser?.email || currentUser?.uid || 'me'],
+      created_at: new Date().toISOString()
+    };
+
+    setSuggestions(prev => [newSug, ...prev]);
+    await saveSuggestionToFirestore(newSug);
+
+    triggerNotification({
+      title: '💡 ¡Sugerencia recibida!',
+      message: `Tu idea "${data.title}" ha sido registrada exitosamente. ¡Gracias por ayudarnos a mejorar!`,
+      type: 'test'
+    });
+
+    return id;
+  };
+
+  const upvoteSuggestion = async (suggestionId: string): Promise<void> => {
+    const userIdentifier = currentUser?.email || currentUser?.uid || 'guest';
+    const found = suggestions.find(s => s.id === suggestionId);
+    if (!found) return;
+
+    const currentVoters = found.upvoted_by || [];
+    const alreadyVoted = currentVoters.includes(userIdentifier);
+    const newUpvotedBy = alreadyVoted
+      ? currentVoters.filter(u => u !== userIdentifier)
+      : [...currentVoters, userIdentifier];
+    const newUpvotes = alreadyVoted ? Math.max(0, (found.upvotes || 1) - 1) : (found.upvotes || 0) + 1;
+
+    const updates = {
+      upvotes: newUpvotes,
+      upvoted_by: newUpvotedBy
+    };
+
+    setSuggestions(prev => prev.map(s => s.id === suggestionId ? { ...s, ...updates } : s));
+    await updateSuggestionInFirestore(suggestionId, updates);
+  };
+
+  const updateSuggestionStatus = async (
+    suggestionId: string,
+    status: SuggestionStatus,
+    adminReply?: string
+  ): Promise<void> => {
+    const updates: Partial<AppSuggestion> = {
+      status,
+      ...(adminReply !== undefined ? { admin_reply: adminReply } : {}),
+      updated_at: new Date().toISOString()
+    };
+
+    setSuggestions(prev => prev.map(s => s.id === suggestionId ? { ...s, ...updates } : s));
+    await updateSuggestionInFirestore(suggestionId, updates);
+  };
+
+  const deleteSuggestion = async (suggestionId: string): Promise<void> => {
+    setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
+    await deleteSuggestionFromFirestore(suggestionId);
+  };
+
+  // Public Contact Messages (Landing Page & Prospective clients)
+  const [contactMessages, setContactMessages] = useState<ContactMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.CONTACT_MESSAGES);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return INITIAL_CONTACT_MESSAGES;
+    } catch {
+      return INITIAL_CONTACT_MESSAGES;
+    }
+  });
+
+  useEffect(() => {
+    const unsub = subscribeToContactMessages((remote) => {
+      if (remote && remote.length > 0) {
+        setContactMessages(prev => {
+          const map = new Map<string, ContactMessage>();
+          INITIAL_CONTACT_MESSAGES.forEach(m => map.set(m.id, m));
+          prev.forEach(m => map.set(m.id, m));
+          remote.forEach(m => map.set(m.id, m));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
+        });
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.CONTACT_MESSAGES, JSON.stringify(contactMessages));
+    } catch {}
+  }, [contactMessages]);
+
+  const addContactMessage = async (data: {
+    name: string;
+    email: string;
+    phone?: string | null;
+    subject: string;
+    message: string;
+    human_verified: boolean;
+  }): Promise<string> => {
+    const id = `msg-${Date.now()}`;
+    const newMsg: ContactMessage = {
+      id,
+      name: data.name.trim(),
+      email: data.email.trim().toLowerCase(),
+      phone: data.phone?.trim() || null,
+      subject: data.subject.trim() || 'Consulta general',
+      message: data.message.trim(),
+      created_at: new Date().toISOString(),
+      status: 'pending',
+      human_verified: data.human_verified,
+      source: 'contact_page'
+    };
+
+    setContactMessages(prev => [newMsg, ...prev]);
+    await saveContactMessageToFirestore(newMsg);
+
+    triggerNotification({
+      title: '📩 Nuevo mensaje de contacto web',
+      message: `De ${newMsg.name} (${newMsg.email}): "${newMsg.subject}"`,
+      type: 'test'
+    });
+
+    return id;
+  };
+
+  const updateContactMessageStatus = async (
+    id: string,
+    status: ContactMessageStatus,
+    notes?: string
+  ): Promise<void> => {
+    const updates: Partial<ContactMessage> = {
+      status,
+      ...(notes !== undefined ? { notes } : {})
+    };
+    setContactMessages(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+    await updateContactMessageInFirestore(id, updates);
+  };
+
+  const updateContactMessageNote = async (id: string, notes: string): Promise<void> => {
+    setContactMessages(prev => prev.map(m => m.id === id ? { ...m, notes } : m));
+    await updateContactMessageInFirestore(id, { notes });
+  };
+
+  const deleteContactMessage = async (id: string): Promise<void> => {
+    setContactMessages(prev => prev.filter(m => m.id !== id));
+    await deleteContactMessageFromFirestore(id);
+  };
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(practiceSettings));
   }, [practiceSettings]);
@@ -995,22 +1474,26 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   // Dispatch browser desktop + in-app notification
-  const triggerNotification = (notifData: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => {
-    // Deduplicate: check if notification with same appointment_id and type already exists in state
-    if (notifData.appointment_id) {
-      const alreadyExists = notifications.some(
-        n => n.appointment_id === notifData.appointment_id && n.type === notifData.type
-      );
-      if (alreadyExists) return;
-    } else {
-      const alreadyExists = notifications.some(
-        n => n.title === notifData.title && n.message === notifData.message && (Date.now() - new Date(n.created_at).getTime() < 1000 * 60 * 10)
-      );
-      if (alreadyExists) return;
+  const triggerNotification = (notifData: Omit<AppNotification, 'id' | 'created_at' | 'read'> & { force?: boolean }) => {
+    const { force, ...cleanNotifData } = notifData;
+
+    if (!force && cleanNotifData.type !== 'test') {
+      // Deduplicate: check if notification with same appointment_id and type already exists in state
+      if (cleanNotifData.appointment_id) {
+        const alreadyExists = notifications.some(
+          n => n.appointment_id === cleanNotifData.appointment_id && n.type === cleanNotifData.type
+        );
+        if (alreadyExists) return;
+      } else {
+        const alreadyExists = notifications.some(
+          n => n.title === cleanNotifData.title && n.message === cleanNotifData.message && (Date.now() - new Date(n.created_at).getTime() < 1000 * 60 * 10)
+        );
+        if (alreadyExists) return;
+      }
     }
 
     const newNotif: AppNotification = {
-      ...notifData,
+      ...cleanNotifData,
       id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       created_at: new Date().toISOString(),
       read: false
@@ -2232,6 +2715,24 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       deleteSaasTenant,
       extendUserTrial,
       grantUserPlan,
+      saasTransfers,
+      submitSaasTransfer,
+      approveSaasTransfer,
+      rejectSaasTransfer,
+      recordTenantReminderSent,
+      // Suggestions
+      suggestions,
+      addSuggestion,
+      upvoteSuggestion,
+      updateSuggestionStatus,
+      deleteSuggestion,
+      // Contact Messages
+      contactMessages,
+      unreadContactMessagesCount: contactMessages.filter(m => m.status === 'pending').length,
+      addContactMessage,
+      updateContactMessageStatus,
+      updateContactMessageNote,
+      deleteContactMessage,
       // Notifications
       notifications,
       unreadNotificationsCount: notifications.filter(n => !n.read).length,

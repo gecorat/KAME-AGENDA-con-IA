@@ -30,11 +30,15 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
+import { LandingFooter } from '../components/landing/LandingFooter';
 
 interface LandingPageViewProps {
   onEnterApp: () => void;
   onOpenPortal: () => void;
   onOpenAuth?: (mode: 'login' | 'register') => void;
+  onOpenContact?: () => void;
+  onOpenTerms?: () => void;
+  onOpenPrivacy?: () => void;
 }
 
 interface ChatScenario {
@@ -51,7 +55,14 @@ interface ChatScenario {
   }>;
 }
 
-export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, onOpenPortal, onOpenAuth }) => {
+export const LandingPageView: React.FC<LandingPageViewProps> = ({
+  onEnterApp,
+  onOpenPortal,
+  onOpenAuth,
+  onOpenContact,
+  onOpenTerms,
+  onOpenPrivacy
+}) => {
   const [activeFaq, setActiveFaq] = useState<number | null>(0);
   const [showTrialModal, setShowTrialModal] = useState(false);
   const [trialEmail, setTrialEmail] = useState('');
@@ -873,28 +884,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, on
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer className="border-t border-neutral-200 py-10 px-4 sm:px-6 text-xs text-neutral-500 bg-white">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-lg bg-neutral-950 text-white flex items-center justify-center font-bold text-xs">
-              AF
-            </div>
-            <span className="font-bold text-neutral-950">Agenfacil</span>
-            <span>• Automatización Médica Inteligente</span>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <button onClick={onOpenPortal} className="hover:text-neutral-950 transition cursor-pointer">
-              Portal Pacientes
-            </button>
-            <button onClick={onEnterApp} className="hover:text-neutral-950 transition cursor-pointer">
-              Panel de Control
-            </button>
-            <span>© {new Date().getFullYear()} Agenfacil. Hecho con orgullo en Argentina.</span>
-          </div>
-        </div>
-      </footer>
+      {/* PRE-FOOTER AND DARK FOOTER */}
+      <LandingFooter
+        onOpenContact={onOpenContact}
+        onOpenTerms={onOpenTerms}
+        onOpenPrivacy={onOpenPrivacy}
+        onOpenPortal={onOpenPortal}
+        onOpenLogin={handleOpenLogin}
+      />
 
       {/* PERSUASIVE TRIAL SIGNUP / ONBOARDING MODAL */}
       {showTrialModal && (

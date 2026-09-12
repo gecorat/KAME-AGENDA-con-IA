@@ -21,7 +21,12 @@ import { OnboardingGuideView } from './views/OnboardingGuideView';
 import { PublicPageEditorView } from './views/PublicPageEditorView';
 import { SuperAdminAnalyticsView } from './views/SuperAdminAnalyticsView';
 import { SuperAdminApisView } from './views/SuperAdminApisView';
+import { SuperAdminMessagesView } from './views/SuperAdminMessagesView';
+import { SuggestionsView } from './views/SuggestionsView';
 import { LandingPageView } from './views/LandingPageView';
+import { ContactView } from './views/ContactView';
+import { TermsView } from './views/TermsView';
+import { PrivacyView } from './views/PrivacyView';
 import { AuthModal } from './components/AuthModal';
 import { ProFeatureGate } from './components/ProFeatureGate';
 import { AppointmentModal } from './components/AppointmentModal';
@@ -29,6 +34,7 @@ import { PatientModal } from './components/PatientModal';
 import { ServiceModal } from './components/ServiceModal';
 import { WaitlistModal } from './components/WaitlistModal';
 import { ConsultationModal } from './components/ConsultationModal';
+import { DoctorCopilot } from './components/DoctorCopilot';
 import { Appointment, Patient, Service, WaitlistEntry, ConsultationRecord } from './types';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
@@ -37,32 +43,77 @@ function MainApp() {
     patients,
     appointments,
     addPatient,
+    updateAppointment,
+    addPayment,
     updateWaitlistEntry,
     confirmAppointmentByPatient,
     currentUser,
-    practiceSettings
+    practiceSettings,
+    updatePracticeSettings,
+    triggerNotification
   } = useAgendaStore();
 
-  // Default entry point is the landing page for unauthenticated visitors or direct visits
-  const [activeTab, setActiveTab] = useState<string>('landing');
-  const [tabHistory, setTabHistory] = useState<string[]>(['landing']);
+  const VALID_TABS = [
+    'guia', 'dashboard', 'agenda', 'pacientes', 'consultas', 'chats', 'asistente',
+    'espera', 'recordatorios', 'cobros', 'servicios', 'horarios', 'metricas',
+    'suscripcion', 'google-sync', 'editor-pagina', 'sugerencias', 'configuracion',
+    'superadmin-analytics', 'superadmin-apis', 'apis', 'superadmin-mensajes', 'mensajes'
+  ];
+
+  const PUBLIC_TABS = ['landing', 'portal', 'contacto', 'terminos', 'privacidad'];
+
+  // Default entry point is derived from current URL (supporting /contacto, /terminos, /privacidad, etc.)
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const path = window.location.pathname.toLowerCase().replace(/\/$/, '');
+      const hash = window.location.hash.toLowerCase().replace('#', '');
+      if (path === '/contacto' || hash === 'contacto') return 'contacto';
+      if (path === '/terminos' || hash === 'terminos') return 'terminos';
+      if (path === '/privacidad' || hash === 'privacidad') return 'privacidad';
+      if (path === '/portal' || path.startsWith('/u/') || hash === 'portal') return 'portal';
+      const cleanPath = path.replace('/', '');
+      if (VALID_TABS.includes(cleanPath)) return cleanPath;
+      if (VALID_TABS.includes(hash)) return hash;
+    }
+    return 'landing';
+  });
+  const [tabHistory, setTabHistory] = useState<string[]>([activeTab]);
 
   // Auth modal states
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [pendingProtectedTab, setPendingProtectedTab] = useState<string | null>(null);
 
-  const VALID_TABS = [
-    'guia', 'dashboard', 'agenda', 'pacientes', 'consultas', 'chats', 'asistente',
-    'espera', 'recordatorios', 'cobros', 'servicios', 'horarios', 'metricas',
-    'suscripcion', 'google-sync', 'editor-pagina', 'configuracion', 'superadmin-analytics', 'superadmin-apis'
-  ];
-
-  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
-  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
+  const isGonzalo = !currentUser || currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+  const isSuperAdmin = isGonzalo || currentUser?.role === 'superadmin' || Boolean(currentUser?.isSuperAdmin);
   const isBasicPlan = practiceSettings.subscription_plan === 'basic' && !isSuperAdmin;
   const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
   const trialExpired = isTrial && (practiceSettings.trial_days_left ?? 0) <= 0 && !practiceSettings.is_permanent;
+
+  // Handle browser popstate (back/forward navigation)
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const path = window.location.pathname.toLowerCase().replace(/\/$/, '');
+      const hash = window.location.hash.toLowerCase().replace('#', '');
+      if (path === '/contacto' || hash === 'contacto') {
+        setActiveTab('contacto');
+      } else if (path === '/terminos' || hash === 'terminos') {
+        setActiveTab('terminos');
+      } else if (path === '/privacidad' || hash === 'privacidad') {
+        setActiveTab('privacidad');
+      } else if (path === '/portal' || path.startsWith('/u/') || hash === 'portal') {
+        setActiveTab('portal');
+      } else if (path === '' || path === '/') {
+        setActiveTab('landing');
+      } else {
+        const clean = path.replace('/', '');
+        if (VALID_TABS.includes(clean)) setActiveTab(clean);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Synchronize browser URL bar cleanly
   const syncBrowserUrl = (tab: string) => {
@@ -72,6 +123,12 @@ function MainApp() {
       targetPath = `/u/${practiceSettings.handle || 'consultorio-medico'}`;
     } else if (tab === 'landing') {
       targetPath = '/';
+    } else if (tab === 'contacto') {
+      targetPath = '/contacto';
+    } else if (tab === 'terminos') {
+      targetPath = '/terminos';
+    } else if (tab === 'privacidad') {
+      targetPath = '/privacidad';
     } else if (VALID_TABS.includes(tab)) {
       targetPath = `/${tab}`;
     }
@@ -81,8 +138,16 @@ function MainApp() {
   };
 
   const handleSelectTab = (tab: string) => {
+    // Normalise 'apis' to 'superadmin-apis'
+    if (tab === 'apis') {
+      tab = 'superadmin-apis';
+    }
+    if (tab === 'mensajes') {
+      tab = 'superadmin-mensajes';
+    }
+
     // Superadmin tabs are strictly protected
-    if ((tab === 'superadmin-analytics' || tab === 'superadmin-apis') && !isSuperAdmin) {
+    if ((tab === 'superadmin-analytics' || tab === 'superadmin-mensajes') && !isSuperAdmin) {
       tab = 'dashboard';
     }
 
@@ -91,8 +156,8 @@ function MainApp() {
       tab = 'dashboard';
     }
 
-    // Public routes that don't need authentication
-    if (tab === 'landing' || tab === 'portal') {
+    // Public routes that don't need authentication (landing, portal, contacto, terminos, privacidad)
+    if (PUBLIC_TABS.includes(tab)) {
       setTabHistory(prev => (prev[prev.length - 1] === tab ? prev : [...prev, tab]));
       setActiveTab(tab);
       syncBrowserUrl(tab);
@@ -117,7 +182,7 @@ function MainApp() {
 
   const handleAuthSuccess = () => {
     const destination = pendingProtectedTab || 'dashboard';
-    const finalDest = ((destination === 'superadmin-analytics' || destination === 'superadmin-apis') && !isSuperAdmin) ? 'dashboard' : destination;
+    const finalDest = (destination === 'superadmin-analytics' && !isSuperAdmin) ? 'dashboard' : destination;
     setPendingProtectedTab(null);
     setTabHistory(prev => [...prev, finalDest]);
     setActiveTab(finalDest);
@@ -215,6 +280,59 @@ function MainApp() {
       confirmAppointmentByPatient(confirmAptId);
       alert('¡Turno confirmado con éxito por el paciente!');
       window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // Mercado Pago appointment payment return (query or hash)
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const isMpApproved = search.includes('status=approved') || search.includes('collection_status=approved') || hash.includes('payment-success');
+    const mpAptId = params.get('apt') || params.get('external_reference') || (hash.includes('apt=') ? new URLSearchParams(hash.split('?')[1]).get('apt') : null);
+
+    if (isMpApproved && mpAptId) {
+      const apt = appointments.find(a => a.id === mpAptId);
+      updateAppointment(mpAptId, {
+        payment_status: 'paid',
+        payment_method: 'mercadopago'
+      });
+      if (apt) {
+        addPayment({
+          patient_id: apt.patient_id,
+          patient_name: apt.patient_name,
+          appointment_id: apt.id,
+          concept: apt.service_name || 'Consulta Médica',
+          amount: apt.price || 0,
+          method: 'mercadopago',
+          notes: 'Pago registrado automáticamente vía retorno dinámico de Mercado Pago'
+        });
+      }
+      triggerNotification({
+        title: '¡Pago Confirmado por Mercado Pago!',
+        message: `El cobro del turno de ${apt ? apt.patient_name : 'paciente'} se ha registrado como PAGADO exitosamente.`,
+        type: 'payment',
+        action_url: '#turnos'
+      });
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // DLocal Go subscription payment return (query or hash)
+    const isDlocalPaid = search.includes('dlocal_status=PAID') || hash.includes('dlocal-success');
+    if (isDlocalPaid) {
+      const dlocalParams = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : search);
+      const plan = (dlocalParams.get('plan') as any) || 'pro';
+      const cycle = (dlocalParams.get('cycle') as any) || 'monthly';
+      updatePracticeSettings({
+        subscription_plan: plan,
+        subscription_billing_cycle: cycle,
+        trial_active: false
+      });
+      setActiveTab('suscripcion');
+      triggerNotification({
+        title: '¡Plan Activado con DLocal Go!',
+        message: `Tu suscripción al ${plan === 'pro' ? 'Plan Pro AI' : 'Plan Esencial'} ha sido confirmada y activada exitosamente.`,
+        type: 'payment',
+        action_url: '#suscripcion'
+      });
+      window.history.replaceState({}, document.title, window.location.pathname + '#suscripcion');
     }
 
     const handlePopState = () => {
@@ -347,6 +465,93 @@ function MainApp() {
     setAptModalOpen(true);
   };
 
+  // If viewing standalone contact page
+  if (activeTab === 'contacto') {
+    return (
+      <>
+        <ContactView
+          onBackToLanding={() => handleSelectTab('landing')}
+          onOpenTerms={() => handleSelectTab('terminos')}
+          onOpenPrivacy={() => handleSelectTab('privacidad')}
+          onOpenPortal={() => handleSelectTab('portal')}
+          onOpenLogin={() => {
+            if (currentUser) {
+              handleSelectTab('dashboard');
+            } else {
+              setPendingProtectedTab('dashboard');
+              setAuthModalMode('login');
+              setAuthModalOpen(true);
+            }
+          }}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
+        />
+      </>
+    );
+  }
+
+  // If viewing standalone terms & conditions page
+  if (activeTab === 'terminos') {
+    return (
+      <>
+        <TermsView
+          onBackToLanding={() => handleSelectTab('landing')}
+          onOpenContact={() => handleSelectTab('contacto')}
+          onOpenPrivacy={() => handleSelectTab('privacidad')}
+          onOpenPortal={() => handleSelectTab('portal')}
+          onOpenLogin={() => {
+            if (currentUser) {
+              handleSelectTab('dashboard');
+            } else {
+              setPendingProtectedTab('dashboard');
+              setAuthModalMode('login');
+              setAuthModalOpen(true);
+            }
+          }}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
+        />
+      </>
+    );
+  }
+
+  // If viewing standalone privacy policy page
+  if (activeTab === 'privacidad') {
+    return (
+      <>
+        <PrivacyView
+          onBackToLanding={() => handleSelectTab('landing')}
+          onOpenContact={() => handleSelectTab('contacto')}
+          onOpenTerms={() => handleSelectTab('terminos')}
+          onOpenPortal={() => handleSelectTab('portal')}
+          onOpenLogin={() => {
+            if (currentUser) {
+              handleSelectTab('dashboard');
+            } else {
+              setPendingProtectedTab('dashboard');
+              setAuthModalMode('login');
+              setAuthModalOpen(true);
+            }
+          }}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => setAuthModalOpen(false)}
+          initialMode={authModalMode}
+          onSuccess={handleAuthSuccess}
+        />
+      </>
+    );
+  }
+
   // If viewing landing page in full view
   if (activeTab === 'landing') {
     return (
@@ -367,6 +572,9 @@ function MainApp() {
             setAuthModalMode(mode);
             setAuthModalOpen(true);
           }}
+          onOpenContact={() => handleSelectTab('contacto')}
+          onOpenTerms={() => handleSelectTab('terminos')}
+          onOpenPrivacy={() => handleSelectTab('privacidad')}
         />
         <AuthModal
           isOpen={authModalOpen}
@@ -404,6 +612,9 @@ function MainApp() {
             setAuthModalMode(mode);
             setAuthModalOpen(true);
           }}
+          onOpenContact={() => handleSelectTab('contacto')}
+          onOpenTerms={() => handleSelectTab('terminos')}
+          onOpenPrivacy={() => handleSelectTab('privacidad')}
         />
         <AuthModal
           isOpen={true}
@@ -517,7 +728,7 @@ function MainApp() {
       )}
 
       {activeTab === 'suscripcion' && (
-        <SubscriptionPlansView />
+        <SubscriptionPlansView onNavigateTab={handleSelectTab} />
       )}
 
       {/* Plan-Protected: Google Workspace Sync */}
@@ -565,10 +776,15 @@ function MainApp() {
         )
       )}
 
-      {/* Role-Protected: Super Admin APIs & Webhooks (Gonzalo) */}
-      {activeTab === 'superadmin-apis' && (
+      {/* APIs & Pasarelas (DLocal Go, Mercado Pago, WhatsApp, Email) */}
+      {(activeTab === 'superadmin-apis' || activeTab === 'apis') && (
+        <SuperAdminApisView />
+      )}
+
+      {/* Role-Protected: Super Admin Mensajes de Contacto (Web) */}
+      {(activeTab === 'superadmin-mensajes' || activeTab === 'mensajes') && (
         isSuperAdmin ? (
-          <SuperAdminApisView />
+          <SuperAdminMessagesView onNavigateToTab={handleSelectTab} />
         ) : (
           <div className="max-w-xl mx-auto py-16 px-4 text-center">
             <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto mb-4 border border-amber-200">
@@ -578,7 +794,7 @@ function MainApp() {
               Acceso Restringido a Super Administrador
             </h3>
             <p className="text-xs sm:text-sm text-neutral-600 mb-6 leading-relaxed">
-              Esta sección de credenciales maestras y webhooks está reservada para el administrador de la plataforma.
+              Este buzón de mensajes de contacto es exclusivo para la administración de AgenFacil.
             </p>
             <button
               type="button"
@@ -594,6 +810,10 @@ function MainApp() {
 
       {activeTab === 'configuracion' && (
         <SettingsView />
+      )}
+
+      {activeTab === 'sugerencias' && (
+        <SuggestionsView />
       )}
 
       {/* Auth Modal for re-authenticating or switching user */}
@@ -651,6 +871,18 @@ function MainApp() {
         isOpen={waitlistModalOpen}
         onClose={() => setWaitlistModalOpen(false)}
         entryToEdit={waitlistToEdit}
+      />
+
+      {/* Floating AI Copilot for Doctors / Practice Professionals */}
+      <DoctorCopilot
+        onSelectTab={handleSelectTab}
+        onOpenNewAppointment={(date, time, patientId) => {
+          setDefaultDate(date);
+          setDefaultTime(time);
+          setDefaultPatientId(patientId);
+          setAptToEdit(null);
+          setAptModalOpen(true);
+        }}
       />
     </AppLayout>
   );
