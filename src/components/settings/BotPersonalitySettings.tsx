@@ -505,10 +505,10 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
               <div className="p-3 bg-sky-50/80 rounded-xl border border-sky-200/80 text-sky-950 text-[11px] space-y-1">
                 <div className="flex items-center gap-1.5 font-bold text-sky-900 text-xs">
                   <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                  <span>Aviso de sugerencia & WhatsApp Real</span>
+                  <span>Aviso de sugerencia</span>
                 </div>
                 <p className="leading-relaxed text-sky-900/90 text-[11px]">
-                  Esta foto es una <strong>sugerencia visual</strong> para la previsualización y el simulador dentro de KameAgenda. Al conectar tu número de WhatsApp real (mediante QR / Evolution API), los pacientes verán automáticamente la <strong>foto de perfil actual que tengas configurada en tu aplicación de WhatsApp en el teléfono</strong>.
+                  Esta foto es una sugerencia visual para la previsualización. Al conectar tu número de WhatsApp real (mediante QR), los pacientes verán automáticamente la foto de perfil actual que tengas configurada en tu aplicación de WhatsApp en el teléfono.
                 </p>
               </div>
 

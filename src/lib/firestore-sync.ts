@@ -213,7 +213,7 @@ export const updateUserInFirestore = async (userId: string, updates: Partial<Saa
   try {
     const docRef = doc(db, COLLECTIONS.USERS, userId);
     const payload = cleanObjectForFirestore(updates);
-    await updateDoc(docRef, payload);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error updating user in Firestore:', error);
@@ -733,7 +733,7 @@ export const updateSaasTransferInFirestore = async (
   try {
     const docRef = doc(db, COLLECTIONS.SAAS_TRANSFERS, transferId);
     const payload = cleanObjectForFirestore(updates);
-    await updateDoc(docRef, payload);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error updating SaaS transfer in Firestore:', error);
@@ -772,7 +772,7 @@ export const saveSuggestionToFirestore = async (suggestion: AppSuggestion): Prom
   try {
     const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestion.id);
     const payload = cleanObjectForFirestore(suggestion);
-    await setDoc(docRef, payload);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving suggestion to Firestore:', error);
@@ -790,7 +790,7 @@ export const updateSuggestionInFirestore = async (
   try {
     const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestionId);
     const payload = cleanObjectForFirestore(updates);
-    await updateDoc(docRef, payload);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error updating suggestion in Firestore:', error);
@@ -845,7 +845,7 @@ export const saveContactMessageToFirestore = async (message: ContactMessage): Pr
   try {
     const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, message.id);
     const payload = cleanObjectForFirestore(message);
-    await setDoc(docRef, payload);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error saving contact message to Firestore:', error);
@@ -863,7 +863,7 @@ export const updateContactMessageInFirestore = async (
   try {
     const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, messageId);
     const payload = cleanObjectForFirestore(updates);
-    await updateDoc(docRef, payload);
+    await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
     console.error('Error updating contact message in Firestore:', error);

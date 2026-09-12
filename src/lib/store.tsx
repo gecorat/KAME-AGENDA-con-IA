@@ -1152,8 +1152,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       reviewed_by: currentUser?.name || 'Super Admin Gonzalo'
     };
 
-    setSaasTransfers(prev => prev.map(t => t.id === id ? { ...t, ...transferUpdates } : t));
-    await updateSaasTransferInFirestore(id, transferUpdates);
+    const fullUpdatedTransfer: SaasTransferSubmission = {
+      ...transfer,
+      ...transferUpdates
+    };
+
+    setSaasTransfers(prev => prev.map(t => t.id === id ? fullUpdatedTransfer : t));
+    await updateSaasTransferInFirestore(id, fullUpdatedTransfer);
 
     // If current doctor user is the one subscribed, update their settings plan
     if (
@@ -1180,8 +1185,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       reviewed_by: currentUser?.name || 'Super Admin Gonzalo'
     };
 
-    setSaasTransfers(prev => prev.map(t => t.id === id ? { ...t, ...transferUpdates } : t));
-    await updateSaasTransferInFirestore(id, transferUpdates);
+    const fullUpdatedTransfer: SaasTransferSubmission = {
+      ...transfer,
+      ...transferUpdates
+    };
+
+    setSaasTransfers(prev => prev.map(t => t.id === id ? fullUpdatedTransfer : t));
+    await updateSaasTransferInFirestore(id, fullUpdatedTransfer);
     return true;
   };
 

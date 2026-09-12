@@ -135,10 +135,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : 'text-neutral-500 hover:text-neutral-900'
               }`}
             >
-              Crear Cuenta Gratis
+              Prueba Gratis 14 Días
             </button>
           </div>
         </div>
+
+        {mode === 'register' && (
+          <div className="mx-6 mt-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200/80 text-[11px] text-emerald-950 flex items-start gap-2">
+            <Sparkles className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="leading-tight">
+              <span className="font-bold block">14 Días de Prueba Gratis con Funciones Pro</span>
+              <span className="text-emerald-800">Prueba el Simulador de WhatsApp IA, portal web, agenda y recetas sin costo ni tarjeta de crédito.</span>
+            </div>
+          </div>
+        )}
 
         <div className="p-6 space-y-4">
           {error && (

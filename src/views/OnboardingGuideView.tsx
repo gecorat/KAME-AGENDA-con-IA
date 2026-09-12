@@ -147,22 +147,22 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-12">
       {/* Header Title Section */}
-      <div className="bg-white p-5 sm:p-6 rounded-xl border border-neutral-200/80 shadow-2xs space-y-4">
+      <div className="bg-white dark:bg-[#14161c] p-5 sm:p-6 rounded-xl border border-neutral-200/80 dark:border-neutral-800 shadow-2xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-neutral-900 dark:bg-emerald-500 text-white dark:text-neutral-950 flex items-center justify-center font-bold text-sm shadow-2xs shrink-0">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-bold text-neutral-900 font-display tracking-tight">
+                <h1 className="text-lg sm:text-xl font-bold text-neutral-900 dark:text-white font-display tracking-tight">
                   Guía de Puesta en Marcha
                 </h1>
-                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-neutral-100 text-neutral-800 border border-neutral-200">
+                <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-800 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700">
                   {completedCount} de {guideSteps.length} completados
                 </span>
               </div>
-              <p className="text-xs text-neutral-500 mt-0.5">
+              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
                 Sigue estos pasos esenciales para dejar tu consultorio 100% operativo y listo para recibir reservas.
               </p>
             </div>
@@ -172,14 +172,14 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
             <button
               type="button"
               onClick={() => onNavigateToTab('dashboard')}
-              className="px-3.5 py-1.5 bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-lg text-xs font-semibold shadow-2xs transition-colors"
+              className="px-3.5 py-1.5 bg-white dark:bg-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700 rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
             >
               Ir al Panel Principal
             </button>
             <button
               type="button"
               onClick={() => onNavigateToTab('portal')}
-              className="px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-neutral-900 dark:bg-emerald-500 hover:bg-neutral-800 dark:hover:bg-emerald-400 text-white dark:text-neutral-950 rounded-lg text-xs font-bold shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
             >
               <Globe className="w-3.5 h-3.5" />
               <span>Probar Portal Online</span>
@@ -190,16 +190,16 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
         {/* Progress Bar */}
         <div className="space-y-1.5 pt-1">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-neutral-700">
+            <span className="font-semibold text-neutral-700 dark:text-neutral-300">
               Progreso de configuración: {progressPercent}%
             </span>
-            <span className="text-neutral-500 font-medium">
+            <span className="text-neutral-500 dark:text-neutral-400 font-medium">
               {completedCount === guideSteps.length ? '¡Todo listo para agendar!' : `${guideSteps.length - completedCount} paso(s) restante(s)`}
             </span>
           </div>
-          <div className="w-full bg-neutral-100 rounded-full h-2 overflow-hidden">
+          <div className="w-full bg-neutral-100 dark:bg-neutral-800 rounded-full h-2 overflow-hidden">
             <div
-              className="bg-neutral-900 h-2 rounded-full transition-all duration-500"
+              className="bg-neutral-900 dark:bg-emerald-500 h-2 rounded-full transition-all duration-500"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
@@ -207,13 +207,13 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
 
         {/* Warning if essential steps missing */}
         {essentialPending.length > 0 && (
-          <div className="p-3 bg-amber-50/70 border border-amber-200/80 rounded-lg flex items-start gap-2.5 text-xs text-amber-900">
-            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div className="p-3 bg-amber-50/70 dark:bg-amber-500/10 border border-amber-200/80 dark:border-amber-500/30 rounded-lg flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
             <div>
               <span className="font-bold">Atención: </span>
               <span>
                 Para que los pacientes puedan solicitar turnos en tu portal público, es indispensable completar:{' '}
-                <strong>{essentialPending.map(s => s.title).join(', ')}</strong>.
+                <strong className="text-amber-950 dark:text-amber-100">{essentialPending.map(s => s.title).join(', ')}</strong>.
               </span>
             </div>
           </div>
@@ -229,45 +229,45 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
               key={step.id}
               className={`p-4 sm:p-5 rounded-xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
                 step.completed
-                  ? 'bg-white/70 border-neutral-200/70 text-neutral-600 shadow-2xs'
-                  : 'bg-white border-neutral-200 shadow-2xs hover:border-neutral-400'
+                  ? 'bg-neutral-50/90 dark:bg-[#161820] border-neutral-200/80 dark:border-neutral-800 text-neutral-600 dark:text-neutral-300 shadow-2xs'
+                  : 'bg-white dark:bg-[#14161c] border-neutral-200 dark:border-neutral-800 shadow-2xs hover:border-neutral-400 dark:hover:border-neutral-700'
               }`}
             >
               <div className="flex items-start gap-3.5 min-w-0">
                 <button
                   type="button"
                   onClick={() => handleToggleManualStep(step.id)}
-                  className="mt-0.5 text-neutral-400 hover:text-neutral-800 transition-colors shrink-0"
+                  className="mt-0.5 text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200 transition-colors shrink-0 cursor-pointer"
                   title={step.completed ? "Desmarcar paso" : "Marcar como completado"}
                 >
                   {step.completed ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                   ) : (
-                    <Circle className="w-5 h-5 text-neutral-300" />
+                    <Circle className="w-5 h-5 text-neutral-300 dark:text-neutral-600" />
                   )}
                 </button>
 
                 <div className="space-y-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-mono font-bold text-neutral-400">
+                    <span className="text-[10px] font-mono font-bold text-neutral-400 dark:text-neutral-500">
                       PASO {step.number}
                     </span>
                     {step.essential && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-700 uppercase font-mono">
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 uppercase font-mono border border-neutral-200/60 dark:border-neutral-700">
                         Esencial
                       </span>
                     )}
-                    <h3 className={`text-sm font-bold font-display ${step.completed ? 'text-neutral-600 line-through' : 'text-neutral-900'}`}>
+                    <h3 className={`text-sm font-bold font-display ${step.completed ? 'text-neutral-600 dark:text-neutral-400 line-through' : 'text-neutral-900 dark:text-white'}`}>
                       {step.title}
                     </h3>
                   </div>
 
-                  <p className="text-xs text-neutral-500 leading-relaxed max-w-2xl">
+                  <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed max-w-2xl">
                     {step.description}
                   </p>
 
-                  <div className="flex items-center gap-2 text-[11px] text-neutral-400 pt-0.5">
-                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-neutral-300" />
+                  <div className="flex items-center gap-2 text-[11px] text-neutral-400 dark:text-neutral-400 pt-0.5">
+                    <span className="inline-block w-1.5 h-1.5 rounded-full bg-neutral-300 dark:bg-neutral-600" />
                     <span>{step.hint}</span>
                   </div>
                 </div>
@@ -277,10 +277,10 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
                 <button
                   type="button"
                   onClick={() => onNavigateToTab(step.tab)}
-                  className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-2xs ${
+                  className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer ${
                     step.completed
-                      ? 'bg-neutral-100 hover:bg-neutral-200/80 text-neutral-700'
-                      : 'bg-neutral-900 hover:bg-neutral-800 text-white'
+                      ? 'bg-neutral-100 dark:bg-neutral-800 hover:bg-neutral-200 dark:hover:bg-neutral-700 text-neutral-700 dark:text-neutral-200 border border-neutral-200/80 dark:border-neutral-700'
+                      : 'bg-neutral-900 dark:bg-emerald-500 hover:bg-neutral-800 dark:hover:bg-emerald-400 text-white dark:text-neutral-950 font-bold'
                   }`}
                 >
                   <span>{step.actionLabel}</span>
@@ -293,22 +293,22 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
       </div>
 
       {/* Trial & Features Clarification Card */}
-      <div className="bg-neutral-50 p-5 rounded-xl border border-neutral-200/80 space-y-3">
+      <div className="bg-neutral-50 dark:bg-[#14161c] p-5 rounded-xl border border-neutral-200/80 dark:border-neutral-800 space-y-3">
         <div className="flex items-center gap-2.5">
-          <ShieldCheck className="w-5 h-5 text-neutral-700" />
-          <h3 className="text-sm font-bold text-neutral-900 font-display">
+          <ShieldCheck className="w-5 h-5 text-neutral-700 dark:text-emerald-400" />
+          <h3 className="text-sm font-bold text-neutral-900 dark:text-white font-display">
             Tu período de prueba de 14 días (Plan Básico activo)
           </h3>
         </div>
-        <p className="text-xs text-neutral-600 leading-relaxed">
-          Durante el trial cuentas con acceso irrestricto a la <strong>Agenda inteligente</strong>, <strong>Portal público para pacientes</strong>, <strong>Control de caja y señas</strong> y el <strong>Simulador del Bot IA con datos reales</strong>.
+        <p className="text-xs text-neutral-600 dark:text-neutral-300 leading-relaxed">
+          Durante el trial cuentas con acceso irrestricto a la <strong className="text-neutral-900 dark:text-white">Agenda inteligente</strong>, <strong className="text-neutral-900 dark:text-white">Portal público para pacientes</strong>, <strong className="text-neutral-900 dark:text-white">Control de caja y señas</strong> y el <strong className="text-neutral-900 dark:text-white">Simulador del Bot IA con datos reales</strong>.
         </p>
         <div className="grid sm:grid-cols-2 gap-3 pt-1 text-xs">
-          <div className="p-3 bg-white rounded-lg border border-neutral-200">
-            <span className="font-bold text-neutral-900 block mb-1">
+          <div className="p-3 bg-white dark:bg-[#1a1d26] rounded-lg border border-neutral-200 dark:border-neutral-800">
+            <span className="font-bold text-neutral-900 dark:text-white block mb-1">
               ✅ Plan Básico (y Trial):
             </span>
-            <ul className="text-[11px] text-neutral-600 space-y-1">
+            <ul className="text-[11px] text-neutral-600 dark:text-neutral-300 space-y-1">
               <li>• Turnos manuales y portal web 24/7</li>
               <li>• Recordatorios de WhatsApp vía enlace directo</li>
               <li>• Fichas médicas completas de pacientes</li>
@@ -316,11 +316,11 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
             </ul>
           </div>
 
-          <div className="p-3 bg-white rounded-lg border border-neutral-200">
-            <span className="font-bold text-neutral-900 block mb-1">
+          <div className="p-3 bg-white dark:bg-[#1a1d26] rounded-lg border border-neutral-200 dark:border-neutral-800">
+            <span className="font-bold text-neutral-900 dark:text-white block mb-1">
               ⭐ Plan Pro AI:
             </span>
-            <ul className="text-[11px] text-neutral-600 space-y-1">
+            <ul className="text-[11px] text-neutral-600 dark:text-neutral-300 space-y-1">
               <li>• Conexión a tu línea real de WhatsApp Business</li>
               <li>• Bot IA atendiendo y agendando 24/7 en tu WhatsApp</li>
               <li>• Dictado por voz de consultas médicas con Gemini</li>
@@ -333,7 +333,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
           <button
             type="button"
             onClick={() => onNavigateToTab('suscripcion')}
-            className="text-xs font-semibold text-neutral-900 hover:underline inline-flex items-center gap-1"
+            className="text-xs font-semibold text-neutral-900 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 cursor-pointer"
           >
             <span>Ver detalles y precios de los planes</span>
             <ArrowRight className="w-3 h-3" />

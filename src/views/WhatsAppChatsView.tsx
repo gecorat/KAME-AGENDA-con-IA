@@ -448,11 +448,11 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
       </div>
 
       {/* Sub-Tab Navigation Bar */}
-      <div className="flex items-center gap-1.5 p-1 bg-neutral-100/80 rounded-xl border border-neutral-200/80 w-fit overflow-x-auto max-w-full">
+      <div className="flex items-center gap-1.5 p-1 bg-neutral-100/80 rounded-xl border border-neutral-200/80 w-full overflow-x-auto max-w-full no-scrollbar">
         <button
           type="button"
           onClick={() => setSubTab('chats')}
-          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`shrink-0 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
             subTab === 'chats'
               ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
               : 'text-neutral-600 hover:text-neutral-900'
@@ -465,7 +465,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         <button
           type="button"
           onClick={() => setSubTab('personality')}
-          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`shrink-0 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
             subTab === 'personality'
               ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
               : 'text-neutral-600 hover:text-neutral-900'
@@ -478,7 +478,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         <button
           type="button"
           onClick={() => setSubTab('fields')}
-          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`shrink-0 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
             subTab === 'fields'
               ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
               : 'text-neutral-600 hover:text-neutral-900'
@@ -491,7 +491,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         <button
           type="button"
           onClick={() => setSubTab('connection')}
-          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+          className={`shrink-0 px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
             subTab === 'connection'
               ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
               : 'text-neutral-600 hover:text-neutral-900'
@@ -605,11 +605,11 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
       {/* SUB-TAB 0: BANDEJA DE MENSAJES & SIMULADOR EN VIVO */}
       {subTab === 'chats' && (
-        <div className="bg-white rounded-xl border border-neutral-200/75 shadow-2xs overflow-hidden grid lg:grid-cols-12 min-h-[580px]">
+        <div className="bg-white rounded-xl border border-neutral-200/75 shadow-2xs overflow-hidden flex flex-col lg:grid lg:grid-cols-12 min-h-[580px] w-full min-w-0">
         {/* Column 1: Conversations List */}
-        <div className={`${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'} lg:col-span-4 border-r border-neutral-200/80 flex-col bg-neutral-50/40 w-full`}>
+        <div className={`${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'} lg:col-span-4 border-r border-neutral-200/80 flex-col bg-neutral-50/40 w-full min-w-0`}>
           {/* Search and Filters */}
-          <div className="p-3 border-b border-neutral-200/70 space-y-2 bg-white">
+          <div className="p-3 border-b border-neutral-200/70 space-y-2 bg-white w-full min-w-0">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
               <input
@@ -621,32 +621,32 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-1 text-[11px] overflow-x-auto pb-0.5">
+            <div className="flex items-center gap-1 text-[11px] overflow-x-auto pb-0.5 no-scrollbar w-full min-w-0">
               <button
                 type="button"
                 onClick={() => setFilterType('all')}
-                className={`px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'all' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
+                className={`shrink-0 px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'all' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
               >
                 Todos ({conversations.length})
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType('unread')}
-                className={`px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'unread' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
+                className={`shrink-0 px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'unread' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
               >
                 No leídos
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType('ai')}
-                className={`px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'ai' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
+                className={`shrink-0 px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'ai' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
               >
                 Bot IA
               </button>
               <button
                 type="button"
                 onClick={() => setFilterType('manual')}
-                className={`px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'manual' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
+                className={`shrink-0 px-2 py-0.5 rounded font-medium whitespace-nowrap ${filterType === 'manual' ? 'bg-neutral-900 text-white' : 'text-neutral-600 hover:bg-neutral-100'}`}
               >
                 Manual
               </button>
@@ -654,7 +654,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           </div>
 
           {/* List items */}
-          <div className="divide-y divide-neutral-100 overflow-y-auto flex-1 max-h-[500px] lg:max-h-none">
+          <div className="divide-y divide-neutral-100 overflow-y-auto flex-1 max-h-[500px] lg:max-h-none w-full min-w-0">
             {filteredConversations.length === 0 ? (
               <div className="p-6 text-center text-xs text-neutral-400">
                 No se encontraron conversaciones con este filtro.
@@ -671,7 +671,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                       setActiveConvId(conv.id);
                       setMobileView('chat');
                     }}
-                    className={`p-3 cursor-pointer transition-colors flex items-center gap-2.5 ${
+                    className={`p-3 cursor-pointer transition-colors flex items-center gap-2.5 w-full min-w-0 ${
                       isSelected
                         ? 'bg-neutral-100/70 border-l-2 border-l-neutral-900'
                         : 'hover:bg-neutral-100/50'
@@ -686,7 +686,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                         <span className="text-xs font-semibold text-neutral-900 truncate">
                           {conv.patient_name}
                         </span>
-                        <span className="text-[10px] text-neutral-400 font-mono">
+                        <span className="text-[10px] text-neutral-400 font-mono shrink-0 ml-1">
                           {conv.last_message_time}
                         </span>
                       </div>
@@ -723,12 +723,12 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         </div>
 
         {/* Column 2: Active Chat Timeline */}
-        <div className={`${mobileView === 'list' ? 'hidden lg:flex' : 'flex'} lg:col-span-8 flex-col bg-[#fafafa] relative w-full`}>
+        <div className={`${mobileView === 'list' ? 'hidden lg:flex' : 'flex'} lg:col-span-8 flex-col bg-[#fafafa] relative w-full min-w-0 max-w-full overflow-hidden`}>
           {activeConv ? (
             <>
               {/* Chat Header with Mobile Back Button */}
-              <div className="px-3.5 sm:px-4 py-2.5 bg-white border-b border-neutral-200/80 flex items-center justify-between shadow-2xs z-10">
-                <div className="flex items-center gap-2.5 min-w-0">
+              <div className="px-3 sm:px-4 py-2 sm:py-2.5 bg-white border-b border-neutral-200/80 flex items-center justify-between gap-2 shadow-2xs z-10 w-full min-w-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <button
                     type="button"
                     onClick={() => setMobileView('list')}
@@ -741,18 +741,18 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   <div className="w-8 h-8 rounded-lg bg-neutral-900 text-white font-semibold text-xs flex items-center justify-center shrink-0">
                     {activeConv.patient_name.slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h3 className="text-xs font-semibold text-neutral-900 truncate">
                       {activeConv.patient_name}
                     </h3>
-                    <p className="text-[11px] text-neutral-500 flex items-center gap-1.5 truncate">
-                      <span className="font-mono">{activeConv.patient_phone}</span>
+                    <p className="text-[10px] sm:text-[11px] text-neutral-500 flex items-center gap-1 truncate">
+                      <span className="font-mono truncate">{activeConv.patient_phone}</span>
                       <span>•</span>
                       <a
                         href={`https://wa.me/${activeConv.patient_phone.replace(/\D/g, '')}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-neutral-700 hover:underline inline-flex items-center gap-0.5"
+                        className="text-neutral-700 hover:underline inline-flex items-center gap-0.5 shrink-0"
                       >
                         <span>WhatsApp</span>
                         <ExternalLink className="w-2.5 h-2.5" />
@@ -761,9 +761,9 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   {/* Bot Activo / Pausado Switch for this specific chat */}
-                  <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
+                  <div className="flex items-center gap-0.5 sm:gap-1 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
                     <button
                       type="button"
                       onClick={() => {
@@ -771,15 +771,16 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                           toggleAiHandled(activeConv.id);
                         }
                       }}
-                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                      className={`px-2 py-1 text-[10px] sm:text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${
                         activeConv.ai_handled
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'text-neutral-500 hover:text-neutral-800'
                       }`}
                       title="Activar Bot IA para este chat"
                     >
-                      <PlayCircle className="w-3.5 h-3.5" />
-                      <span>Bot Activo</span>
+                      <PlayCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">Bot Activo</span>
+                      <span className="sm:hidden">Bot</span>
                     </button>
 
                     <button
@@ -789,27 +790,28 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                           toggleAiHandled(activeConv.id);
                         }
                       }}
-                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                      className={`px-2 py-1 text-[10px] sm:text-xs font-semibold rounded-md transition-all flex items-center gap-1 ${
                         !activeConv.ai_handled
                           ? 'bg-neutral-800 text-white shadow-2xs'
                           : 'text-neutral-500 hover:text-neutral-800'
                       }`}
                       title="Pausar Bot y atender manualmente este chat"
                     >
-                      <PauseCircle className="w-3.5 h-3.5" />
-                      <span>Pausado (Manual)</span>
+                      <PauseCircle className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">Pausado (Manual)</span>
+                      <span className="sm:hidden">Manual</span>
                     </button>
                   </div>
                 </div>
               </div>
 
               {/* Quick Actions Bar */}
-              <div className="px-4 py-2 bg-neutral-100/60 border-b border-neutral-200/60 flex items-center gap-2 overflow-x-auto text-[11px]">
-                <span className="text-neutral-400 font-medium whitespace-nowrap">Respuestas rápidas:</span>
+              <div className="px-3 sm:px-4 py-1.5 sm:py-2 bg-neutral-100/60 border-b border-neutral-200/60 flex items-center gap-1.5 overflow-x-auto text-[11px] w-full min-w-0 no-scrollbar">
+                <span className="text-neutral-400 font-medium whitespace-nowrap shrink-0 text-[10px] sm:text-[11px]">Respuestas rápidas:</span>
                 <button
                   type="button"
                   onClick={() => handleSendQuickAction('portal')}
-                  className="px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors"
+                  className="shrink-0 px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors text-[11px]"
                 >
                   <Link className="w-3 h-3 text-neutral-500" />
                   <span>Link de Turnos</span>
@@ -818,7 +820,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSendQuickAction('reminder')}
-                  className="px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors"
+                  className="shrink-0 px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors text-[11px]"
                 >
                   <Clock className="w-3 h-3 text-neutral-500" />
                   <span>Recordatorio</span>
@@ -827,7 +829,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => handleSendQuickAction('cbu')}
-                  className="px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors"
+                  className="shrink-0 px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors text-[11px]"
                 >
                   <DollarSign className="w-3 h-3 text-neutral-500" />
                   <span>Datos CBU / Seña</span>
@@ -837,7 +839,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => onOpenNewAppointmentWithPatient(activeConv.patient_name, activeConv.patient_phone)}
-                    className="ml-auto px-2.5 py-1 bg-neutral-900 text-white rounded font-medium whitespace-nowrap flex items-center gap-1 transition-colors"
+                    className="shrink-0 ml-auto px-2.5 py-1 bg-neutral-900 text-white rounded font-medium whitespace-nowrap flex items-center gap-1 transition-colors text-[11px]"
                   >
                     <Calendar className="w-3 h-3" />
                     <span>Agendar Turno</span>
@@ -846,10 +848,10 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               </div>
 
               {/* Message Stream */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#f0f2f5] bg-[radial-gradient(#00000008_1px,transparent_1px)] [background-size:16px_16px]">
+              <div className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-3 bg-[#f0f2f5] bg-[radial-gradient(#00000008_1px,transparent_1px)] [background-size:16px_16px] w-full min-w-0">
                 {/* Global Paused Banner if bot_enabled is false */}
                 {practiceSettings.bot_enabled === false && (
-                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-900 shadow-2xs">
                     <div className="flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                       <span>El <strong>Bot General está Pausado</strong> globalmente. Las respuestas automáticas están suspendidas.</span>
@@ -857,7 +859,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                     <button
                       type="button"
                       onClick={() => updatePracticeSettings({ bot_enabled: true })}
-                      className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium text-[11px] whitespace-nowrap transition-colors"
+                      className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium text-[11px] whitespace-nowrap transition-colors self-start sm:self-auto"
                     >
                       Reanudar Bot
                     </button>
@@ -866,23 +868,23 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
                 {/* Per-chat Paused Notice */}
                 {!activeConv.ai_handled && practiceSettings.bot_enabled !== false && (
-                  <div className="p-2 bg-neutral-100/90 border border-neutral-200 rounded-lg flex items-center justify-between text-[11px] text-neutral-600">
-                    <div className="flex items-center gap-1.5">
-                      <PauseCircle className="w-3.5 h-3.5 text-neutral-500" />
-                      <span>Bot pausado para este paciente. Las respuestas que envíes serán 100% manuales.</span>
+                  <div className="p-2 bg-neutral-100/90 border border-neutral-200 rounded-lg flex items-center justify-between gap-2 text-[11px] text-neutral-600">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <PauseCircle className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
+                      <span className="truncate sm:whitespace-normal">Bot pausado. Respuestas manuales.</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => toggleAiHandled(activeConv.id)}
-                      className="text-neutral-900 font-semibold hover:underline"
+                      className="text-neutral-900 font-semibold hover:underline shrink-0 text-xs"
                     >
                       Activar Bot
                     </button>
                   </div>
                 )}
 
-                <div className="text-center my-1">
-                  <span className="text-[10px] bg-white border border-neutral-200 text-neutral-500 px-2.5 py-0.5 rounded font-mono shadow-2xs">
+                <div className="text-center my-1 w-full overflow-hidden">
+                  <span className="text-[10px] bg-white border border-neutral-200 text-neutral-500 px-2.5 py-0.5 rounded font-mono shadow-2xs inline-block max-w-full truncate">
                     Sesión de WhatsApp activa • Encriptación de extremo a extremo
                   </span>
                 </div>
@@ -893,7 +895,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex gap-2 ${isAssistant ? 'items-start justify-start' : 'items-end justify-end'}`}
+                      className={`flex gap-2 w-full min-w-0 ${isAssistant ? 'items-start justify-start' : 'items-end justify-end'}`}
                     >
                       {/* Synchronized Bot Profile Photo */}
                       {isAssistant && (
@@ -914,29 +916,29 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                       )}
 
                       <div
-                        className={`max-w-[85%] sm:max-w-[75%] rounded-xl p-3 text-xs leading-relaxed shadow-2xs ${
+                        className={`max-w-[85%] sm:max-w-[75%] rounded-xl p-2.5 sm:p-3 text-xs leading-relaxed shadow-2xs break-words [overflow-wrap:anywhere] ${
                           isAssistant
                             ? 'bg-white text-neutral-800 border border-neutral-200/80 rounded-tl-xs'
                             : 'bg-[#d9fdd3] text-neutral-900 border border-emerald-200/60 rounded-tr-xs'
                         }`}
                       >
                         {isAssistant && (
-                          <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-neutral-100 text-[10px] font-semibold text-emerald-800">
+                          <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-neutral-100 text-[10px] font-semibold text-emerald-800 flex-wrap">
                             <span>{practiceSettings.bot_assistant_name}</span>
                             <span className="text-neutral-400">• Asistente Virtual</span>
                           </div>
                         )}
 
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                        <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{msg.content}</p>
 
                         {/* If an action was taken (e.g. appointment created) */}
                         {msg.actionTaken && (
-                          <div className="mt-2.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200/80 text-[11px] text-neutral-800 flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-1.5">
-                              <Calendar className="w-3.5 h-3.5 text-neutral-700" />
-                              <span className="font-semibold">{msg.actionTaken.details}</span>
+                          <div className="mt-2.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200/80 text-[11px] text-neutral-800 flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <Calendar className="w-3.5 h-3.5 text-neutral-700 shrink-0" />
+                              <span className="font-semibold truncate">{msg.actionTaken.details}</span>
                             </div>
-                            <span className="px-1.5 py-0.2 rounded bg-neutral-200 text-[10px] font-mono">
+                            <span className="px-1.5 py-0.2 rounded bg-neutral-200 text-[10px] font-mono shrink-0">
                               Turno Creado
                             </span>
                           </div>
@@ -956,7 +958,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 })}
 
                 {loading && (
-                  <div className="flex items-center gap-2 text-xs text-neutral-600 p-2.5 bg-white border border-neutral-200 rounded-xl w-fit shadow-2xs">
+                  <div className="flex items-center gap-2 text-xs text-neutral-600 p-2.5 bg-white border border-neutral-200 rounded-xl w-fit shadow-2xs max-w-full">
                     <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-neutral-200 bg-neutral-100">
                       {practiceSettings.bot_avatar_url ? (
                         <img
@@ -971,8 +973,8 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                         </div>
                       )}
                     </div>
-                    <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
-                    <span>{practiceSettings.bot_assistant_name} está escribiendo respuesta...</span>
+                    <RefreshCw className="w-3 h-3 animate-spin text-emerald-600 shrink-0" />
+                    <span className="truncate">{practiceSettings.bot_assistant_name} está escribiendo...</span>
                   </div>
                 )}
 
@@ -980,32 +982,32 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               </div>
 
               {/* Chat Input */}
-              <div className="p-3 bg-white border-t border-neutral-200/80">
+              <div className="p-2.5 sm:p-3 bg-white border-t border-neutral-200/80 w-full min-w-0">
                 <form
                   onSubmit={e => {
                     e.preventDefault();
                     handleSendMessage();
                   }}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0"
                 >
                   <input
                     type="text"
                     placeholder={
                       activeConv.ai_handled
-                        ? "Escribe un mensaje o prueba una pregunta como paciente..."
+                        ? "Escribe como paciente..."
                         : "Escribe una respuesta como profesional..."
                     }
                     value={inputText}
                     onChange={e => setInputText(e.target.value)}
-                    className="flex-1 px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                    className="flex-1 min-w-0 px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-neutral-400"
                   />
                   <button
                     type="submit"
                     disabled={!inputText.trim() || loading}
-                    className="px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1.5 shrink-0"
+                    className="px-3 sm:px-3.5 py-2 bg-neutral-900 hover:bg-neutral-800 disabled:opacity-50 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1.5 shrink-0"
                   >
                     <Send className="w-3.5 h-3.5" />
-                    <span>Enviar</span>
+                    <span className="hidden sm:inline">Enviar</span>
                   </button>
                 </form>
               </div>
