@@ -125,14 +125,22 @@ export const SaasPaymentOrchestrator: React.FC<SaasPaymentOrchestratorProps> = (
       saas_methods_priority: newPriority,
       saas_payment_methods_priority: newPriority
     });
-    triggerNotification('Orden de prioridad de pagos actualizado.');
+    triggerNotification({
+      title: 'Configuración de Pagos',
+      message: 'Orden de prioridad de pagos actualizado.',
+      type: 'test'
+    });
   };
 
   const handleSetPrimary = (methodKey: PaymentMethodKey) => {
     const meta = ALL_METHODS.find(m => m.key === methodKey);
     handleChange('saas_primary_payment_method', methodKey);
     updatePracticeSettings({ saas_primary_payment_method: methodKey });
-    triggerNotification(`${meta?.label || methodKey} establecido como método principal.`);
+    triggerNotification({
+      title: 'Método Principal',
+      message: `${meta?.label || methodKey} establecido como método principal.`,
+      type: 'test'
+    });
   };
 
   const toggleMethodEnabled = (key: PaymentMethodKey) => {
@@ -174,11 +182,13 @@ export const SaasPaymentOrchestrator: React.FC<SaasPaymentOrchestratorProps> = (
 
     // Auto-save immediately to Firestore & store
     updatePracticeSettings(updates);
-    triggerNotification(
-      nextState
+    triggerNotification({
+      type: 'subscription',
+      title: 'Método de pago',
+      message: nextState
         ? `Método ${meta.label} habilitado correctamente.`
         : `Método ${meta.label} deshabilitado.`
-    );
+    });
   };
 
   const affectedMethods = formData.saas_migration_affected_methods || ['mercadopago'];
@@ -218,7 +228,7 @@ export const SaasPaymentOrchestrator: React.FC<SaasPaymentOrchestratorProps> = (
       saas_migration_notice_active: true,
       saas_migration_notice_message: noticeText,
       saas_migration_notice_text: noticeText,
-      saas_migration_notice_target_method: targetMethodKey,
+      saas_migration_notice_target_method: targetMethodKey as ('mercadopago' | 'lemonsqueezy' | 'dlocal_go' | 'transfer'),
       saas_migration_target_method: targetMethodKey,
       saas_migration_affected_methods: affectedMethods,
       saas_migration_deadline: formData.saas_migration_deadline || '',

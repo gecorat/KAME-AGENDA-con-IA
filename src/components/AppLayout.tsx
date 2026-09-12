@@ -115,7 +115,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const isHoursComplete = availability.some(d => d.enabled);
   const completedStepsList = practiceSettings.onboarding_completed_steps || [];
   const isBotTested = completedStepsList.includes('whatsapp') || appointments.some(a => a.origin === 'bot_whatsapp');
-  const isPortalTested = completedStepsList.includes('share') || appointments.some(a => a.origin === 'patient_portal');
+  const isPortalTested = completedStepsList.includes('share') || appointments.some(a => (a.origin as string) === 'patient_portal' || a.origin === 'public_booking');
 
   let completedStepsCount = 0;
   if (isProfileComplete) completedStepsCount++;

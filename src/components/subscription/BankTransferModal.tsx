@@ -76,7 +76,7 @@ export const BankTransferModal: React.FC<BankTransferModalProps> = ({
         practice_name: practiceSettings.practice_name || 'Consultorio Médico',
         email: practiceSettings.email || currentUser?.email || 'doctor@ejemplo.com',
         phone: practiceSettings.phone || '',
-        plan: planId,
+        plan: (planId === 'basic' ? 'basic' : 'pro') as ('pro' | 'basic'),
         billing_cycle: billingCycle,
         amount: amount,
         currency: 'ARS',

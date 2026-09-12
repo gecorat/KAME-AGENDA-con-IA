@@ -685,7 +685,6 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                             setIsPhoneValid(valid);
                           }}
                           required={req.phone}
-                          placeholder="3425123123"
                         />
                       </div>
                     </div>

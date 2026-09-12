@@ -17,7 +17,7 @@ export const CashMovementModal: React.FC<CashMovementModalProps> = ({
   const { addCashMovement, updateCashMovement } = useAgendaStore();
 
   const [type, setType] = useState<'income' | 'expense'>('income');
-  const [category, setCategory] = useState<'payment' | 'expense' | 'withdrawal' | 'adjustment' | 'other'>('payment');
+  const [category, setCategory] = useState<'payment' | 'withdrawal' | 'supplies' | 'opening' | 'other' | 'expense' | 'adjustment'>('payment');
   const [amount, setAmount] = useState<number>(0);
   const [concept, setConcept] = useState<string>('');
   const [method, setMethod] = useState<PaymentMethod>('cash');

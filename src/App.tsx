@@ -307,8 +307,8 @@ function MainApp() {
           patient_name: apt.patient_name,
           appointment_id: apt.id,
           concept: apt.service_name || 'Consulta Médica',
-          amount: apt.price || 0,
-          method: 'mercadopago',
+          amount: apt.service_price || apt.price || 0,
+          method: 'mercado_pago',
           notes: 'Pago registrado automáticamente vía retorno dinámico de Mercado Pago'
         });
       }

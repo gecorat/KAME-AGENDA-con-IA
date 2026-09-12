@@ -865,7 +865,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                               type="button"
                               onClick={() => {
                                 setPlanModalTenant(tenant);
-                                setTargetPlan(tenant.plan || 'pro');
+                                setTargetPlan(tenant.plan === 'basic' ? 'basic' : 'pro');
                                 setIsPermanentAccess(Boolean(tenant.is_permanent));
                                 setAccessDays(30);
                               }}

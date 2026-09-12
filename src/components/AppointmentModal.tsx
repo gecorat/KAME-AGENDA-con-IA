@@ -258,7 +258,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         deposit_declared: depositDeclared,
         deposit_amount: depositAmount > 0 ? Number(depositAmount) : undefined,
         deposit_verified: depositVerified,
-        deposit_method: depositMethod,
+        deposit_method: depositMethod as any,
         deposit_notes: depositNotes
       });
     } else {
@@ -280,7 +280,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         deposit_declared: depositDeclared,
         deposit_amount: depositAmount > 0 ? Number(depositAmount) : undefined,
         deposit_verified: depositVerified,
-        deposit_method: depositMethod,
+        deposit_method: depositMethod as any,
         deposit_notes: depositNotes
       });
     }
@@ -395,7 +395,6 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                     value={newPatientPhone}
                     onChange={(phone) => setNewPatientPhone(phone)}
                     required
-                    placeholder="3425123123"
                   />
                 </div>
                 <div>
@@ -708,7 +707,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                       if (nextStatus) {
                         setPaymentStatus('partial');
                         if (appointmentToEdit) {
-                          verifyAppointmentDeposit(appointmentToEdit.id, true, depositAmount);
+                          verifyAppointmentDeposit(appointmentToEdit.id, true);
                         }
                       } else {
                         if (paymentStatus === 'partial') setPaymentStatus('pending');

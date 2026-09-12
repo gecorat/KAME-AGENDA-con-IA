@@ -151,7 +151,7 @@ export const PaymentRequestModal: React.FC<PaymentRequestModalProps> = ({
         appointment_id: appointmentId,
         concept: concept || 'Consulta Médica',
         amount: Number(amount),
-        method: selectedMethod === 'alias_cbu' ? 'transfer' : 'mercadopago',
+        method: selectedMethod === 'alias_cbu' ? 'transfer' : 'mercado_pago',
         notes: `Cobro registrado tras solicitar pago (${selectedMethod === 'qr_code' ? 'QR dinámico' : selectedMethod === 'mercadopago_link' ? 'Link MP' : 'Transferencia'})`
       });
 

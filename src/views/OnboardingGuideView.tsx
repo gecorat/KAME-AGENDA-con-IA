@@ -52,7 +52,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
   const isServicesComplete = services.some(s => s.active);
   const isHoursComplete = availability.some(d => d.enabled);
   const isBotTested = completedSteps.includes('whatsapp') || appointments.some(a => a.origin === 'bot_whatsapp');
-  const isPortalTested = completedSteps.includes('share') || appointments.some(a => a.origin === 'patient_portal');
+  const isPortalTested = completedSteps.includes('share') || appointments.some(a => (a.origin as string) === 'patient_portal' || a.origin === 'public_booking');
 
   const guideSteps = [
     {

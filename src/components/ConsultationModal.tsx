@@ -278,7 +278,8 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
 
     let savedRecord: ConsultationRecord;
     if (activeConsultationId) {
-      savedRecord = updateConsultation(activeConsultationId, payload)!;
+      updateConsultation(activeConsultationId, payload);
+      savedRecord = { ...(initialConsultation || {}), ...payload, id: activeConsultationId } as ConsultationRecord;
     } else {
       savedRecord = addConsultation(payload as any);
       setActiveConsultationId(savedRecord.id);
@@ -734,17 +735,16 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
       </div>
 
       {/* Delete Confirmation Modal */}
-      {showDeleteConfirm && (
-        <ConfirmModal
-          title="¿Eliminar esta Ficha / Sesión?"
-          message="Esta acción borrará las notas registradas en esta sesión. No afectará los turnos agendados del cliente."
-          confirmText="Sí, Eliminar"
-          cancelText="Cancelar"
-          isDanger={true}
-          onConfirm={handleDeleteConsultation}
-          onClose={() => setShowDeleteConfirm(false)}
-        />
-      )}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="¿Eliminar esta Ficha / Sesión?"
+        message="Esta acción borrará las notas registradas en esta sesión. No afectará los turnos agendados del cliente."
+        confirmText="Sí, Eliminar"
+        cancelText="Cancelar"
+        variant="danger"
+        onConfirm={handleDeleteConsultation}
+        onClose={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 };

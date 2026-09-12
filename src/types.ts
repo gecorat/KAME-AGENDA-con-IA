@@ -11,6 +11,8 @@ export interface Service {
   color?: string;
   active: boolean;
   category?: string;
+  deposit_required?: boolean;
+  deposit_amount?: number;
 }
 
 export interface Patient {
@@ -90,8 +92,12 @@ export interface Appointment {
   status: AppointmentStatus;
   payment_status: PaymentStatus;
   notes?: string;
+  payment_method?: string;
+  price?: number;
   origin: 'public_booking' | 'bot_whatsapp' | 'manual' | 'telemedicine';
   meet_url?: string;
+  date?: string;
+  time?: string;
   is_demo?: boolean;
   is_example?: boolean;
   reminder_24h_sent?: boolean;
@@ -127,6 +133,7 @@ export interface PracticeSettings {
   practice_name: string;
   handle: string; // p. ej. "consultorio-medico"
   professional_name: string;
+  doctor_name?: string;
   professional_title: string; // p. ej. "Odontólogo Especialista"
   medical_license?: string; // p. ej. "M.N. 142.890 / M.P. 45.210"
   specialty: string;
@@ -186,6 +193,16 @@ export interface PracticeSettings {
   lemonsqueezy_checkout_url_pro?: string;
   lemonsqueezy_enabled?: boolean;
   // Superadmin SaaS Bank Transfer details (Para cobrar las suscripciones a los profesionales)
+  bank_alias?: string;
+  bank_cbu?: string;
+  bank_name?: string;
+  bank_account_holder?: string;
+  bank_cuit_cuil?: string;
+  bank_transfer_instructions?: string;
+  deposit_amount?: number;
+  google_calendar_sync?: boolean;
+  google_meet_url?: string;
+  subscription_payment_method?: string;
   saas_bank_alias?: string;
   saas_bank_cbu_cvu?: string;
   saas_bank_account_holder?: string;
@@ -261,6 +278,8 @@ export interface PracticeSettings {
   // Configurable Required Fields for Booking & Bot
   booking_required_fields?: BookingRequiredFields;
   bot_required_fields?: BookingRequiredFields;
+  id?: string;
+  is_permanent?: boolean;
 }
 
 export interface AppNotification {
@@ -273,6 +292,7 @@ export interface AppNotification {
   doctor_name?: string;
   service_name?: string;
   datetime?: string;
+  action_url?: string;
   created_at: string;
   read: boolean;
 }
@@ -320,6 +340,7 @@ export interface SaasTransferSubmission {
   transfer_date: string;
   notes?: string;
   proof_file_url?: string;
+  receipt_url?: string;
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason?: string;
   created_at: string;
@@ -438,7 +459,7 @@ export interface ReminderLog {
   confirmed?: boolean;
 }
 
-export type PaymentMethod = 'cash' | 'transfer' | 'card_debit' | 'card_credit' | 'mercado_pago' | 'insurance';
+export type PaymentMethod = 'cash' | 'transfer' | 'card_debit' | 'card_credit' | 'mercado_pago' | 'mercadopago' | 'insurance';
 
 export interface PaymentRecord {
   id: string;
@@ -474,7 +495,7 @@ export interface CashRegister {
 export interface CashMovement {
   id: string;
   type: 'income' | 'expense';
-  category: 'payment' | 'withdrawal' | 'supplies' | 'opening' | 'other';
+  category: 'payment' | 'withdrawal' | 'supplies' | 'opening' | 'other' | 'expense' | 'adjustment';
   amount: number;
   concept: string;
   method: PaymentMethod;
@@ -504,7 +525,8 @@ export interface MedicalPrescriptionItem {
 
 export interface MedicalPrescription {
   id: string;
-  prescription_number: string;
+  prescription_number?: string;
+  appointment_id?: string;
   patient_id: string;
   patient_name: string;
   patient_dni?: string;
@@ -516,6 +538,7 @@ export interface MedicalPrescription {
   medical_license?: string;
   notes?: string;
   date: string;
+  created_at?: string;
   status: 'active' | 'dispensed';
 }
 
@@ -551,6 +574,7 @@ export interface ConsultationRecord {
   id: string;
   patient_id: string;
   patient_name: string;
+  patient_phone?: string;
   appointment_id?: string;
   service_name?: string;
   date: string;

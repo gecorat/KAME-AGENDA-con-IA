@@ -618,7 +618,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                               <span className="truncate flex items-center gap-1">
                                 {apt.patient_name}
                                 {apt.patient_confirmed && (
-                                  <CheckCheck className="w-3 h-3 text-emerald-600 shrink-0" title="Confirmado por paciente" />
+                                  <span title="Confirmado por paciente">
+                                    <CheckCheck className="w-3 h-3 text-emerald-600 shrink-0" />
+                                  </span>
                                 )}
                               </span>
                               <span className="text-[11px] font-mono">

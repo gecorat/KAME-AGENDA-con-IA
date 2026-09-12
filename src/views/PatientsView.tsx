@@ -1943,18 +1943,36 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
       {activePrescriptionToPrint && (
         <PrescriptionPrintModal
-          isOpen={!!activePrescriptionToPrint}
+          prescription={{
+            id: activePrescriptionToPrint.consultation.id,
+            appointment_id: activePrescriptionToPrint.consultation.appointment_id,
+            patient_id: activePrescriptionToPrint.consultation.patient_id,
+            patient_name: activePrescriptionToPrint.consultation.patient_name,
+            patient_phone: selectedPatient?.phone,
+            date: activePrescriptionToPrint.consultation.date,
+            items: (activePrescriptionToPrint.consultation.prescriptions || []).map(p => ({
+              id: p.id,
+              medication: p.medication,
+              dosage: p.dosage,
+              duration: p.duration,
+              instructions: p.instructions
+            })),
+            notes: activePrescriptionToPrint.consultation.soap_plan,
+            professional_name: practiceSettings.professional_name || 'Profesional Médico',
+            status: 'active',
+            created_at: activePrescriptionToPrint.consultation.created_at
+          }}
+          practiceSettings={practiceSettings}
           onClose={() => setActivePrescriptionToPrint(null)}
-          consultation={activePrescriptionToPrint.consultation}
         />
       )}
 
       {activeCertificateToPrint && (
         <CertificatePrintModal
-          isOpen={!!activeCertificateToPrint}
-          onClose={() => setActiveCertificateToPrint(null)}
           certificate={activeCertificateToPrint.certificate}
+          practiceSettings={practiceSettings}
           patientPhone={activeCertificateToPrint.patientPhone}
+          onClose={() => setActiveCertificateToPrint(null)}
         />
       )}
 
@@ -2036,7 +2054,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           }
         }}
         title="¿Eliminar Turno?"
-        message={`¿Está seguro de que desea eliminar el turno agendado para el ${appointmentToDelete?.date} a las ${appointmentToDelete?.time}?`}
+        message={`¿Está seguro de que desea eliminar el turno agendado para el ${appointmentToDelete?.date || appointmentToDelete?.start_datetime.split('T')[0]} a las ${appointmentToDelete?.time || appointmentToDelete?.start_datetime.split('T')[1]?.slice(0, 5)}?`}
         confirmText="Sí, Eliminar Turno"
         variant="danger"
       />

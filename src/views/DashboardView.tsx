@@ -135,7 +135,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const pendingTransfers = payments.filter(p =>
     !isExampleItem(p) &&
-    p.status === 'pending'
+    (p.status as string) === 'pending'
   );
 
   const totalPendingValidations = pendingDepositVerification.length + pendingCompletedPayments.length + pendingTransfers.length;
@@ -145,7 +145,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     try {
       const aptTime = new Date(a.start_datetime).getTime();
       const isThisWeek = aptTime >= oneWeekAgo && aptTime <= (Date.now() + 7 * 24 * 60 * 60 * 1000);
-      return isThisWeek && (a.origin === 'bot_whatsapp' || a.origin === 'patient_portal' || a.patient_confirmed || a.reminder_24h_sent);
+      return isThisWeek && (a.origin === 'bot_whatsapp' || (a.origin as string) === 'patient_portal' || a.patient_confirmed || a.reminder_24h_sent);
     } catch {
       return false;
     }

@@ -243,6 +243,7 @@ export const BillingView: React.FC = () => {
       cash: 0,
       transfer: 0,
       mercado_pago: 0,
+      mercadopago: 0,
       card_debit: 0,
       card_credit: 0,
       insurance: 0
@@ -1204,7 +1205,7 @@ export const BillingView: React.FC = () => {
           onClose={() => setSelectedAptForRequest(null)}
           patientName={selectedAptForRequest.patient_name}
           patientPhone={selectedAptForRequest.patient_phone}
-          concept={`${selectedAptForRequest.service_name} (${selectedAptForRequest.date})`}
+          concept={`${selectedAptForRequest.service_name} (${selectedAptForRequest.date || selectedAptForRequest.start_datetime?.split('T')[0] || ''})`}
           amount={selectedAptForRequest.service_price || 0}
           appointmentId={selectedAptForRequest.id}
         />
