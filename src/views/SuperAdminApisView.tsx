@@ -128,7 +128,7 @@ export const SuperAdminApisView: React.FC = () => {
       if (data.success) {
         setEvolutionResult({
           success: true,
-          message: `¡Conexión exitosa con Evolution API! Estado de instancia: ${data.status || 'operativa'}`,
+          message: data.message || `¡Conexión exitosa con Evolution API! Estado: ${data.status || 'operativa'}`,
           state: data.status
         });
       } else {
@@ -593,9 +593,14 @@ export const SuperAdminApisView: React.FC = () => {
             <code className="block p-2.5 bg-white border border-neutral-200 rounded-xl font-mono text-[11px] text-neutral-700 select-all overflow-x-auto">
               {evolutionWebhookUrl}
             </code>
-            <p className="text-[10px] text-neutral-500">
-              Configura este webhook en tu Evolution API para recibir los mensajes entrantes de los pacientes en tiempo real y disparar la IA Gemini.
-            </p>
+            <div className="text-[11px] text-neutral-600 space-y-1 bg-white p-3 rounded-xl border border-neutral-200/80">
+              <p className="font-semibold text-neutral-800">
+                💡 No necesitas tocar nada en tu panel de Hostinger ni modificar tu otra app:
+              </p>
+              <p>
+                El webhook se asocia de forma <strong>independiente y aislada a la instancia de esta app</strong> (`/webhook/set/nombre-instancia`), sin alterar el webhook global ni interferir con tu otro sistema que ya usa el servidor de Evolution API.
+              </p>
+            </div>
           </div>
         </div>
 

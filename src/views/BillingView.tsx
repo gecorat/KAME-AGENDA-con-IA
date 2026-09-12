@@ -449,7 +449,14 @@ export const BillingView: React.FC = () => {
       <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
         
         {/* Tab Navigation */}
-        <div className="flex items-center border-b border-neutral-200 px-4 bg-neutral-50/70 overflow-x-auto">
+        <div 
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+              e.currentTarget.scrollLeft += e.deltaY;
+            }
+          }}
+          className="flex items-center border-b border-neutral-200 px-4 bg-neutral-50/70 overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0"
+        >
           <button
             onClick={() => setActiveTab('payments')}
             className={`py-3.5 px-4 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-2 ${
@@ -571,7 +578,7 @@ export const BillingView: React.FC = () => {
             </div>
 
             {/* Payments Table */}
-            <div className="border border-neutral-200 rounded-xl overflow-x-auto w-full">
+            <div className="border border-neutral-200 rounded-xl overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0">
               <table className="w-full text-left text-xs min-w-[750px]">
                 <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                   <tr>
@@ -793,7 +800,7 @@ export const BillingView: React.FC = () => {
                 </button>
               </div>
 
-              <div className="border border-neutral-200 rounded-xl overflow-x-auto">
+              <div className="border border-neutral-200 rounded-xl overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0">
                 <table className="w-full text-left text-xs min-w-[550px]">
                   <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                     <tr>
@@ -899,7 +906,7 @@ export const BillingView: React.FC = () => {
               </div>
             </div>
 
-            <div className="border border-neutral-200 rounded-xl overflow-x-auto">
+            <div className="border border-neutral-200 rounded-xl overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0">
               <table className="w-full text-left text-xs min-w-[550px]">
                 <thead className="bg-neutral-50 text-neutral-600 font-semibold uppercase text-[11px] border-b border-neutral-200">
                   <tr>
@@ -1037,7 +1044,7 @@ export const BillingView: React.FC = () => {
               </div>
             )}
 
-            <div className="border border-neutral-200 rounded-xl overflow-x-auto w-full bg-white">
+            <div className="border border-neutral-200 rounded-xl overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0 bg-white">
               <div className="p-3 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
                 <span className="font-semibold text-xs text-neutral-700">
                   Detalle de Bonos, Copagos y Prestaciones ({insuranceRecords.length})

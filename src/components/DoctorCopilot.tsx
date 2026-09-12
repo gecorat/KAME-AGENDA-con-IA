@@ -587,12 +587,12 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
     <>
       {/* Floating Trigger Button */}
       {!isOpen && (
-        <div className="fixed bottom-5 right-5 z-40 sm:bottom-6 sm:right-6">
+        <div className="fixed bottom-4 right-4 z-40 sm:bottom-6 sm:right-6">
           <button
             type="button"
             id="btn-open-doctor-copilot"
             onClick={() => setIsOpen(true)}
-            className="group relative flex items-center gap-2.5 bg-neutral-900 hover:bg-neutral-800 text-white pl-4 pr-4 py-3 rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 border border-neutral-700/60 cursor-pointer"
+            className="group relative flex items-center gap-2.5 bg-neutral-900 hover:bg-neutral-800 text-white p-2.5 sm:pl-4 sm:pr-4 sm:py-3 rounded-full shadow-lg hover:shadow-xl active:scale-95 transition-all duration-200 border border-neutral-700/60 cursor-pointer"
             title="Abrir Copiloto IA de Agenfacil"
           >
             <div className="relative flex items-center justify-center">
@@ -604,7 +604,7 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-purple-500"></span>
               </span>
             </div>
-            <div className="text-left">
+            <div className="text-left hidden sm:block">
               <span className="text-xs font-semibold block leading-tight tracking-tight">Copiloto IA</span>
               <span className="text-[10px] text-neutral-300 font-medium block leading-tight">Tu asistente • Voz 🎙️</span>
             </div>
@@ -678,7 +678,14 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
           </div>
 
           {/* Quick Filter / Suggestion Chips Bar */}
-          <div className="bg-neutral-50 border-b border-neutral-200/80 px-3 py-2 overflow-x-auto no-scrollbar shrink-0 flex items-center gap-1.5">
+          <div 
+            onWheel={(e) => {
+              if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+            className="bg-neutral-50 border-b border-neutral-200/80 px-3 py-2 overflow-x-auto scroll-touch-x subtle-scrollbar shrink-0 flex items-center gap-1.5 w-full max-w-full min-w-0"
+          >
             {quickSuggestions.map((item, idx) => (
               <button
                 key={idx}

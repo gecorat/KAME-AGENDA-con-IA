@@ -24,6 +24,259 @@ function getAI(): GoogleGenAI | null {
   return aiClient;
 }
 
+// In-memory store for real Evolution WhatsApp conversations & messages
+export interface RealWhatsAppMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  status: 'sent' | 'delivered' | 'read';
+  actionTaken?: any;
+}
+
+export interface RealWhatsAppConversation {
+  id: string;
+  patient_name: string;
+  patient_first_name?: string;
+  patient_phone: string;
+  patient_avatar?: string;
+  unread_count: number;
+  ai_handled: boolean;
+  last_message?: string;
+  last_timestamp?: string;
+  messages: RealWhatsAppMessage[];
+}
+
+const realWhatsAppConversations: Map<string, RealWhatsAppConversation> = new Map();
+let instanceConnectedAt: number = Date.now();
+let lastKnownEvolutionConfig = {
+  apiUrl: process.env.EVOLUTION_API_URL || "",
+  apiKey: process.env.EVOLUTION_API_KEY || "",
+  instanceName: process.env.EVOLUTION_INSTANCE_NAME || "consultorio"
+};
+let cachedPracticeSettings: any = {};
+
+async function generateAiBotResponse(params: {
+  message: string;
+  history?: any[];
+  practiceSettings?: any;
+  services?: any[];
+  availability?: any[];
+  existingAppointments?: any[];
+}) {
+  const {
+    message,
+    history = [],
+    practiceSettings = cachedPracticeSettings || {},
+    services = [],
+    availability = [],
+    existingAppointments = []
+  } = params;
+
+  if (practiceSettings && Object.keys(practiceSettings).length > 0) {
+    cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+  }
+
+  const ai = getAI();
+  const effectiveSettings = { ...cachedPracticeSettings, ...practiceSettings };
+  const practiceName = effectiveSettings.practice_name || "Agenfacil";
+  const professionalName = effectiveSettings.professional_name || "el profesional a cargo";
+  const professionalTitle = effectiveSettings.professional_title || "Especialista";
+  const isProfessionalIdentity = effectiveSettings.bot_identity_mode === 'professional';
+  const assistantName = effectiveSettings.bot_assistant_name || "Sofía (IA)";
+  const botTone = effectiveSettings.bot_tone || "cálido, profesional, empático y conciso";
+  const customRules = effectiveSettings.bot_custom_instructions ? `\n\nREGLAS Y RESTRICCIONES ESPECÍFICAS DEL CONSULTORIO (OBLIGATORIAS):\n${effectiveSettings.bot_custom_instructions}` : "";
+
+  // Features enabled
+  const featPricing = effectiveSettings.bot_feature_pricing ?? true;
+  const featBooking = effectiveSettings.bot_feature_booking ?? true;
+  const featLocation = effectiveSettings.bot_feature_location ?? true;
+  const featDeposit = effectiveSettings.bot_feature_deposit_info ?? true;
+  const featHandoff = effectiveSettings.bot_feature_human_handoff ?? true;
+
+  // Services context
+  const servicesList = services.length > 0
+    ? services.map((s: any) => `- ${s.name}: $${s.price?.toLocaleString()} (${s.duration_minutes} min)${s.description ? ` - ${s.description}` : ""}`).join("\n")
+    : "- Consulta Médica General / Evaluación: $15.000 (30 min)\n- Control / Seguimiento: $10.000 (20 min)";
+
+  // Availability context
+  const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const scheduleList = availability.length > 0
+    ? availability.map((a: any) => `- ${days[a.day_of_week] || "Día"}: ${a.start_time} a ${a.end_time}`).join("\n")
+    : "- Lunes a Viernes: 09:00 a 18:00";
+
+  // Existing booked appointments
+  const bookedList = existingAppointments.length > 0
+    ? existingAppointments.map((a: any) => `- ${a.start_datetime} (${a.service_name || "Turno"})`).join("\n")
+    : "No hay turnos registrados en este momento.";
+
+  const now = new Date();
+  const todayString = now.toLocaleString("es-AR", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "America/Argentina/Buenos_Aires"
+  });
+
+  const botReq = effectiveSettings.bot_required_fields || {
+    full_name: true,
+    phone: true,
+    dni: false,
+    email: false,
+    insurance: false,
+    reason: false,
+    address: false
+  };
+
+  const requiredFieldsDescriptions = [
+    botReq.full_name ? "- Nombre y Apellido completo" : null,
+    botReq.phone ? "- Número de WhatsApp / Celular" : null,
+    botReq.dni ? "- DNI o documento de identidad" : null,
+    botReq.email ? "- Correo electrónico" : null,
+    botReq.insurance ? "- Obra social o Prepaga (o Particular)" : null,
+    botReq.reason ? "- Motivo de consulta o afección" : null,
+    botReq.address ? "- Domicilio o localidad de residencia" : null,
+  ].filter(Boolean).join("\n");
+
+  let identityPrompt = "";
+  if (isProfessionalIdentity) {
+    identityPrompt = `Eres ${professionalName} (${professionalTitle}), el profesional a cargo de "${practiceName}".
+Respondes directamente tú en primera persona a tus pacientes con trato cercano, humano y profesional.
+Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp (mensajes no excesivamente largos, directos y fluidos).`;
+  } else {
+    identityPrompt = `Eres ${assistantName}, la asistente virtual inteligente de "${practiceName}" del profesional ${professionalName}.
+Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp (mensajes no excesivamente largos, directos y fluidos).`;
+  }
+
+  const systemInstruction = `${identityPrompt}
+
+Fecha y hora actual del consultorio: ${todayString}.
+Dirección del consultorio: ${effectiveSettings.address || "Consultorio céntrico"}, ${effectiveSettings.city || "Ciudad"}.
+Teléfono de contacto: ${effectiveSettings.phone || effectiveSettings.whatsapp_number || ""}.
+
+INFORMACIÓN DEL CONSULTORIO:
+Servicios y aranceles:
+${featPricing ? servicesList : "Informar que los aranceles se coordinan en la consulta presencial."}
+
+Horarios de atención disponibles:
+${scheduleList}
+
+Turnos ya ocupados / no disponibles:
+${bookedList}
+
+INSTRUCCIONES CLAVE DE ATENCIÓN Y CONVERSACIÓN:
+1. FLUIDEZ Y CONTEXTO: Mantén una conversación continua, empática y lógica con el paciente. NUNCA repitas el saludo inicial si ya te has presentado en mensajes anteriores. Responde concretamente a la última duda o mensaje del paciente.
+2. RIGOR Y CERO ALUCINACIONES: Basa tus respuestas ÚNICAMENTE en la información explícita de los servicios, aranceles, horarios y dirección listados arriba. NO inventes precios, promociones, diagnósticos, indicaciones médicas ni servicios que no estén configurados. Si el paciente pregunta por un tratamiento o arancel que no figura en la lista, responde amablemente que no dispones de ese dato en el sistema y que dejas asentada la consulta para que el profesional a cargo lo revise.
+3. SERVICIOS Y PRECIOS: Responder preguntas sobre servicios${featPricing ? ", precios" : ""}, duración y ubicación según los datos oficiales del consultorio.
+4. ${featBooking ? "HORARIOS Y TURNOS: Ayudar al paciente a elegir un horario disponible según los huecos libres y días de atención configurados. NUNCA inventes turnos ni confirmes horarios ocupados." : "Informar los horarios de atención y pedirle que aguarde confirmación del equipo."}
+5. DATOS REQUERIDOS PARA AGENDAR:
+${requiredFieldsDescriptions || "- Nombre y Apellido\n- Teléfono"}
+Pide estos datos de forma natural y progresiva a lo largo del diálogo.
+6. ${featDeposit && effectiveSettings.patient_deposit_alias ? `PAGOS Y SEÑAS: Si el paciente desea señar su turno o pregunta por transferencias, indícale el Alias de seña: ${effectiveSettings.patient_deposit_alias}.` : ""}
+7. ${featHandoff ? "DERIVACIÓN HUMANA: Si el paciente solicita hablar con una persona real o tiene un caso complejo, indícale con calidez que su mensaje queda guardado para contacto por el profesional." : ""}
+8. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos requeridos, resume los datos confirmados y emite el bloque JSON estructurado con tag 'json_action'." : ""}
+${customRules}
+
+FORMATO DE RESPUESTA:
+Provee tu mensaje amigable y humano para el paciente.
+${featBooking ? `Si se concreta o confirma una reserva con todos los datos requeridos, agrega al final un bloque de código markdown con tag 'json_action':
+\`\`\`json_action
+{
+  "action": "book_appointment",
+  "service_name": "Nombre del servicio exacto",
+  "datetime": "YYYY-MM-DDTHH:mm:ss",
+  "patient_name": "Nombre del paciente",
+  "patient_phone": "Teléfono si se conoce",
+  "patient_email": "Email si se conoce",
+  "notes": "Notas adicionales"
+}
+\`\`\`
+Si aún falta definir algún dato obligatorio o la fecha/hora no está confirmada por el paciente, NO incluyas el bloque 'json_action'.` : ""}`;
+
+  if (ai) {
+    const candidateModels = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"];
+    for (const modelName of candidateModels) {
+      try {
+        const conversationText = history
+          .slice(-12)
+          .map((m: any) => `${m.role === "user" ? "Paciente" : (isProfessionalIdentity ? professionalName : "Asistente")}: ${m.content}`)
+          .join("\n");
+
+        const fullPrompt = `${systemInstruction}\n\n=== HISTORIAL DE LA CONVERSACIÓN ===\n${conversationText || "(Inicio de la conversación)"}\n\nPaciente: ${message}\n${isProfessionalIdentity ? professionalName : "Asistente"}:`;
+
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: fullPrompt,
+        });
+
+        const replyRaw = response.text?.trim();
+        if (replyRaw) {
+          let actionData: any = null;
+          const match = replyRaw.match(/```json_action\s*([\s\S]*?)\s*```/);
+          let cleanReply = replyRaw;
+
+          if (match && match[1]) {
+            try {
+              actionData = JSON.parse(match[1]);
+              cleanReply = replyRaw.replace(/```json_action\s*[\s\S]*?\s*```/, "").trim();
+            } catch (err) {
+              console.error("Failed to parse json_action:", err);
+            }
+          }
+
+          return {
+            reply: cleanReply,
+            action: actionData,
+            aiPowered: true
+          };
+        }
+      } catch (aiErr: any) {
+        console.warn(`Gemini AI error with ${modelName}:`, aiErr?.message || aiErr);
+      }
+    }
+  }
+
+  // Dynamic context-aware heuristic fallback if Gemini is offline or quota limited
+  const lower = message.toLowerCase().trim();
+  const hasHistory = history.length > 0;
+  let reply = "";
+  let actionData: any = null;
+
+  if (lower.includes("precio") || lower.includes("cuanto") || lower.includes("arancel") || lower.includes("costo") || lower.includes("valor")) {
+    reply = `Con gusto te paso la información de nuestros servicios y aranceles:\n\n${services.length > 0 ? services.map((s: any) => `• *${s.name}*: $${s.price?.toLocaleString()} (${s.duration_minutes} min)`).join("\n") : "• Consulta General: $15.000"}\n\n¿Te gustaría que te reservemos un turno para alguno de ellos? 😊`;
+  } else if (lower.includes("horario") || lower.includes("atienden") || lower.includes("dias") || lower.includes("días") || lower.includes("abierto")) {
+    reply = `Nuestros horarios de atención son:\n${scheduleList}\n\n¿Qué día y franja horaria (mañana o tarde) te quedaría más cómodo?`;
+  } else if (lower.includes("turno") || lower.includes("agendar") || lower.includes("reservar") || lower.includes("cita") || lower.includes("consulta")) {
+    const firstService = services[0]?.name || "Consulta Médica";
+    reply = `¡Claro que sí! Con mucho gusto te ayudo a coordinar tu turno para *${firstService}*. ¿Prefieres venir por la mañana o por la tarde? Y por favor indícame tu nombre completo para la ficha.`;
+  } else if (lower.includes("donde") || lower.includes("dirección") || lower.includes("direccion") || lower.includes("ubicacion") || lower.includes("ubicación")) {
+    reply = `Estamos ubicados en *${effectiveSettings.address || "nuestro consultorio central"}*, ${effectiveSettings.city || ""}. ¿Necesitas indicaciones para llegar o te ayudo a agendar un turno?`;
+  } else if (lower.includes("gracias") || lower.includes("dale") || lower.includes("perfecto") || lower.includes("genial") || lower.includes("bueno") || lower.includes("ok")) {
+    reply = `¡Un placer! Quedo a tu total disposición por cualquier otra consulta sobre tus turnos o atención. ¡Que tengas un excelente día! ✨`;
+  } else if (lower.match(/\b(hola|buen dia|buenas|buenos dias|buenas tardes|buenas noches|que tal)\b/)) {
+    if (hasHistory) {
+      reply = `¡Hola de nuevo! ¿En qué te podemos colaborar hoy? ¿Deseas consultar servicios, horarios o solicitar un turno?`;
+    } else {
+      reply = `¡Hola! Te damos la bienvenida a *${practiceName}*. Soy tu asistente virtual. ¿En qué te puedo ayudar hoy? (Consultar precios, horarios disponibles o agendar un turno)`;
+    }
+  } else {
+    if (hasHistory) {
+      reply = `Entendido. Tomo nota de tu mensaje: "${message}". ¿Deseas que coordinemos un turno para esta semana o tienes alguna consulta sobre los servicios y aranceles?`;
+    } else {
+      reply = `¡Hola! Gracias por comunicarte con *${practiceName}*. He recibido tu consulta sobre "${message}". ¿Te gustaría agendar una cita o necesitas información sobre aranceles y horarios? 😊`;
+    }
+  }
+
+  return {
+    reply,
+    action: actionData,
+    aiPowered: false
+  };
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -55,193 +308,22 @@ async function startServer() {
         return res.status(400).json({ error: "El mensaje es requerido" });
       }
 
-      const ai = getAI();
-      const practiceName = practiceSettings.practice_name || "Agenfacil";
-      const professionalName = practiceSettings.professional_name || "el profesional a cargo";
-      const professionalTitle = practiceSettings.professional_title || "Especialista";
-      const isProfessionalIdentity = practiceSettings.bot_identity_mode === 'professional';
-      const assistantName = practiceSettings.bot_assistant_name || "Sofía (IA)";
-      const botTone = practiceSettings.bot_tone || "cálido, profesional y conciso";
-      const modelToUse = practiceSettings.bot_ai_model || "gemini-3.8-flash";
-      const customRules = practiceSettings.bot_custom_instructions ? `\n\nREGLAS Y RESTRICCIONES ESPECÍFICAS DEL CONSULTORIO (OBLIGATORIAS):\n${practiceSettings.bot_custom_instructions}` : "";
-
-      // Features enabled
-      const featPricing = practiceSettings.bot_feature_pricing ?? true;
-      const featBooking = practiceSettings.bot_feature_booking ?? true;
-      const featLocation = practiceSettings.bot_feature_location ?? true;
-      const featDeposit = practiceSettings.bot_feature_deposit_info ?? true;
-      const featHandoff = practiceSettings.bot_feature_human_handoff ?? true;
-
-      // Services context
-      const servicesList = services.length > 0
-        ? services.map((s: any) => `- ${s.name}: $${s.price || 0} (${s.duration_minutes || 30} min) - ${s.description || "Sin descripción"}`).join("\n")
-        : "- Consulta General: $15.000 (30 min)";
-
-      // Availability context
-      const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-      const scheduleList = availability.length > 0
-        ? availability.map((a: any) => `- ${days[a.day_of_week] || "Día"}: ${a.start_time} a ${a.end_time}`).join("\n")
-        : "- Lunes a Viernes: 09:00 a 18:00";
-
-      // Existing booked appointments
-      const bookedList = existingAppointments.length > 0
-        ? existingAppointments.map((a: any) => `- ${a.start_datetime} (${a.service_name || "Turno"})`).join("\n")
-        : "No hay turnos registrados en este momento.";
-
-      const now = new Date();
-      const todayString = now.toLocaleString("es-AR", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        timeZone: "America/Argentina/Buenos_Aires"
+      const botResponse = await generateAiBotResponse({
+        message,
+        history,
+        practiceSettings,
+        services,
+        availability,
+        existingAppointments
       });
 
-      const botReq = practiceSettings.bot_required_fields || {
-        full_name: true,
-        phone: true,
-        dni: false,
-        email: false,
-        insurance: false,
-        reason: false,
-        address: false
-      };
-
-      const requiredFieldsDescriptions = [
-        botReq.full_name ? "- Nombre y Apellido completo" : null,
-        botReq.phone ? "- Número de WhatsApp / Celular (con código de país ej +54 9 y código de área)" : null,
-        botReq.dni ? "- DNI o documento de identidad (obligatorio para la ficha médica)" : null,
-        botReq.email ? "- Correo electrónico" : null,
-        botReq.insurance ? "- Obra social o Prepaga (o indicar Particular)" : null,
-        botReq.reason ? "- Motivo de consulta o afección" : null,
-        botReq.address ? "- Domicilio o localidad de residencia" : null,
-      ].filter(Boolean).join("\n");
-
-      let identityPrompt = "";
-      if (isProfessionalIdentity) {
-        identityPrompt = `Eres ${professionalName} (${professionalTitle}), el profesional a cargo de "${practiceName}".
-Respondes directamente tú en primera persona a tus pacientes con trato cercano y profesional.
-Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp.`;
-      } else {
-        identityPrompt = `Eres ${assistantName}, la asistente virtual inteligente de "${practiceName}" del profesional ${professionalName}.
-Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp.`;
+      // Bot human-like response delay pacing
+      const delaySeconds = Math.min(Math.max(Number(practiceSettings.bot_response_delay_seconds) || 0, 0), 60);
+      if (delaySeconds > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
       }
 
-      const systemInstruction = `${identityPrompt}
-
-Fecha y hora actual del consultorio: ${todayString}.
-Dirección del consultorio: ${practiceSettings.address || "Consultorio céntrico"}, ${practiceSettings.city || "Ciudad"}.
-Teléfono de contacto: ${practiceSettings.phone || practiceSettings.whatsapp_number || ""}.
-
-INFORMACIÓN DEL CONSULTORIO:
-Servicios y aranceles:
-${featPricing ? servicesList : "Informar que los aranceles se coordinan en la consulta presencial."}
-
-Horarios de atención habituales:
-${scheduleList}
-
-Turnos ya reservados (NO disponibles):
-${bookedList}
-${customRules}
-
-OBJETIVOS Y FUNCIONES HABILITADAS:
-1. Responder preguntas sobre servicios${featPricing ? ", precios" : ""}, duración y ubicación.
-2. ${featBooking ? "Ayudar al paciente a elegir un horario disponible según los huecos libres y horarios de atención." : "Informar los horarios de atención y pedirle que aguarde confirmación del equipo."}
-3. DATOS OBLIGATORIOS QUE DEBES PEDIR Y RECOLECTAR ANTES DE CONFIRMAR LA CITA:
-${requiredFieldsDescriptions || "- Nombre y Apellido\n- Teléfono"}
-No cierres ni confirmes la reserva hasta que el paciente te haya proporcionado TODOS estos datos obligatorios. Si falta alguno, pídeselo con amabilidad y naturalidad.
-4. ${featDeposit && practiceSettings.patient_deposit_alias ? `Si el paciente desea señar su turno o pregunta por pagos, puedes informarle que la seña se realiza al Alias: ${practiceSettings.patient_deposit_alias}.` : ""}
-5. ${featHandoff ? "Si el paciente solicita hablar con una persona real o tiene un reclamo complejo, dile amablemente que dejas su mensaje registrado para que el equipo humano lo contacte a la brevedad." : ""}
-6. ${featBooking ? "Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos obligatorios solicitados, indícale una confirmación cálida con el resumen y emite el bloque JSON estructurado al final con tag 'json_action'." : ""}
-
-FORMATO DE RESPUESTA:
-Provee tu mensaje amigable y humano para el paciente.
-${featBooking ? `Si se concreta o confirma una reserva con todos los datos requeridos, agrega al final un bloque de código markdown con tag 'json_action':
-\`\`\`json_action
-{
-  "action": "book_appointment",
-  "service_name": "Nombre del servicio exacto",
-  "datetime": "YYYY-MM-DDTHH:mm:ss",
-  "patient_name": "Nombre del paciente",
-  "patient_phone": "Teléfono si se conoce",
-  "patient_email": "Email si se conoce",
-  "notes": "Notas adicionales"
-}
-\`\`\`
-Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el bloque 'json_action'.` : ""}`;
-
-      if (ai) {
-        // Prepare conversation
-        const conversationText = history
-          .slice(-10)
-          .map((m: any) => `${m.role === "user" ? "Paciente" : (isProfessionalIdentity ? professionalName : "Asistente")}: ${m.content}`)
-          .join("\n");
-
-        const fullPrompt = `${systemInstruction}\n\n=== HISTORIAL DE LA CONVERSACIÓN ===\n${conversationText}\n\nPaciente: ${message}\n${isProfessionalIdentity ? professionalName : "Asistente"}:`;
-
-        const response = await ai.models.generateContent({
-          model: modelToUse,
-          contents: fullPrompt,
-        });
-
-        const replyRaw = response.text || "¡Hola! ¿En qué te puedo ayudar hoy con tus turnos?";
-
-        // Check if there is a json_action in the reply
-        let actionData: any = null;
-        const match = replyRaw.match(/```json_action\s*([\s\S]*?)\s*```/);
-        let cleanReply = replyRaw;
-
-        if (match && match[1]) {
-          try {
-            actionData = JSON.parse(match[1]);
-            cleanReply = replyRaw.replace(/```json_action\s*[\s\S]*?\s*```/, "").trim();
-          } catch (err) {
-            console.error("Failed to parse json_action:", err);
-          }
-        }
-
-        // Bot human-like response delay pacing (e.g. 10s, 15s, 30s)
-        const delaySeconds = Math.min(Math.max(Number(practiceSettings.bot_response_delay_seconds) || 0, 0), 60);
-        if (delaySeconds > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-        }
-
-        return res.json({
-          reply: cleanReply,
-          action: actionData,
-          aiPowered: true
-        });
-      } else {
-        // Fallback intelligent heuristic if GEMINI_API_KEY is not configured yet
-        const lower = message.toLowerCase();
-        let reply = "";
-        let actionData: any = null;
-
-        if (lower.includes("precio") || lower.includes("cuanto") || lower.includes("arancel") || lower.includes("costo")) {
-          reply = `¡Hola! Con gusto. Aquí tienes nuestros servicios y aranceles actuales:\n\n${services.map((s: any) => `• *${s.name}*: $${s.price?.toLocaleString()} (${s.duration_minutes} min)`).join("\n")}\n\n¿Te gustaría que te reserve un turno para alguno de ellos? 😊`;
-        } else if (lower.includes("horario") || lower.includes("atienden") || lower.includes("dias")) {
-          reply = `Atendemos de lunes a viernes en los siguientes rangos:\n• Mañanas: 09:00 a 13:00\n• Tardes: 14:00 a 18:30\n\n¿Qué día te quedaría más cómodo acercarte?`;
-        } else if (lower.includes("turno") || lower.includes("agendar") || lower.includes("reservar") || lower.includes("cita")) {
-          const firstService = services[0]?.name || "Consulta General";
-          reply = `¡Claro que sí! Para coordinar tu turno para *${firstService}*, ¿prefieres un horario por la mañana o por la tarde? Y por favor indícame tu nombre completo.`;
-        } else {
-          reply = `¡Hola! Soy la asistente virtual de ${practiceName}. Puedo ayudarte a consultar aranceles, horarios disponibles o agendar y reprogramar turnos fácilmente. ¿En qué te puedo asesorar hoy? ✨`;
-        }
-
-        const delaySeconds = Math.min(Math.max(Number(practiceSettings.bot_response_delay_seconds) || 0, 0), 60);
-        if (delaySeconds > 0) {
-          await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
-        }
-
-        return res.json({
-          reply,
-          action: actionData,
-          aiPowered: false,
-          note: "Configure GEMINI_API_KEY en los secretos para activar la inteligencia generativa completa."
-        });
-      }
+      return res.json(botResponse);
     } catch (error: any) {
       console.error("Error in /api/assistant/chat:", error);
       res.status(500).json({ error: error.message || "Error procesando mensaje con IA" });
@@ -709,7 +791,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       const { apiUrl, apiKey, instanceName } = req.body;
       const targetUrl = (apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
       const targetKey = apiKey || process.env.EVOLUTION_API_KEY || "";
-      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+      const targetInstance = (instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio-principal").trim();
 
       if (!targetUrl || !targetKey) {
         return res.status(400).json({
@@ -719,6 +801,27 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         });
       }
 
+      // First test: Check if Evolution Server is alive and accepts the Global API key by fetching instances
+      let instancesList: any[] = [];
+      let globalKeyValid = false;
+      try {
+        const fetchInstancesRes = await fetch(`${targetUrl}/instance/fetchInstances`, {
+          method: "GET",
+          headers: {
+            "apikey": targetKey,
+            "Content-Type": "application/json"
+          }
+        });
+        if (fetchInstancesRes.ok) {
+          const list = await fetchInstancesRes.json();
+          instancesList = Array.isArray(list) ? list : (list?.response || []);
+          globalKeyValid = true;
+        }
+      } catch (e) {
+        // Continue to check individual instance
+      }
+
+      // Second test: Check connection state of the requested instance
       const response = await fetch(`${targetUrl}/instance/connectionState/${targetInstance}`, {
         method: "GET",
         headers: {
@@ -729,6 +832,19 @@ Responde ÚNICAMENTE con un JSON con la estructura:
 
       if (!response.ok) {
         const errText = await response.text();
+        
+        // If the instance does not exist yet (404), BUT the server and Global API key are valid!
+        if (response.status === 404 && (globalKeyValid || errText.includes("does not exist"))) {
+          const availableInstances = instancesList.map((inst: any) => inst?.instance?.instanceName || inst?.name).filter(Boolean);
+          return res.json({
+            success: true,
+            status: "instance_not_created_yet",
+            serverAlive: true,
+            message: `¡Servidor Evolution conectado exitosamente! La Global API Key es válida. La instancia "${targetInstance}" aún no ha sido creada en Evolution (se creará automáticamente al escanear el QR o puedes usar una existente: ${availableInstances.length > 0 ? availableInstances.join(', ') : 'ninguna aún'}).`,
+            availableInstances
+          });
+        }
+
         return res.json({
           success: false,
           status: "error",
@@ -741,6 +857,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       return res.json({
         success: true,
         status: data?.instance?.state || data?.state || "connected",
+        message: `¡Conexión exitosa con Evolution API! Estado de la instancia "${targetInstance}": ${data?.instance?.state || data?.state || "operativa"}.`,
         data
       });
     } catch (err: any) {
@@ -753,51 +870,667 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     }
   });
 
-  // Get or Generate QR Code for a Doctor's Instance (Used by regular doctors without seeing API keys)
-  app.post("/api/evolution/instance-qr", async (req, res) => {
+  // Sync Evolution and Practice config with backend
+  app.post("/api/evolution/sync-config", (req, res) => {
     try {
-      const { instanceName } = req.body;
-      const targetUrl = (process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
-      const targetKey = process.env.EVOLUTION_API_KEY || "";
-      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
-
-      if (!targetUrl || !targetKey) {
-        // Master APIs not configured in .env yet -> Return simulated QR response for immediate testing
-        return res.json({
-          success: true,
-          simulated: true,
-          status: "connecting",
-          instanceName: targetInstance,
-          qrcode: null,
-          message: "Modo simulación activo. El administrador (gonzalocorat@gmail.com) puede configurar EVOLUTION_API_URL y EVOLUTION_API_KEY en el servidor para generar QRs de WhatsApp en vivo."
-        });
+      const { apiUrl, apiKey, instanceName, practiceSettings, appUrl } = req.body;
+      if (apiUrl) lastKnownEvolutionConfig.apiUrl = apiUrl.replace(/\/$/, "");
+      if (apiKey) lastKnownEvolutionConfig.apiKey = apiKey;
+      if (instanceName) lastKnownEvolutionConfig.instanceName = instanceName.trim();
+      if (practiceSettings) {
+        cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
       }
+      return res.json({ success: true });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
 
-      // Check current connection state
-      const checkRes = await fetch(`${targetUrl}/instance/connectionState/${targetInstance}`, {
-        headers: { "apikey": targetKey }
+  // Universal phone normalization and conversation lookup helper
+  const normalizePhoneNumber = (raw: string) => {
+    const digits = (raw || "").replace(/\D/g, "");
+    let core10 = digits;
+    if (digits.startsWith("549") && digits.length === 13) {
+      core10 = digits.slice(3);
+    } else if (digits.startsWith("54") && digits.length === 12) {
+      core10 = digits.slice(2);
+    } else if (digits.length > 10) {
+      core10 = digits.slice(-10);
+    }
+    const full = digits.startsWith("54") ? digits : (digits.length === 10 ? `549${digits}` : digits);
+    const display = `+${full.startsWith("54") ? full : (full.length === 10 ? `549${full}` : full)}`;
+    return { digits, core10, full, display };
+  };
+
+  const formatDisplayPhone = (raw: string) => {
+    const digits = (raw || "").replace(/\D/g, "");
+    if (!digits) return raw;
+    if (digits.startsWith("549") && digits.length === 13) {
+      const area = digits.slice(3, 6);
+      const mid = digits.slice(6, 9);
+      const end = digits.slice(9);
+      return `+54 9 ${area} ${mid}-${end}`;
+    }
+    if (digits.startsWith("54") && digits.length === 12) {
+      const area = digits.slice(2, 5);
+      const mid = digits.slice(5, 8);
+      const end = digits.slice(8);
+      return `+54 9 ${area} ${mid}-${end}`;
+    }
+    if (digits.length === 10) {
+      const area = digits.slice(0, 3);
+      const mid = digits.slice(3, 6);
+      const end = digits.slice(6);
+      return `+54 9 ${area} ${mid}-${end}`;
+    }
+    return `+${digits}`;
+  };
+
+  const extractFirstName = (fullName: string) => {
+    if (!fullName) return "";
+    const cleaned = fullName.replace(/^\+?\d+.*$/, "").trim();
+    if (!cleaned) return "";
+    const parts = cleaned.split(/\s+/);
+    return parts[0] || cleaned;
+  };
+
+  const findOrCreateConversation = (senderPhone: string, pushName?: string, avatarUrl?: string): RealWhatsAppConversation => {
+    const norm = normalizePhoneNumber(senderPhone);
+    const formattedPhone = formatDisplayPhone(senderPhone);
+    const hasValidPushName = pushName && pushName !== `+${senderPhone}` && !pushName.startsWith(norm.digits);
+    const displayName = hasValidPushName ? pushName : formattedPhone;
+    const firstName = extractFirstName(displayName);
+    
+    // Look for existing conversation by full phone or matching last 10 digits
+    for (const [id, conv] of realWhatsAppConversations.entries()) {
+      const convNorm = normalizePhoneNumber(conv.patient_phone);
+      if (
+        conv.patient_phone.replace(/\D/g, "") === norm.full ||
+        convNorm.core10 === norm.core10 ||
+        conv.patient_phone.includes(norm.core10) ||
+        conv.id === `wa-${norm.full}` ||
+        conv.id === `wa-${norm.digits}`
+      ) {
+        if (hasValidPushName && (!conv.patient_name || conv.patient_name.startsWith("+") || conv.patient_name.startsWith("Paciente "))) {
+          conv.patient_name = pushName;
+          conv.patient_first_name = extractFirstName(pushName);
+        }
+        if (avatarUrl && !conv.patient_avatar) {
+          conv.patient_avatar = avatarUrl;
+        }
+        return conv;
+      }
+    }
+
+    const convId = `wa-${norm.full}`;
+    const newConv: RealWhatsAppConversation = {
+      id: convId,
+      patient_name: displayName,
+      patient_first_name: firstName,
+      patient_phone: formattedPhone,
+      patient_avatar: avatarUrl || undefined,
+      unread_count: 0,
+      ai_handled: true,
+      last_message: "",
+      last_timestamp: new Date().toISOString(),
+      messages: []
+    };
+    realWhatsAppConversations.set(convId, newConv);
+    return newConv;
+  };
+
+  // Helper to extract message text from any WhatsApp Baileys / Evolution payload
+  const extractEvolutionMessageText = (msgObj: any): string => {
+    if (!msgObj) return "";
+    if (typeof msgObj === "string") return msgObj.trim();
+
+    // Direct properties
+    if (typeof msgObj.body === "string" && msgObj.body.trim()) return msgObj.body.trim();
+    if (typeof msgObj.text === "string" && msgObj.text.trim()) return msgObj.text.trim();
+    if (typeof msgObj.content === "string" && msgObj.content.trim()) return msgObj.content.trim();
+    if (typeof msgObj.messageText === "string" && msgObj.messageText.trim()) return msgObj.messageText.trim();
+
+    // Nested message payload (Baileys)
+    const msg = msgObj.message || msgObj.data?.message || msgObj.data || msgObj.msg || msgObj;
+    if (typeof msg === "string") return msg.trim();
+    if (!msg || typeof msg !== "object") return "";
+
+    // Drill down ephemeral, view once, or edited wrappers
+    const inner = msg.ephemeralMessage?.message ||
+      msg.viewOnceMessage?.message ||
+      msg.viewOnceMessageV2?.message ||
+      msg.documentWithCaptionMessage?.message ||
+      msg.editedMessage?.message?.protocolMessage?.editedMessage ||
+      msg.protocolMessage?.editedMessage ||
+      msg;
+
+    if (inner.audioMessage) return "[Nota de voz]";
+    if (inner.imageMessage && !inner.imageMessage.caption) return "[Imagen]";
+    if (inner.videoMessage && !inner.videoMessage.caption) return "[Video]";
+    if (inner.documentMessage && !inner.documentMessage.caption) return inner.documentMessage.fileName || "[Documento]";
+
+    return (
+      inner.conversation ||
+      inner.extendedTextMessage?.text ||
+      inner.imageMessage?.caption ||
+      inner.videoMessage?.caption ||
+      inner.documentMessage?.caption ||
+      inner.buttonsResponseMessage?.selectedDisplayText ||
+      inner.buttonsResponseMessage?.selectedButtonId ||
+      inner.templateButtonReplyMessage?.selectedDisplayText ||
+      inner.templateButtonReplyMessage?.selectedId ||
+      inner.listResponseMessage?.singleSelectReply?.selectedRowId ||
+      inner.listResponseMessage?.title ||
+      inner.interactiveResponseMessage?.body?.text ||
+      inner.text ||
+      inner.body ||
+      msg.text ||
+      msg.body ||
+      ""
+    ).trim();
+  };
+
+  // Helper to process any raw message or chat item into realWhatsAppConversations
+  const processIncomingOrSyncedMessage = async (item: any, options?: {
+    targetUrl?: string;
+    targetKey?: string;
+    targetInstance?: string;
+    services?: any[];
+    availability?: any[];
+    existingAppointments?: any[];
+    autoReplyIfPatient?: boolean;
+  }) => {
+    if (!item) return null;
+
+    const fromMe = Boolean(item.key?.fromMe ?? item.fromMe);
+    const remoteJid = item.key?.remoteJid || item.remoteJid || item.jid || item.id || "";
+    
+    // Ignore status broadcasts, group chats, newsletters
+    if (!remoteJid || remoteJid.includes("status@broadcast") || remoteJid.includes("@g.us") || remoteJid.includes("@newsletter")) {
+      return null;
+    }
+
+    const senderPhone = remoteJid.replace(/@.*$/, "").replace(/\D/g, "");
+    if (!senderPhone || senderPhone.length < 6) return null;
+
+    const text = extractEvolutionMessageText(item);
+    if (!text) return null;
+
+    const timestampSec = item.messageTimestamp ? Number(item.messageTimestamp) : Math.floor(Date.now() / 1000);
+    const msgTimeMs = timestampSec * 1000;
+
+    // Filter out messages that are older than instanceConnectedAt ONLY if instanceConnectedAt is set and msgTimeMs is clearly before it (allow up to 60s tolerance)
+    if (instanceConnectedAt && msgTimeMs > 0 && msgTimeMs < (instanceConnectedAt - 60000)) {
+      return null;
+    }
+
+    const pushName = item.pushName || item.name || item.verifiedName || `+${senderPhone}`;
+    const avatarUrl = item.profilePicUrl || item.pictureUrl || item.profilePictureUrl || item.avatarUrl || undefined;
+    const timeStr = new Date(timestampSec * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+    const msgId = item.key?.id || item.id || `msg-${Date.now()}-${Math.random()}`;
+    const conv = findOrCreateConversation(senderPhone, pushName, avatarUrl);
+
+    // Asynchronously fetch profile picture from Evolution API if not cached yet
+    if (!conv.patient_avatar && options?.targetUrl && options?.targetKey && options?.targetInstance) {
+      fetch(`${options.targetUrl}/chat/fetchProfilePictureUrl/${options.targetInstance}`, {
+        method: "POST",
+        headers: {
+          "apikey": options.targetKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ number: senderPhone })
+      }).then(async (res) => {
+        if (res.ok) {
+          const picData = await res.json();
+          const foundPic = picData?.profilePictureUrl || picData?.picture || picData?.profilePicUrl;
+          if (foundPic && typeof foundPic === 'string' && foundPic.startsWith('http')) {
+            conv.patient_avatar = foundPic;
+          }
+        }
+      }).catch(() => {});
+    }
+
+    // Check if message already exists
+    const exists = conv.messages.some(m => m.id === msgId || (m.content === text && m.role === (fromMe ? 'assistant' : 'user')));
+    if (!exists) {
+      const newMsg: RealWhatsAppMessage = {
+        id: msgId,
+        role: fromMe ? 'assistant' : 'user',
+        content: text,
+        timestamp: timeStr,
+        status: 'read'
+      };
+      conv.messages.push(newMsg);
+      if (!fromMe) conv.unread_count += 1;
+      conv.last_message = text;
+      conv.last_timestamp = new Date(timestampSec * 1000).toISOString();
+
+      // STRICT SAFETY: ONLY auto-reply if explicitly allowed (live webhook ONLY, NEVER during sync/polling)
+      // AND message is fresh (less than 90 seconds old)
+      const nowSec = Math.floor(Date.now() / 1000);
+      const isFreshMessage = Math.abs(nowSec - timestampSec) < 90;
+
+      if (!fromMe && options?.autoReplyIfPatient && isFreshMessage) {
+        const isBotActive = cachedPracticeSettings.bot_enabled !== false && conv.ai_handled !== false;
+        if (isBotActive) {
+          try {
+            console.log(`[WhatsApp Bot] Generating auto-reply for incoming live message from ${conv.patient_name} (${senderPhone}): "${text}"`);
+            const botResult = await generateAiBotResponse({
+              message: text,
+              history: conv.messages.slice(-10),
+              practiceSettings: cachedPracticeSettings,
+              services: options.services || [],
+              availability: options.availability || [],
+              existingAppointments: options.existingAppointments || []
+            });
+
+            if (botResult && botResult.reply && options.targetUrl && options.targetKey && options.targetInstance) {
+              const cleanSendPhone = senderPhone.startsWith("54") ? senderPhone : (senderPhone.length === 10 ? `549${senderPhone}` : senderPhone);
+
+              await fetch(`${options.targetUrl}/message/sendText/${options.targetInstance}`, {
+                method: "POST",
+                headers: {
+                  "apikey": options.targetKey,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  number: cleanSendPhone,
+                  text: botResult.reply,
+                  textMessage: { text: botResult.reply },
+                  options: { delay: 1000, presence: "composing" },
+                  delay: 1000
+                })
+              }).catch(err => console.error("Error sending auto-reply:", err));
+
+              const assistantMsg: RealWhatsAppMessage = {
+                id: `bot-msg-${Date.now()}`,
+                role: 'assistant',
+                content: botResult.reply,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                status: 'sent',
+                actionTaken: botResult.action
+              };
+
+              conv.messages.push(assistantMsg);
+              conv.last_message = botResult.reply;
+              conv.last_timestamp = new Date().toISOString();
+            }
+          } catch (botErr) {
+            console.error("Bot auto-reply error:", botErr);
+          }
+        }
+      }
+    }
+
+    return conv;
+  };
+
+  // Helper to configure Webhook on Evolution API for any instance
+  const configureEvolutionWebhook = async (params: {
+    targetUrl: string;
+    targetKey: string;
+    targetInstance: string;
+    appUrl?: string;
+  }) => {
+    const { targetUrl, targetKey, targetInstance, appUrl } = params;
+    if (!targetUrl || !targetKey || !targetInstance) return { success: false, error: "Missing parameters" };
+
+    const webhookUrl = `${(appUrl || "").replace(/\/$/, "")}/api/evolution/webhook`;
+    if (!webhookUrl || webhookUrl.startsWith("/api")) {
+      return { success: false, error: "Invalid public app URL" };
+    }
+
+    const eventsList = [
+      "MESSAGES_UPSERT",
+      "MESSAGES_UPDATE",
+      "MESSAGES_DELETE",
+      "SEND_MESSAGE",
+      "CONNECTION_UPDATE",
+      "messages.upsert",
+      "messages.update",
+      "messages.delete",
+      "send.message",
+      "connection.update"
+    ];
+
+    try {
+      // Send both v1 and v2 payload format to support all Evolution API releases
+      const res = await fetch(`${targetUrl}/webhook/set/${targetInstance}`, {
+        method: "POST",
+        headers: {
+          "apikey": targetKey,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          url: webhookUrl,
+          enabled: true,
+          webhook_by_events: false,
+          events: eventsList,
+          webhook: {
+            url: webhookUrl,
+            enabled: true,
+            byEvents: false,
+            base64: false,
+            events: eventsList
+          }
+        })
       });
 
-      if (checkRes.ok) {
-        const checkData = await checkRes.json();
-        const state = checkData?.instance?.state || checkData?.state;
-        if (state === "open") {
-          return res.json({
-            success: true,
-            status: "connected",
-            connected: true,
-            instanceName: targetInstance
+      const data = await res.json().catch(() => ({}));
+      console.log(`[Evolution API] Webhook configured for ${targetInstance} -> ${webhookUrl}. Status: ${res.status}`);
+      return { success: res.ok, data, webhookUrl };
+    } catch (err: any) {
+      console.warn(`[Evolution API] Error configuring webhook for ${targetInstance}:`, err);
+      return { success: false, error: err.message };
+    }
+  };
+
+  // Dedicated endpoint to set or re-sync Webhook
+  app.post("/api/evolution/configure-webhook", async (req, res) => {
+    try {
+      const { apiUrl, apiKey, instanceName, appUrl } = req.body;
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim();
+
+      const resolvedAppUrl = (
+        appUrl ||
+        req.headers.origin ||
+        (req.headers["x-forwarded-host"] ? `${req.headers["x-forwarded-proto"] || "https"}://${req.headers["x-forwarded-host"]}` : "") ||
+        process.env.APP_URL ||
+        ""
+      ).replace(/\/$/, "");
+
+      const result = await configureEvolutionWebhook({
+        targetUrl,
+        targetKey,
+        targetInstance,
+        appUrl: resolvedAppUrl
+      });
+
+      return res.json(result);
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Active Sync: Query Evolution API directly for recent messages & trigger bot reply if pending
+  app.post("/api/evolution/sync-chats", async (req, res) => {
+    try {
+      const { apiUrl, apiKey, instanceName, practiceSettings, services, availability, existingAppointments, appUrl } = req.body;
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim();
+
+      if (apiUrl) lastKnownEvolutionConfig.apiUrl = targetUrl;
+      if (apiKey) lastKnownEvolutionConfig.apiKey = targetKey;
+      if (instanceName) lastKnownEvolutionConfig.instanceName = targetInstance;
+      if (practiceSettings) {
+        cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+      }
+
+      if (!targetUrl || !targetKey) {
+        const list = Array.from(realWhatsAppConversations.values()).sort((a, b) => {
+          const timeA = a.last_timestamp ? new Date(a.last_timestamp).getTime() : 0;
+          const timeB = b.last_timestamp ? new Date(b.last_timestamp).getTime() : 0;
+          return timeB - timeA;
+        });
+        return res.json({ success: true, conversations: list, note: "Evolution API credentials not set" });
+      }
+
+      // 1. Ensure webhook is registered
+      const resolvedAppUrl = (
+        appUrl ||
+        req.headers.origin ||
+        (req.headers["x-forwarded-host"] ? `${req.headers["x-forwarded-proto"] || "https"}://${req.headers["x-forwarded-host"]}` : "") ||
+        ""
+      ).replace(/\/$/, "");
+
+      if (resolvedAppUrl && !resolvedAppUrl.includes("localhost")) {
+        configureEvolutionWebhook({
+          targetUrl,
+          targetKey,
+          targetInstance,
+          appUrl: resolvedAppUrl
+        }).catch(() => {});
+      }
+
+      // 2. Proactive Sync: Query recent messages and active threads from Evolution API
+      const syncOptions = {
+        targetUrl,
+        targetKey,
+        targetInstance,
+        services: services || [],
+        availability: availability || [],
+        existingAppointments: existingAppointments || [],
+        autoReplyIfPatient: false // DO NOT auto-reply during sync polling
+      };
+
+      // Query recent messages directly (this guarantees only people who actually sent/received messages appear)
+      try {
+        let msgRes = await fetch(`${targetUrl}/chat/findMessages/${targetInstance}`, {
+          method: "POST",
+          headers: { "apikey": targetKey, "Content-Type": "application/json" },
+          body: JSON.stringify({})
+        });
+        if (!msgRes.ok) {
+          msgRes = await fetch(`${targetUrl}/chat/findMessages/${targetInstance}`, {
+            method: "GET",
+            headers: { "apikey": targetKey }
           });
+        }
+
+        if (msgRes.ok) {
+          const msgData = await msgRes.json();
+          const messagesArray = Array.isArray(msgData) ? msgData : (Array.isArray(msgData?.data) ? msgData.data : (Array.isArray(msgData?.messages) ? msgData.messages : (Array.isArray(msgData?.records) ? msgData.records : [])));
+          for (const item of messagesArray) {
+            await processIncomingOrSyncedMessage(item, syncOptions);
+          }
+        }
+      } catch (msgErr) {
+        // non-blocking
+      }
+
+      // Check for any active real WhatsApp conversations that have at least one message
+      const list = Array.from(realWhatsAppConversations.values())
+        .filter(c => c.messages && c.messages.length > 0)
+        .sort((a, b) => {
+          const timeA = a.last_timestamp ? new Date(a.last_timestamp).getTime() : 0;
+          const timeB = b.last_timestamp ? new Date(b.last_timestamp).getTime() : 0;
+          return timeB - timeA;
+        });
+
+      return res.json({
+        success: true,
+        conversations: list,
+        totalRealConversations: list.length
+      });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/sync-chats:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Clear all real WhatsApp conversations from server in-memory store
+  app.post("/api/evolution/clear-chats", (req, res) => {
+    try {
+      realWhatsAppConversations.clear();
+      instanceConnectedAt = Date.now();
+      console.log(`[Evolution API] Cleared all WhatsApp chats. instanceConnectedAt set to ${new Date(instanceConnectedAt).toISOString()}`);
+      return res.json({
+        success: true,
+        message: "Lista de chats vaciada exitosamente. A partir de ahora sólo se registrarán y atenderán los mensajes nuevos que ingresen."
+      });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/clear-chats:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get real WhatsApp conversations list from in-memory store
+  app.get("/api/evolution/conversations", (req, res) => {
+    const list = Array.from(realWhatsAppConversations.values()).sort((a, b) => {
+      const timeA = a.last_timestamp ? new Date(a.last_timestamp).getTime() : 0;
+      const timeB = b.last_timestamp ? new Date(b.last_timestamp).getTime() : 0;
+      return timeB - timeA;
+    });
+    res.json({ conversations: list });
+  });
+
+  // Send human message from staff in real WhatsApp conversation
+  app.post("/api/evolution/conversations/:id/send", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { text, apiUrl, apiKey, instanceName } = req.body;
+      const conv = realWhatsAppConversations.get(id) || Array.from(realWhatsAppConversations.values()).find(c => c.id === id || c.patient_phone.includes(id.replace(/\D/g, "")));
+      if (!conv) {
+        return res.status(404).json({ error: "Conversación no encontrada" });
+      }
+
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim();
+      
+      const rawDigits = conv.patient_phone.replace(/\D/g, "");
+      // Format number for WhatsApp / Evolution API
+      // If it's an Argentine number (e.g. 3425526816 -> 5493425526816, or 54342... -> 549342...)
+      let cleanPhone = rawDigits;
+      if (rawDigits.length === 10) {
+        cleanPhone = `549${rawDigits}`;
+      } else if (rawDigits.startsWith("54") && rawDigits.length === 12 && !rawDigits.startsWith("549")) {
+        cleanPhone = `549${rawDigits.slice(2)}`;
+      }
+
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const newMsg: RealWhatsAppMessage = {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: text,
+        timestamp: nowTime,
+        status: 'sent'
+      };
+
+      conv.messages.push(newMsg);
+      conv.last_message = text;
+      conv.last_timestamp = new Date().toISOString();
+
+      let apiResponse = null;
+      if (targetUrl && targetKey) {
+        try {
+          console.log(`[Evolution API] Dispatching manual message to ${cleanPhone} on instance ${targetInstance}: "${text}"`);
+          const evoRes = await fetch(`${targetUrl}/message/sendText/${targetInstance}`, {
+            method: "POST",
+            headers: {
+              "apikey": targetKey,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              number: cleanPhone,
+              text: text,
+              textMessage: { text: text },
+              options: { delay: 500, presence: "composing" },
+              delay: 500
+            })
+          });
+          
+          apiResponse = await evoRes.json().catch(() => ({}));
+          console.log(`[Evolution API] Send message result status: ${evoRes.status}`, apiResponse);
+          
+          if (!evoRes.ok) {
+            // Fallback attempt without the 9 prefix (e.g., 543425526816 instead of 5493425526816) if Baileys expects standard international format
+            if (cleanPhone.startsWith("549")) {
+              const fallbackPhone = `54${cleanPhone.slice(3)}`;
+              console.log(`[Evolution API] Retrying send to fallback number ${fallbackPhone}`);
+              await fetch(`${targetUrl}/message/sendText/${targetInstance}`, {
+                method: "POST",
+                headers: {
+                  "apikey": targetKey,
+                  "Content-Type": "application/json"
+                },
+                body: JSON.stringify({
+                  number: fallbackPhone,
+                  text: text,
+                  textMessage: { text: text },
+                  options: { delay: 500, presence: "composing" },
+                  delay: 500
+                })
+              }).catch(() => {});
+            }
+          }
+        } catch (fetchErr) {
+          console.error("Error dispatching manual message to Evolution API:", fetchErr);
         }
       }
 
-      // Request or create instance connection QR from Evolution API
+      return res.json({ success: true, message: newMsg, apiResponse });
+    } catch (err: any) {
+      console.error("Error in /api/evolution/conversations/:id/send:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get or Generate QR Code for an Instance
+  app.post("/api/evolution/instance-qr", async (req, res) => {
+    try {
+      const { instanceName, apiUrl, apiKey, practiceSettings, appUrl } = req.body;
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim();
+
+      if (apiUrl) lastKnownEvolutionConfig.apiUrl = targetUrl;
+      if (apiKey) lastKnownEvolutionConfig.apiKey = targetKey;
+      if (instanceName) lastKnownEvolutionConfig.instanceName = targetInstance;
+      if (practiceSettings) {
+        cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+      }
+
+      if (!targetUrl || !targetKey) {
+        return res.json({
+          success: false,
+          status: "not_configured",
+          message: "Evolution API aún no ha sido configurada. El administrador debe guardar la URL y Global API Key en 'SuperAdmin > Configuración de APIs'."
+        });
+      }
+
+      const resolvedAppUrl = (
+        appUrl ||
+        req.headers.origin ||
+        (req.headers["x-forwarded-host"] ? `${req.headers["x-forwarded-proto"] || "https"}://${req.headers["x-forwarded-host"]}` : "") ||
+        ""
+      ).replace(/\/$/, "");
+
+      // Check current connection state
+      try {
+        const checkRes = await fetch(`${targetUrl}/instance/connectionState/${targetInstance}`, {
+          headers: { "apikey": targetKey }
+        });
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          const currentState = checkData?.instance?.state || checkData?.state || "unknown";
+          if (currentState === "open") {
+            if (resolvedAppUrl) {
+              configureEvolutionWebhook({ targetUrl, targetKey, targetInstance, appUrl: resolvedAppUrl }).catch(() => {});
+            }
+            return res.json({
+              success: true,
+              status: "connected",
+              connected: true,
+              instanceName: targetInstance
+            });
+          }
+        }
+      } catch (checkErr) {
+        console.warn("Error checking connection state:", checkErr);
+      }
+
+      // 1. Request QR code via /instance/connect/:instance
       let connectRes = await fetch(`${targetUrl}/instance/connect/${targetInstance}`, {
         method: "GET",
         headers: { "apikey": targetKey }
       });
 
-      // If instance doesn't exist, create it first
+      // 2. If instance doesn't exist (404), create the instance in Evolution API
       if (connectRes.status === 404) {
         const createRes = await fetch(`${targetUrl}/instance/create`, {
           method: "POST",
@@ -811,24 +1544,50 @@ Responde ÚNICAMENTE con un JSON con la estructura:
             integration: "WHATSAPP-BAILEYS"
           })
         });
+
         const createData = await createRes.json();
+        if (resolvedAppUrl) {
+          configureEvolutionWebhook({ targetUrl, targetKey, targetInstance, appUrl: resolvedAppUrl }).catch(() => {});
+        }
+
+        let qrString = createData?.qrcode?.base64 || createData?.base64 || createData?.instance?.qrcode?.base64 || createData?.qrcode?.code || null;
+
+        if (!qrString) {
+          const retryConnect = await fetch(`${targetUrl}/instance/connect/${targetInstance}`, {
+            method: "GET",
+            headers: { "apikey": targetKey }
+          });
+          if (retryConnect.ok) {
+            const retryData = await retryConnect.json();
+            qrString = retryData?.base64 || retryData?.qrcode?.base64 || retryData?.code || null;
+          }
+        }
+
         return res.json({
           success: true,
           status: "connecting",
           instanceName: targetInstance,
-          qrcode: createData?.qrcode?.base64 || createData?.base64 || null,
-          pairingCode: createData?.pairingCode || null
+          qrcode: qrString,
+          pairingCode: createData?.pairingCode || null,
+          message: qrString ? undefined : "Instancia creada en Evolution API. Haz clic en Actualizar QR."
         });
       }
 
       const connectData = await connectRes.json();
+      if (resolvedAppUrl) {
+        configureEvolutionWebhook({ targetUrl, targetKey, targetInstance, appUrl: resolvedAppUrl }).catch(() => {});
+      }
+
+      let qrString = connectData?.base64 || connectData?.qrcode?.base64 || connectData?.code || connectData?.instance?.qrcode?.base64 || null;
+
       return res.json({
         success: true,
         status: "connecting",
         instanceName: targetInstance,
-        qrcode: connectData?.base64 || connectData?.qrcode?.base64 || null,
+        qrcode: qrString,
         code: connectData?.code || null,
-        pairingCode: connectData?.pairingCode || null
+        pairingCode: connectData?.pairingCode || null,
+        message: qrString ? undefined : "Esperando generación del código QR por parte de Evolution API."
       });
     } catch (err: any) {
       console.error("Error in /api/evolution/instance-qr:", err);
@@ -842,10 +1601,10 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   // Disconnect / Logout WhatsApp instance
   app.post("/api/evolution/disconnect-instance", async (req, res) => {
     try {
-      const { instanceName } = req.body;
-      const targetUrl = (process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
-      const targetKey = process.env.EVOLUTION_API_KEY || "";
-      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+      const { instanceName, apiUrl, apiKey } = req.body;
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim();
 
       if (targetUrl && targetKey) {
         await fetch(`${targetUrl}/instance/logout/${targetInstance}`, {
@@ -865,19 +1624,17 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   app.post("/api/evolution/send-message", async (req, res) => {
     try {
       const { phone, text, apiUrl, apiKey, instanceName } = req.body;
-      const targetUrl = (apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
-      const targetKey = apiKey || process.env.EVOLUTION_API_KEY || "";
-      const targetInstance = instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = instanceName || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio";
 
       if (!phone || !text) {
         return res.status(400).json({ error: "Número y texto son obligatorios" });
       }
 
-      // Format phone (remove spaces, symbols)
       const cleanPhone = phone.replace(/\D/g, "");
 
       if (!targetUrl || !targetKey) {
-        // Fallback simulated success for preview
         return res.json({
           success: true,
           simulated: true,
@@ -914,28 +1671,39 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   app.post("/api/evolution/webhook", async (req, res) => {
     try {
       const eventData = req.body;
-      console.log("Evolution Webhook received:", eventData?.event);
+      const eventType = (eventData?.event || eventData?.type || "").toLowerCase();
+      console.log(`[Evolution Webhook] Received event: "${eventType}"`);
 
-      // Evolution API event: messages.upsert
-      if (eventData?.event === "messages.upsert" && eventData?.data) {
-        const messageData = eventData.data;
-        const fromMe = messageData?.key?.fromMe;
-        const senderPhone = messageData?.key?.remoteJid?.replace(/@.*$/, "") || "";
-        const messageText =
-          messageData?.message?.conversation ||
-          messageData?.message?.extendedTextMessage?.text ||
-          "";
+      // Extract all potential message items from event payload
+      const msgList: any[] = [];
+      if (Array.isArray(eventData?.data)) {
+        msgList.push(...eventData.data);
+      } else if (Array.isArray(eventData?.data?.messages)) {
+        msgList.push(...eventData.data.messages);
+      } else if (Array.isArray(eventData?.messages)) {
+        msgList.push(...eventData.messages);
+      } else if (eventData?.data && (eventData.data.key || eventData.data.message)) {
+        msgList.push(eventData.data);
+      } else if (eventData?.key && (eventData.message || eventData.body)) {
+        msgList.push(eventData);
+      } else if (eventData?.message) {
+        msgList.push(eventData);
+      }
 
-        // If not sent by our bot and has text
-        if (!fromMe && messageText && senderPhone) {
-          console.log(`Incoming WhatsApp from ${senderPhone}: "${messageText}"`);
-          // Note: In full deployment, this webhook triggers getAI() and replies back via /message/sendText
-        }
+      const syncOptions = {
+        targetUrl: lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "",
+        targetKey: lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "",
+        targetInstance: (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim(),
+        autoReplyIfPatient: true
+      };
+
+      for (const msgObj of msgList) {
+        await processIncomingOrSyncedMessage(msgObj, syncOptions);
       }
 
       return res.status(200).json({ received: true });
     } catch (err: any) {
-      console.error("Error in /api/evolution/webhook:", err);
+      console.error("[Evolution Webhook] Handler error:", err);
       return res.status(200).json({ received: false, error: err.message });
     }
   });

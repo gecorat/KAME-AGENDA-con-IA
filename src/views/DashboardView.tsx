@@ -407,132 +407,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* AI Bot Weekly Impact Summary & Tip of the Day Highlight Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-        {/* Visual Summary Card: AI Bot Performance this week */}
-        <div className="md:col-span-2 bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 text-white rounded-2xl p-5 border border-neutral-800 shadow-sm relative overflow-hidden flex flex-col justify-between">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-          
-          <div>
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shadow-xs">
-                  <Bot className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider font-display flex items-center gap-1.5">
-                    <span>Impacto Semanal del Bot de IA</span>
-                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-500 text-neutral-950">
-                      Sofía IA
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-neutral-400">Automatización de consultas y reservas 24/7</p>
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                WhatsApp Activo
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 my-4">
-              <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mb-1">
-                  <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Turnos Gestionados</span>
-                </div>
-                <div className="text-2xl font-black text-white font-display">
-                  {botManagedCount}
-                </div>
-                <span className="text-[10px] text-emerald-400 font-medium">Esta semana</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mb-1">
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Tiempo Ahorrado</span>
-                </div>
-                <div className="text-2xl font-black text-white font-display">
-                  ~{estimatedHoursSaved} <span className="text-xs font-normal text-neutral-400">hs</span>
-                </div>
-                <span className="text-[10px] text-neutral-400">En llamadas y mensajes</span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-white/5 border border-white/5 col-span-2 sm:col-span-1">
-                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mb-1">
-                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Efectividad</span>
-                </div>
-                <div className="text-2xl font-black text-white font-display">
-                  99.4%
-                </div>
-                <span className="text-[10px] text-neutral-400">Confirmación y seña</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10 flex-wrap">
-            <span className="text-[11px] text-neutral-400">
-              Responde dudas frecuentes, valida comprobantes y asigna turnos automáticamente.
-            </span>
-            <button
-              type="button"
-              onClick={() => onNavigateToTab('chats')}
-              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 text-xs font-extrabold rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer ml-auto"
-            >
-              <span>Ver Simulador & Chats</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-
-        {/* Tip del Día Component */}
-        <div className="bg-white rounded-2xl p-5 border border-neutral-200/80 shadow-2xs flex flex-col justify-between relative">
-          <div>
-            <div className="flex items-center justify-between gap-2 mb-3">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                <Lightbulb className="w-3 h-3 text-amber-500" />
-                Tip del Día
-              </span>
-              <span className="text-[10px] font-semibold text-neutral-400">
-                {tipOfTheDay.badge}
-              </span>
-            </div>
-
-            <h4 className="text-sm font-bold text-neutral-900 font-display mb-1.5">
-              {tipOfTheDay.title}
-            </h4>
-
-            <p className="text-xs text-neutral-600 leading-relaxed">
-              {tipOfTheDay.description}
-            </p>
-          </div>
-
-          <div className="pt-4 mt-3 border-t border-neutral-100">
-            <button
-              type="button"
-              onClick={() => onNavigateToTab(tipOfTheDay.tab)}
-              className="w-full py-2 px-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <span>{tipOfTheDay.actionLabel}</span>
-              <ArrowRight className="w-3 h-3" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Metrics Row - Responsive minimalist cards */}
+      {/* Essential Metrics Row - Primary Dashboard Data */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
         <div 
           onClick={() => onNavigateToTab('agenda')}
-          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-colors cursor-pointer group"
           title="Ver agenda completa de turnos"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Turnos de Hoy</span>
-            <Calendar className="w-4 h-4 text-neutral-400 group-hover:text-neutral-700 transition-colors" />
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-medium tracking-tight group-hover:text-slate-900 transition-colors">Turnos de Hoy</span>
+            <Calendar className="w-4 h-4 text-slate-400 group-hover:text-teal-700 transition-colors" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 tracking-tight font-display">
+          <div className="text-2xl font-bold text-slate-900 tracking-tight font-display">
             {todayRealAppointments.length}
           </div>
           {hasExampleData && todayRealAppointments.length === 0 && todayAppointments.length > 0 ? (
@@ -540,23 +426,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               1 turno de ejemplo (no sumado)
             </p>
           ) : (
-            <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center justify-between">
+            <p className="text-[11px] text-slate-500 group-hover:text-slate-800 font-medium mt-1 flex items-center justify-between">
               <span>{todayRealAppointments.filter(a => a.status === 'confirmed').length} confirmados • {todayRealAppointments.filter(a => a.status === 'completed').length} atendidos</span>
-              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-slate-400 shrink-0 ml-1" />
             </p>
           )}
         </div>
 
         <div 
           onClick={() => onNavigateToTab('pacientes')}
-          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-colors cursor-pointer group"
           title="Ver directorio de pacientes e historias clínicas"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Pacientes Registrados</span>
-            <Users className="w-4 h-4 text-neutral-400 group-hover:text-neutral-700 transition-colors" />
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-medium tracking-tight group-hover:text-slate-900 transition-colors">Pacientes Registrados</span>
+            <Users className="w-4 h-4 text-slate-400 group-hover:text-teal-700 transition-colors" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 tracking-tight font-display">
+          <div className="text-2xl font-bold text-slate-900 tracking-tight font-display">
             {realPatients.length}
           </div>
           {hasExampleData && realPatients.length === 0 ? (
@@ -564,50 +450,106 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               1 paciente de ejemplo (no sumado)
             </p>
           ) : (
-            <p className="text-[11px] text-emerald-700 group-hover:text-emerald-800 font-medium mt-1 flex items-center justify-between">
+            <p className="text-[11px] text-teal-750 group-hover:text-teal-900 font-medium mt-1 flex items-center justify-between">
               <span>{newPatientsThisWeek > 0 ? `+${newPatientsThisWeek} nuevos esta semana` : 'Ver directorio completo'}</span>
-              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-slate-400 shrink-0 ml-1" />
             </p>
           )}
         </div>
 
         <div 
           onClick={() => onNavigateToTab('cobros')}
-          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-colors cursor-pointer group"
           title="Ver caja y recibos emitidos"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Cobrado en el Mes</span>
-            <DollarSign className="w-4 h-4 text-neutral-400 group-hover:text-neutral-700 transition-colors" />
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-medium tracking-tight group-hover:text-slate-900 transition-colors">Cobrado en el Mes</span>
+            <DollarSign className="w-4 h-4 text-slate-400 group-hover:text-teal-700 transition-colors" />
           </div>
-          <div className="text-2xl font-bold font-mono text-neutral-900 tracking-tight">
+          <div className="text-2xl font-bold font-mono text-slate-900 tracking-tight">
             ${monthCollected.toLocaleString('es-AR')}
           </div>
-          <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center justify-between">
+          <p className="text-[11px] text-slate-500 group-hover:text-slate-800 font-medium mt-1 flex items-center justify-between">
             <span>Ver caja y recibos</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-slate-400 shrink-0 ml-1" />
           </p>
         </div>
 
         <div 
           onClick={() => onNavigateToTab('chats')}
-          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200/80 shadow-2xs hover:border-slate-300 transition-colors cursor-pointer group"
           title="Ver chats y asistente de WhatsApp"
         >
-          <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Asistente IA WhatsApp</span>
-            <Sparkles className="w-4 h-4 text-neutral-400 group-hover:text-emerald-600 transition-colors" />
+          <div className="flex items-center justify-between text-slate-500 mb-2">
+            <span className="text-xs font-medium tracking-tight group-hover:text-slate-900 transition-colors">Asistente IA WhatsApp</span>
+            <Sparkles className="w-4 h-4 text-slate-400 group-hover:text-teal-600 transition-colors" />
           </div>
-          <div className="text-2xl font-bold text-neutral-900 tracking-tight flex items-center gap-2 flex-wrap font-display">
+          <div className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2 flex-wrap font-display">
             <span>24/7</span>
-            <span className="text-[10px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
+            <span className="text-[10px] font-semibold text-teal-800 bg-teal-50 border border-teal-200/70 px-2 py-0.5 rounded-full">
               Activo
             </span>
           </div>
-          <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center justify-between">
+          <p className="text-[11px] text-slate-500 group-hover:text-slate-800 font-medium mt-1 flex items-center justify-between">
             <span>Abrir Asistente & Chats</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-slate-400 shrink-0 ml-1" />
           </p>
+        </div>
+      </div>
+
+      {/* Compact Secondary Notifications: AI Bot Impact & Tip of the Day */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Compact AI Bot Weekly Impact Bar */}
+        <div className="bg-white rounded-xl px-3.5 py-2.5 border border-slate-200/80 shadow-2xs flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-800 border border-teal-200/60 flex items-center justify-center shrink-0">
+              <Bot className="w-3.5 h-3.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-slate-800 text-xs">Impacto Semanal:</span>
+                <span className="text-slate-600 font-medium text-[11px]">
+                  <strong className="text-slate-900">{botManagedCount}</strong> turnos • <strong className="text-slate-900">~{estimatedHoursSaved}h</strong> ahorradas (99.4% efectividad)
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 truncate">Atención automática 24/7 vía WhatsApp</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateToTab('chats')}
+            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-[11px] font-semibold rounded-lg transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+          >
+            <span>Ver chats</span>
+            <ArrowRight className="w-3 h-3 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Compact Tip of the Day Bar */}
+        <div className="bg-white rounded-xl px-3.5 py-2.5 border border-slate-200/80 shadow-2xs flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 flex items-center justify-center shrink-0">
+              <Lightbulb className="w-3.5 h-3.5 text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-slate-800 text-xs">Tip:</span>
+                <span className="font-semibold text-slate-800 text-[11px] truncate">{tipOfTheDay.title}</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100/70 text-amber-800 font-semibold hidden sm:inline">
+                  {tipOfTheDay.badge}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 truncate">{tipOfTheDay.description}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateToTab(tipOfTheDay.tab)}
+            className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 text-teal-900 text-[11px] font-semibold rounded-lg transition-colors flex items-center gap-1 shrink-0 cursor-pointer border border-teal-200/60"
+          >
+            <span>{tipOfTheDay.actionLabel}</span>
+            <ArrowRight className="w-3 h-3 text-teal-700" />
+          </button>
         </div>
       </div>
 
@@ -761,45 +703,45 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
         {/* Right Col: AI Assistant Simulator Card & Quick Links */}
         <div className="space-y-4">
-          <div className="bg-zinc-900 text-white rounded-xl p-5 shadow-2xs border border-zinc-800 flex flex-col justify-between">
+          <div className="bg-white text-slate-800 rounded-xl p-5 shadow-2xs border border-slate-200/80 flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-md bg-white/10 text-white flex items-center justify-center">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                  <div className="w-7 h-7 rounded-lg bg-teal-50 text-teal-700 border border-teal-200/60 flex items-center justify-center">
+                    <Sparkles className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <h3 className="text-xs font-bold text-white tracking-wide uppercase font-display">Sofía • IA WhatsApp</h3>
-                    <p className="text-[10px] text-neutral-400">Modelo Gemini 3.8 Flash</p>
+                    <h3 className="text-xs font-bold text-slate-900 tracking-wide uppercase font-display">Sofía • IA WhatsApp</h3>
+                    <p className="text-[10px] text-slate-500">Modelo Gemini 3.8 Flash</p>
                   </div>
                 </div>
-                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 text-[10px] text-teal-800 bg-teal-50 border border-teal-200/60 px-2 py-0.5 rounded-full font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-teal-600 animate-pulse" />
                   Online
                 </span>
               </div>
 
-              <p className="text-xs text-neutral-300 leading-relaxed mb-4">
+              <p className="text-xs text-slate-600 leading-relaxed mb-4">
                 Atención clínica 24/7: responde consultas de pacientes, cotiza tratamientos y sincroniza turnos en tiempo real.
               </p>
 
-              <div className="p-3 bg-white/5 rounded-lg text-xs text-neutral-300 space-y-2 border border-white/5 mb-4">
+              <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-700 space-y-2 border border-slate-200/60 mb-4">
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-neutral-400">Disponibilidad:</span>
-                  <span className="text-emerald-400 font-medium">Ininterrumpida</span>
+                  <span className="text-slate-500">Disponibilidad:</span>
+                  <span className="text-teal-700 font-semibold">Ininterrumpida</span>
                 </div>
                 <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-neutral-400">Servicios activos:</span>
-                  <span>{services.filter(s => s.active).length} tratamientos</span>
+                  <span className="text-slate-500">Servicios activos:</span>
+                  <span className="font-medium text-slate-800">{services.filter(s => s.active).length} tratamientos</span>
                 </div>
               </div>
             </div>
 
             <button
               onClick={() => onNavigateToTab('chats')}
-              className="w-full py-2 px-3 bg-white text-zinc-900 hover:bg-neutral-100 font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+              className="w-full py-2 px-3 bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
             >
-              <MessageSquare className="w-3.5 h-3.5 text-zinc-900" />
+              <MessageSquare className="w-3.5 h-3.5 text-teal-300" />
               <span>Probar Asistente & WhatsApp</span>
             </button>
           </div>

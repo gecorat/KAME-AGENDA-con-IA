@@ -884,11 +884,18 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
               </div>
 
               {/* 5. Sub-Tab Navigation inside Patient Profile (Unified & Simplified) */}
-              <div className="border-b border-neutral-200 flex items-center gap-2 sm:gap-4 text-xs font-semibold overflow-x-auto whitespace-nowrap pb-1 no-scrollbar scroll-smooth">
+              <div 
+                onWheel={(e) => {
+                  if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                  }
+                }}
+                className="border-b border-neutral-200 flex items-center gap-2 sm:gap-4 text-xs font-semibold overflow-x-auto scroll-touch-x subtle-scrollbar whitespace-nowrap pb-1.5 w-full max-w-full min-w-0"
+              >
                 <button
                   type="button"
                   onClick={() => setActiveTab('consultations')}
-                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] ${
+                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] cursor-pointer ${
                     activeTab === 'consultations' || activeTab === 'appointments'
                       ? 'text-indigo-700 border-b-2 border-indigo-600 font-bold'
                       : 'text-neutral-500 hover:text-neutral-800'
@@ -904,7 +911,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('overview')}
-                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] ${
+                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] cursor-pointer ${
                     activeTab === 'overview'
                       ? 'text-neutral-900 border-b-2 border-neutral-900 font-bold'
                       : 'text-neutral-500 hover:text-neutral-800'
@@ -917,7 +924,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveTab('billing')}
-                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] ${
+                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] cursor-pointer ${
                     activeTab === 'billing'
                       ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
                       : 'text-neutral-500 hover:text-neutral-800'
@@ -973,14 +980,21 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                 return (
                   <div className="space-y-3.5 animate-in fade-in duration-150">
                     {/* Filter & Action Controls */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-neutral-50/70 p-2.5 rounded-xl border border-neutral-200/80">
-                      <div className="flex flex-col gap-2 min-w-0">
+                    <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-neutral-50/70 p-2.5 rounded-xl border border-neutral-200/80 w-full max-w-full min-w-0">
+                      <div className="flex flex-col gap-2 w-full max-w-full min-w-0 flex-1">
                         {/* Scope Filter: All vs Appointments vs Consultations */}
-                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                        <div 
+                          onWheel={(e) => {
+                            if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                              e.currentTarget.scrollLeft += e.deltaY;
+                            }
+                          }}
+                          className="flex items-center gap-1.5 overflow-x-auto scroll-touch-x subtle-scrollbar py-1 w-full max-w-full min-w-0"
+                        >
                           <button
                             type="button"
                             onClick={() => setSelectedTimelineFilter('all')}
-                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 ${
+                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 cursor-pointer ${
                               selectedTimelineFilter === 'all'
                                 ? 'bg-indigo-600 text-white shadow-2xs'
                                 : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
@@ -991,7 +1005,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setSelectedTimelineFilter('appointments')}
-                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 flex items-center gap-1 ${
+                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
                               selectedTimelineFilter === 'appointments'
                                 ? 'bg-indigo-600 text-white shadow-2xs'
                                 : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
@@ -1003,7 +1017,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => setSelectedTimelineFilter('consultations')}
-                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 flex items-center gap-1 ${
+                            className={`px-2.5 py-1 text-xs rounded-lg font-semibold transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
                               selectedTimelineFilter === 'consultations'
                                 ? 'bg-indigo-600 text-white shadow-2xs'
                                 : 'bg-white text-neutral-700 border border-neutral-200 hover:bg-neutral-100'
@@ -1016,7 +1030,14 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
                         {/* Date Filter Pills */}
                         {distinctAttentionDates.length > 0 && (
-                          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+                          <div 
+                            onWheel={(e) => {
+                              if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                                e.currentTarget.scrollLeft += e.deltaY;
+                              }
+                            }}
+                            className="flex items-center gap-1.5 overflow-x-auto scroll-touch-x subtle-scrollbar py-1 w-full max-w-full min-w-0"
+                          >
                             <span className="text-[10px] font-semibold text-neutral-400 uppercase tracking-wider flex items-center gap-1 shrink-0">
                               <Filter className="w-2.5 h-2.5 text-neutral-400" />
                               Fecha:
@@ -1024,9 +1045,9 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                             <button
                               type="button"
                               onClick={() => setSelectedDateFilter('all')}
-                              className={`px-2 py-0.5 text-[11px] rounded-md font-medium transition-all shrink-0 ${
+                              className={`px-2 py-0.5 text-[11px] rounded-md font-medium transition-all shrink-0 cursor-pointer ${
                                 selectedDateFilter === 'all'
-                                  ? 'bg-neutral-800 text-white'
+                                    ? 'bg-neutral-800 text-white'
                                   : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
                               }`}
                             >
@@ -1040,7 +1061,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                                   key={dateStr}
                                   type="button"
                                   onClick={() => setSelectedDateFilter(dateStr)}
-                                  className={`px-2 py-0.5 text-[11px] rounded-md font-medium transition-all shrink-0 flex items-center gap-1 ${
+                                  className={`px-2 py-0.5 text-[11px] rounded-md font-medium transition-all shrink-0 flex items-center gap-1 cursor-pointer ${
                                     selectedDateFilter === dateStr
                                       ? 'bg-neutral-800 text-white'
                                       : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
@@ -1060,11 +1081,11 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                       </div>
 
                       {/* Top Action Buttons */}
-                      <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-center">
+                      <div className="flex items-center gap-1.5 shrink-0 w-full xl:w-auto justify-start xl:justify-end overflow-x-auto scroll-touch-x subtle-scrollbar pt-1 xl:pt-0">
                         <button
                           type="button"
                           onClick={() => onScheduleForPatient(selectedPatient)}
-                          className="px-2.5 py-1 text-xs font-semibold text-neutral-800 bg-white hover:bg-neutral-100 rounded-lg border border-neutral-300 shadow-2xs transition-colors flex items-center gap-1 shrink-0"
+                          className="px-2.5 py-1 text-xs font-semibold text-neutral-800 bg-white hover:bg-neutral-100 rounded-lg border border-neutral-300 shadow-2xs transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
                         >
                           <Calendar className="w-3.5 h-3.5 text-neutral-600" />
                           <span>Agendar Turno</span>
@@ -1076,7 +1097,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                             setConsultationToEdit(null);
                             setIsConsultationModalOpen(true);
                           }}
-                          className="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1 shrink-0"
+                          className="px-2.5 py-1 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
                         >
                           <Plus className="w-3.5 h-3.5" />
                           <span>Nueva {consultationTermSingular}</span>

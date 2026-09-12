@@ -252,7 +252,14 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
         {/* View Mode Switcher + Add button */}
         <div className="flex items-center gap-2 w-full md:w-auto justify-between md:justify-end flex-wrap">
-          <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 border border-neutral-200/70 text-xs overflow-x-auto">
+          <div 
+            onWheel={(e) => {
+              if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                e.currentTarget.scrollLeft += e.deltaY;
+              }
+            }}
+            className="flex items-center bg-neutral-100 rounded-lg p-0.5 border border-neutral-200/70 text-xs overflow-x-auto scroll-touch-x subtle-scrollbar max-w-full min-w-0"
+          >
             <button
               onClick={() => setViewMode('month')}
               className={`px-2.5 py-1 rounded-md font-medium transition-colors flex items-center gap-1.5 shrink-0 ${
@@ -520,7 +527,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
       {/* VIEW 2: WEEK VIEW */}
       {viewMode === 'week' && (
-        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-x-auto">
+        <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0">
           <div className="min-w-[700px] grid grid-cols-6 divide-x divide-neutral-200">
             {weekDays.map(day => {
               const dayStr = day.toISOString().split('T')[0];

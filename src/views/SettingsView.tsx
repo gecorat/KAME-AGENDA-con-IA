@@ -120,7 +120,14 @@ export const SettingsView: React.FC = () => {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-1.5 p-1 bg-neutral-100/80 rounded-xl border border-neutral-200/80 w-fit overflow-x-auto max-w-full">
+      <div 
+        onWheel={(e) => {
+          if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+            e.currentTarget.scrollLeft += e.deltaY;
+          }
+        }}
+        className="flex items-center gap-1.5 p-1 bg-neutral-100/80 rounded-xl border border-neutral-200/80 w-full overflow-x-auto max-w-full min-w-0 scroll-touch-x subtle-scrollbar"
+      >
         <button
           type="button"
           onClick={() => setActiveTab('general')}

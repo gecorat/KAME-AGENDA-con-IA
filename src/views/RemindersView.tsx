@@ -253,7 +253,14 @@ export const RemindersView: React.FC = () => {
       </div>
 
       {/* Tabs Navigation */}
-      <div className="flex border-b border-neutral-200 bg-white px-3 rounded-2xl shadow-xs overflow-x-auto">
+      <div 
+        onWheel={(e) => {
+          if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+            e.currentTarget.scrollLeft += e.deltaY;
+          }
+        }}
+        className="flex border-b border-neutral-200 bg-white px-3 rounded-2xl shadow-xs overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0"
+      >
         <button
           onClick={() => setActiveTab('cola')}
           className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 whitespace-nowrap transition-colors ${
@@ -847,8 +854,8 @@ export const RemindersView: React.FC = () => {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0">
+              <table className="w-full text-left text-xs min-w-[700px]">
                 <thead className="bg-neutral-50 border-b border-neutral-100 text-neutral-500 font-semibold">
                   <tr>
                     <th className="py-3 px-4">Fecha/Hora</th>

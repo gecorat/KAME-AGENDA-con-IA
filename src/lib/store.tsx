@@ -139,6 +139,7 @@ interface AgendaStoreContextType {
   addChatMessage: (convId: string, message: Omit<ChatMessage, 'id'>) => void;
   createConversation: (patientName: string, patientPhone: string, initialMsg?: string) => Conversation;
   toggleAiHandled: (convId: string) => void;
+  clearAllConversations: () => void;
 
   // Waitlist actions
   addWaitlistEntry: (data: Omit<WaitlistEntry, 'id' | 'created_at' | 'status'>) => WaitlistEntry;
@@ -2151,6 +2152,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     setConversations(prev => prev.map(c => c.id === convId ? { ...c, ai_handled: !c.ai_handled } : c));
   };
 
+  const clearAllConversations = () => {
+    setConversations([]);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS);
+    } catch {}
+  };
+
   // Waitlist Handlers
   const addWaitlistEntry = (data: Omit<WaitlistEntry, 'id' | 'created_at' | 'status'>): WaitlistEntry => {
     const id = `wait-${Date.now()}`;
@@ -2687,6 +2695,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       addChatMessage,
       createConversation,
       toggleAiHandled,
+      clearAllConversations,
       addWaitlistEntry,
       updateWaitlistEntry,
       deleteWaitlistEntry,
