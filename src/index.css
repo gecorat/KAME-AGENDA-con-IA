@@ -112,8 +112,21 @@ html.dark .bg-neutral-100\/80,
 }
 
 html.dark .bg-neutral-200,
-.dark .bg-neutral-200 {
+.dark .bg-neutral-200,
+html.dark .bg-slate-200,
+.dark .bg-slate-200 {
   background-color: #2a2f3d !important;
+}
+
+html.dark .bg-slate-50,
+.dark .bg-slate-50,
+html.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/50,
+html.dark .bg-slate-100,
+.dark .bg-slate-100,
+html.dark .bg-slate-100\/60,
+.dark .bg-slate-100\/60 {
+  background-color: #191b22 !important;
 }
 
 /* Borders & Dividers */
@@ -134,14 +147,24 @@ html.dark .border-neutral-200\/80,
 html.dark .border-neutral-200\/90,
 .dark .border-neutral-200\/90,
 html.dark .border-neutral-300,
-.dark .border-neutral-300 {
+.dark .border-neutral-300,
+html.dark .border-slate-100,
+.dark .border-slate-100,
+html.dark .border-slate-200,
+.dark .border-slate-200,
+html.dark .border-slate-300,
+.dark .border-slate-300 {
   border-color: #272b38 !important;
 }
 
 html.dark .divide-neutral-100 > :not([hidden]) ~ :not([hidden]),
 .dark .divide-neutral-100 > :not([hidden]) ~ :not([hidden]),
 html.dark .divide-neutral-200 > :not([hidden]) ~ :not([hidden]),
-.dark .divide-neutral-200 > :not([hidden]) ~ :not([hidden]) {
+.dark .divide-neutral-200 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
   border-color: #272b38 !important;
 }
 
@@ -151,21 +174,35 @@ html.dark .text-neutral-900,
 html.dark .text-neutral-950,
 .dark .text-neutral-950,
 html.dark .text-neutral-800,
-.dark .text-neutral-800 {
+.dark .text-neutral-800,
+html.dark .text-slate-900,
+.dark .text-slate-900,
+html.dark .text-slate-950,
+.dark .text-slate-950,
+html.dark .text-slate-800,
+.dark .text-slate-800 {
   color: #f3f4f6 !important;
 }
 
 html.dark .text-neutral-700,
 .dark .text-neutral-700,
 html.dark .text-neutral-600,
-.dark .text-neutral-600 {
+.dark .text-neutral-600,
+html.dark .text-slate-700,
+.dark .text-slate-700,
+html.dark .text-slate-600,
+.dark .text-slate-600 {
   color: #d1d5db !important;
 }
 
 html.dark .text-neutral-500,
 .dark .text-neutral-500,
 html.dark .text-neutral-400,
-.dark .text-neutral-400 {
+.dark .text-neutral-400,
+html.dark .text-slate-500,
+.dark .text-slate-500,
+html.dark .text-slate-400,
+.dark .text-slate-400 {
   color: #9ca3af !important;
 }
 
@@ -206,11 +243,17 @@ html.dark textarea,
   color: #f3f4f6 !important;
 }
 
+html.dark select option,
+.dark select option {
+  background-color: #161820 !important;
+  color: #f3f4f6 !important;
+}
+
 html.dark input::placeholder,
 .dark input::placeholder,
 html.dark textarea::placeholder,
 .dark textarea::placeholder {
-  color: #6b7280 !important;
+  color: #858d9d !important;
 }
 
 /* Semantic Badges & Light Containers */

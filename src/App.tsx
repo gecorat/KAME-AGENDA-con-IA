@@ -71,6 +71,7 @@ function MainApp() {
       if (path === '/terminos' || hash === 'terminos') return 'terminos';
       if (path === '/privacidad' || hash === 'privacidad') return 'privacidad';
       if (path === '/portal' || path.startsWith('/u/') || hash === 'portal') return 'portal';
+      if (path === '/planes' || hash === 'planes') return 'landing';
       const cleanPath = path.replace('/', '');
       if (VALID_TABS.includes(cleanPath)) return cleanPath;
       if (VALID_TABS.includes(hash)) return hash;
@@ -139,7 +140,7 @@ function MainApp() {
     } else if (VALID_TABS.includes(tab)) {
       targetPath = `/${tab}`;
     }
-    if (window.location.pathname !== targetPath) {
+    if (window.location.pathname !== targetPath || window.location.hash) {
       window.history.pushState({ tab }, '', targetPath);
     }
   };
@@ -251,8 +252,13 @@ function MainApp() {
         return 'portal';
       }
 
-      // Check URL pathname like /agenda, /pacientes, /cobros
       const rawSlug = pathname.replace(/^\//, '').toLowerCase().trim();
+      const cleanHash = hash.replace('#', '').toLowerCase();
+      if (rawSlug === 'planes' || cleanHash === 'planes') {
+        return currentUser ? 'suscripcion' : 'landing';
+      }
+
+      // Check URL pathname like /agenda, /pacientes, /cobros
       const queryTab = params.get('tab');
       const targetSlug = VALID_TABS.includes(rawSlug) ? rawSlug : (queryTab && VALID_TABS.includes(queryTab) ? queryTab : null);
 
@@ -279,6 +285,11 @@ function MainApp() {
 
     const initialTab = parseUrlToTab();
     setActiveTab(initialTab);
+
+    // Clean up lingering hash from URL bar on initial load
+    if (typeof window !== 'undefined' && window.location.hash) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
 
     // Appointment confirmation link
     const params = new URLSearchParams(window.location.search);
