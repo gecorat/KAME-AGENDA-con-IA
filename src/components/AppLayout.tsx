@@ -69,6 +69,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('agenfacil_theme');
       if (saved) return saved === 'dark';
+      return document.documentElement.classList.contains('dark');
     }
     return false;
   });
@@ -79,17 +80,11 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       if (saved === 'dark') {
         document.documentElement.classList.add('dark');
         setIsDarkMode(true);
-      } else {
+      } else if (saved === 'light') {
         document.documentElement.classList.remove('dark');
         setIsDarkMode(false);
       }
     }
-    return () => {
-      // Clean up dark mode from root when unmounting (e.g. going to public portal or landing page)
-      if (typeof window !== 'undefined') {
-        document.documentElement.classList.remove('dark');
-      }
-    };
   }, []);
 
   const toggleDarkMode = () => {
@@ -275,7 +270,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   );
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans max-w-full overflow-x-hidden ${isDarkMode ? 'dark bg-[#0c0d10] text-neutral-100' : 'bg-[#fafafa] text-neutral-900'}`}>
+    <div className="min-h-screen bg-[#fafafa] text-neutral-900 flex flex-col font-sans max-w-full overflow-x-hidden">
       {/* Mobile Top Header */}
       <header className="sticky top-0 z-40 bg-white border-b border-neutral-200/80 md:hidden w-full max-w-full">
         <div className="px-3 sm:px-4 h-14 flex items-center justify-between gap-2 max-w-full">

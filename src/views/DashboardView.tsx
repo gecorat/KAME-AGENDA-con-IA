@@ -32,8 +32,7 @@ import {
   Zap,
   AlertTriangle,
   CreditCard,
-  ShieldCheck,
-  X
+  ShieldCheck
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment } from '../types';
@@ -63,19 +62,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     isExampleItem
   } = useAgendaStore();
   const [copiedPortal, setCopiedPortal] = useState(false);
-  const [tipDismissed, setTipDismissed] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('agenfacil_tip_dismissed') === 'true';
-    }
-    return false;
-  });
-
-  const handleDismissTip = () => {
-    setTipDismissed(true);
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('agenfacil_tip_dismissed', 'true');
-    }
-  };
 
   const handleCopyPortal = () => {
     const handle = practiceSettings.handle || 'consultorio-medico';
@@ -421,75 +407,118 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       )}
 
-      {/* Tip del Día: Compact Dismissible Notification */}
-      {!tipDismissed && (
-        <div className="p-3 sm:px-4 sm:py-2.5 bg-amber-500/10 border border-amber-500/25 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs shadow-2xs">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-400 flex items-center justify-center shrink-0">
-              <Lightbulb className="w-3.5 h-3.5" />
+      {/* AI Bot Weekly Impact Summary & Tip of the Day Highlight Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+        {/* Visual Summary Card: AI Bot Performance this week */}
+        <div className="md:col-span-2 bg-gradient-to-br from-neutral-900 via-neutral-950 to-neutral-900 text-white rounded-2xl p-5 border border-neutral-800 shadow-sm relative overflow-hidden flex flex-col justify-between">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shadow-xs">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider font-display flex items-center gap-1.5">
+                    <span>Impacto Semanal del Bot de IA</span>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold bg-emerald-500 text-neutral-950">
+                      Sofía IA
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-neutral-400">Automatización de consultas y reservas 24/7</p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-400 bg-emerald-950/60 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                WhatsApp Activo
+              </span>
             </div>
-            <div className="min-w-0 text-xs">
-              <span className="font-bold text-amber-950 dark:text-amber-300 mr-1.5">{tipOfTheDay.title}:</span>
-              <span className="text-amber-900/90 dark:text-amber-200/90">{tipOfTheDay.description}</span>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 my-4">
+              <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mb-1">
+                  <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Turnos Gestionados</span>
+                </div>
+                <div className="text-2xl font-black text-white font-display">
+                  {botManagedCount}
+                </div>
+                <span className="text-[10px] text-emerald-400 font-medium">Esta semana</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mb-1">
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Tiempo Ahorrado</span>
+                </div>
+                <div className="text-2xl font-black text-white font-display">
+                  ~{estimatedHoursSaved} <span className="text-xs font-normal text-neutral-400">hs</span>
+                </div>
+                <span className="text-[10px] text-neutral-400">En llamadas y mensajes</span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-white/5 border border-white/5 col-span-2 sm:col-span-1">
+                <div className="flex items-center gap-1 text-[11px] text-neutral-400 mb-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Efectividad</span>
+                </div>
+                <div className="text-2xl font-black text-white font-display">
+                  99.4%
+                </div>
+                <span className="text-[10px] text-neutral-400">Confirmación y seña</span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+
+          <div className="flex items-center justify-between gap-3 pt-2 border-t border-white/10 flex-wrap">
+            <span className="text-[11px] text-neutral-400">
+              Responde dudas frecuentes, valida comprobantes y asigna turnos automáticamente.
+            </span>
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('chats')}
+              className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 text-xs font-extrabold rounded-lg transition-all flex items-center gap-1.5 shadow-2xs cursor-pointer ml-auto"
+            >
+              <span>Ver Simulador & Chats</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+
+        {/* Tip del Día Component */}
+        <div className="bg-white rounded-2xl p-5 border border-neutral-200/80 shadow-2xs flex flex-col justify-between relative">
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                <Lightbulb className="w-3 h-3 text-amber-500" />
+                Tip del Día
+              </span>
+              <span className="text-[10px] font-semibold text-neutral-400">
+                {tipOfTheDay.badge}
+              </span>
+            </div>
+
+            <h4 className="text-sm font-bold text-neutral-900 font-display mb-1.5">
+              {tipOfTheDay.title}
+            </h4>
+
+            <p className="text-xs text-neutral-600 leading-relaxed">
+              {tipOfTheDay.description}
+            </p>
+          </div>
+
+          <div className="pt-4 mt-3 border-t border-neutral-100">
             <button
               type="button"
               onClick={() => onNavigateToTab(tipOfTheDay.tab)}
-              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-md text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+              className="w-full py-2 px-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
             >
               <span>{tipOfTheDay.actionLabel}</span>
               <ArrowRight className="w-3 h-3" />
             </button>
-            <button
-              type="button"
-              onClick={handleDismissTip}
-              className="p-1 text-amber-800/70 hover:text-amber-950 dark:text-amber-400/70 dark:hover:text-amber-200 hover:bg-amber-500/10 rounded-md transition-colors cursor-pointer"
-              title="Ocultar tip"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
           </div>
         </div>
-      )}
-
-      {/* Subtle, Compact AI Bot Weekly Impact Strip (Non-intrusive) */}
-      <div className="px-3.5 py-2.5 bg-neutral-900 text-neutral-200 rounded-xl border border-neutral-800 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-        <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="font-bold text-white text-xs flex items-center gap-1 font-display">
-              <Bot className="w-3.5 h-3.5 text-emerald-400" />
-              Sofía IA
-            </span>
-            <span className="text-[10px] text-neutral-400">Impacto semanal:</span>
-          </div>
-          <div className="flex items-center gap-2 text-xs flex-wrap font-medium">
-            <span className="inline-flex items-center gap-1 text-emerald-300">
-              <CheckCheck className="w-3 h-3" />
-              <strong>{botManagedCount}</strong> turnos
-            </span>
-            <span className="text-neutral-600 hidden sm:inline">•</span>
-            <span className="inline-flex items-center gap-1 text-amber-300">
-              <Zap className="w-3 h-3" />
-              <strong>~{estimatedHoursSaved}h</strong> ahorradas
-            </span>
-            <span className="text-neutral-600 hidden sm:inline">•</span>
-            <span className="inline-flex items-center gap-1 text-sky-300">
-              <ShieldCheck className="w-3 h-3" />
-              <strong>99.4%</strong> efectividad
-            </span>
-          </div>
-        </div>
-        <button
-          type="button"
-          onClick={() => onNavigateToTab('chats')}
-          className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 hover:underline inline-flex items-center gap-1 shrink-0 self-end sm:self-auto cursor-pointer"
-        >
-          <span>Ver Chats & Bot</span>
-          <ArrowRight className="w-3 h-3" />
-        </button>
       </div>
 
       {/* Metrics Row - Responsive minimalist cards */}

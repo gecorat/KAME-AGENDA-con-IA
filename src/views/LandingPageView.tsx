@@ -78,16 +78,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
   const [pricingCurrency, setPricingCurrency] = useState<'ARS' | 'USD'>('ARS');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
 
-  // Handle initial #planes hash if present, then clean URL hash
-  React.useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.hash === '#planes') {
-      setTimeout(() => {
-        document.getElementById('planes')?.scrollIntoView({ behavior: 'smooth' });
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }, 100);
-    }
-  }, []);
-
   const handleOpenLogin = () => {
     if (onOpenAuth) {
       onOpenAuth('login');
@@ -389,10 +379,6 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           <div className="flex items-center gap-2 sm:gap-3">
             <a
               href="#planes"
-              onClick={(e) => {
-                e.preventDefault();
-                document.getElementById('planes')?.scrollIntoView({ behavior: 'smooth' });
-              }}
               className="text-xs font-semibold text-neutral-600 hover:text-neutral-950 px-2.5 sm:px-3 py-2 rounded-xl hover:bg-neutral-50 transition cursor-pointer"
             >
               Ver Planes y Beneficios

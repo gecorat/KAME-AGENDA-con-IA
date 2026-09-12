@@ -15,8 +15,7 @@ import {
   Plus,
   ShieldCheck,
   Clock,
-  ExternalLink,
-  ArrowLeft
+  ExternalLink
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
@@ -42,7 +41,6 @@ export const AssistantBotView: React.FC = () => {
   const [newSimPatientPhone, setNewSimPatientPhone] = useState('');
   const [showNewSimModal, setShowNewSimModal] = useState(false);
   const [lastBookedAction, setLastBookedAction] = useState<any>(null);
-  const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -233,23 +231,23 @@ export const AssistantBotView: React.FC = () => {
       </div>
 
       {/* Main WhatsApp Window */}
-      <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden flex flex-col lg:grid lg:grid-cols-12 min-h-[620px] w-full min-w-0">
+      <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden grid lg:grid-cols-12 min-h-[620px]">
         {/* Left Col: Conversations Sidebar (4 cols) */}
-        <div className={`${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'} lg:col-span-4 border-r border-neutral-200 flex-col bg-neutral-50/50 w-full min-w-0`}>
-          <div className="p-3.5 border-b border-neutral-200 bg-neutral-100/60 flex items-center justify-between w-full min-w-0">
-            <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider truncate">
+        <div className="lg:col-span-4 border-r border-neutral-200 flex flex-col bg-neutral-50/50">
+          <div className="p-3.5 border-b border-neutral-200 bg-neutral-100/60 flex items-center justify-between">
+            <span className="text-xs font-bold text-neutral-800 uppercase tracking-wider">
               Chats Recientes ({conversations.length})
             </span>
             <button
               onClick={() => setShowNewSimModal(true)}
-              className="p-1 rounded-lg hover:bg-white text-neutral-600 transition-colors shrink-0"
+              className="p-1 rounded-lg hover:bg-white text-neutral-600 transition-colors"
               title="Nuevo chat de prueba"
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="divide-y divide-neutral-100 overflow-y-auto flex-1 max-h-[500px] lg:max-h-none w-full min-w-0">
+          <div className="divide-y divide-neutral-100 overflow-y-auto flex-1">
             {conversations.map(conv => {
               const isSelected = conv.id === activeConv?.id;
               const initials = conv.patient_name.slice(0, 2).toUpperCase();
@@ -257,11 +255,8 @@ export const AssistantBotView: React.FC = () => {
               return (
                 <div
                   key={conv.id}
-                  onClick={() => {
-                    setActiveConvId(conv.id);
-                    setMobileView('chat');
-                  }}
-                  className={`p-3.5 cursor-pointer transition-colors flex items-center gap-3 w-full min-w-0 ${isSelected ? 'bg-white border-l-4 border-l-emerald-600 shadow-2xs' : 'hover:bg-neutral-100/60'}`}
+                  onClick={() => setActiveConvId(conv.id)}
+                  className={`p-3.5 cursor-pointer transition-colors flex items-center gap-3 ${isSelected ? 'bg-white border-l-4 border-l-emerald-600 shadow-2xs' : 'hover:bg-neutral-100/60'}`}
                 >
                   <div className="w-11 h-11 rounded-full bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center shrink-0 shadow-2xs">
                     {initials}
@@ -271,7 +266,7 @@ export const AssistantBotView: React.FC = () => {
                       <span className="text-xs font-bold text-neutral-900 truncate">
                         {conv.patient_name}
                       </span>
-                      <span className="text-[10px] text-neutral-400 font-mono shrink-0 ml-1">
+                      <span className="text-[10px] text-neutral-400 font-mono">
                         {conv.last_message_time}
                       </span>
                     </div>
@@ -297,65 +292,56 @@ export const AssistantBotView: React.FC = () => {
         </div>
 
         {/* Right Col: Active Chat Area (8 cols) */}
-        <div className={`${mobileView === 'list' ? 'hidden lg:flex' : 'flex'} lg:col-span-8 flex-col bg-[#efeae2]/30 relative w-full min-w-0 max-w-full overflow-hidden`}>
+        <div className="lg:col-span-8 flex flex-col bg-[#efeae2]/30 relative">
           {activeConv ? (
             <>
               {/* WhatsApp Chat Header */}
-              <div className="px-3 sm:px-4 py-2.5 sm:py-3 bg-white border-b border-neutral-200 flex items-center justify-between gap-2 shadow-2xs z-10 w-full min-w-0">
-                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
-                  <button
-                    type="button"
-                    onClick={() => setMobileView('list')}
-                    className="p-1.5 -ml-1 text-neutral-600 hover:bg-neutral-100 rounded-lg lg:hidden shrink-0"
-                    title="Volver a lista de chats"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                  </button>
-                  <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center shrink-0">
+              <div className="px-4 py-3 bg-white border-b border-neutral-200 flex items-center justify-between shadow-2xs z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-emerald-700 text-white font-semibold text-xs flex items-center justify-center">
                     {activeConv.patient_name.slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-xs font-bold text-neutral-900 truncate">
+                  <div>
+                    <h3 className="text-xs font-bold text-neutral-900">
                       {activeConv.patient_name}
                     </h3>
-                    <p className="text-[10px] sm:text-[11px] text-neutral-500 flex items-center gap-1 truncate">
-                      <span className="font-mono truncate">{activeConv.patient_phone}</span>
+                    <p className="text-[11px] text-neutral-500 flex items-center gap-1">
+                      <span>{activeConv.patient_phone}</span>
                       <span>•</span>
                       {activeConv.ai_handled ? (
-                        <span className="text-emerald-600 font-medium flex items-center gap-1 truncate">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                          <span className="truncate">Atendido por {practiceSettings.bot_assistant_name}</span>
+                        <span className="text-emerald-600 font-medium flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Atendido por {practiceSettings.bot_assistant_name}
                         </span>
                       ) : (
-                        <span className="text-amber-600 font-medium truncate">Manual</span>
+                        <span className="text-amber-600 font-medium">Intervención Profesional</span>
                       )}
                     </p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => toggleAiHandled(activeConv.id)}
-                    className={`px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-medium rounded-xl border transition-colors flex items-center gap-1.5 ${activeConv.ai_handled ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-neutral-100 border-neutral-300 text-neutral-700'}`}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-xl border transition-colors flex items-center gap-1.5 ${activeConv.ai_handled ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-neutral-100 border-neutral-300 text-neutral-700'}`}
                   >
-                    <Bot className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden sm:inline">{activeConv.ai_handled ? 'Modo: IA Piloto' : 'Modo: Manual'}</span>
-                    <span className="sm:hidden">{activeConv.ai_handled ? 'IA Activa' : 'Manual'}</span>
+                    <Bot className="w-3.5 h-3.5" />
+                    {activeConv.ai_handled ? 'Modo: IA Piloto' : 'Modo: Manual'}
                   </button>
                 </div>
               </div>
 
               {/* Chat Message Stream */}
               <div
-                className="flex-1 p-3 sm:p-4 overflow-y-auto space-y-3 w-full min-w-0"
+                className="flex-1 p-4 overflow-y-auto space-y-3"
                 style={{
                   backgroundImage: `radial-gradient(#d1d5db 0.75px, transparent 0.75px)`,
                   backgroundSize: '16px 16px'
                 }}
               >
-                <div className="text-center my-1 sm:my-2 w-full overflow-hidden">
-                  <span className="text-[10px] bg-white/90 dark:bg-neutral-800 text-neutral-500 dark:text-neutral-300 px-3 py-1 rounded-full shadow-2xs font-medium inline-block max-w-full truncate border border-neutral-200/50 dark:border-neutral-700/50">
-                    Hoy • Procesado en tiempo real con Gemini
+                <div className="text-center my-2">
+                  <span className="text-[10px] bg-white/90 text-neutral-500 px-3 py-1 rounded-full shadow-2xs font-medium">
+                    Hoy • Las respuestas son procesadas en tiempo real con Gemini
                   </span>
                 </div>
 
@@ -365,27 +351,27 @@ export const AssistantBotView: React.FC = () => {
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col w-full min-w-0 ${isAssistant ? 'items-start' : 'items-end'}`}
+                      className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}
                     >
                       <div
-                        className={`max-w-[85%] sm:max-w-[70%] p-2.5 sm:p-3 rounded-2xl shadow-2xs text-xs whitespace-pre-wrap leading-relaxed break-words [overflow-wrap:anywhere] ${isAssistant ? 'bg-white dark:bg-[#1f232d] text-neutral-900 dark:text-neutral-100 rounded-tl-xs border border-neutral-150 dark:border-neutral-700' : 'bg-[#d9fdd3] dark:bg-[#064e3b] text-neutral-900 dark:text-emerald-50 rounded-tr-xs'}`}
+                        className={`max-w-[82%] sm:max-w-[70%] p-3 rounded-2xl shadow-2xs text-xs whitespace-pre-wrap leading-relaxed ${isAssistant ? 'bg-white text-neutral-900 rounded-tl-xs border border-neutral-150' : 'bg-[#d9fdd3] text-neutral-900 rounded-tr-xs'}`}
                       >
-                        <p className="break-words [overflow-wrap:anywhere]">{msg.content}</p>
+                        {msg.content}
 
                         {/* If appointment created card */}
                         {msg.actionTaken && (
-                          <div className="mt-2.5 p-2.5 bg-emerald-50 dark:bg-emerald-950/60 rounded-xl border border-emerald-200 dark:border-emerald-800 text-[11px] text-emerald-950 dark:text-emerald-100">
-                            <div className="font-bold flex items-center gap-1 text-emerald-800 dark:text-emerald-300 mb-0.5">
-                              <Calendar className="w-3.5 h-3.5 shrink-0" /> Turno agendado en sistema:
+                          <div className="mt-2.5 p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-[11px] text-emerald-950">
+                            <div className="font-bold flex items-center gap-1 text-emerald-800 mb-0.5">
+                              <Calendar className="w-3.5 h-3.5" /> Turno agendado en sistema:
                             </div>
-                            <p className="break-words">{msg.actionTaken.details}</p>
-                            <span className="text-[10px] text-emerald-700 dark:text-emerald-400 mt-1 block font-medium">
+                            <p>{msg.actionTaken.details}</p>
+                            <span className="text-[10px] text-emerald-700 mt-1 block font-medium">
                               ✓ Impactado en la agenda y turnero
                             </span>
                           </div>
                         )}
 
-                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-neutral-400 dark:text-neutral-400 font-mono">
+                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-neutral-400 font-mono">
                           <span>{msg.timestamp}</span>
                           {!isAssistant && <CheckCheck className="w-3 h-3 text-sky-500" />}
                         </div>
@@ -395,9 +381,9 @@ export const AssistantBotView: React.FC = () => {
                 })}
 
                 {loading && (
-                  <div className="flex items-center gap-2 p-2.5 bg-white dark:bg-neutral-800 rounded-2xl text-xs text-neutral-500 dark:text-neutral-300 border border-neutral-100 dark:border-neutral-700 shadow-2xs self-start w-fit max-w-full">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 animate-spin shrink-0" />
-                    <span className="truncate">{practiceSettings.bot_assistant_name} está respondiendo...</span>
+                  <div className="flex items-center gap-2 p-2.5 bg-white rounded-2xl text-xs text-neutral-500 border border-neutral-100 shadow-2xs self-start w-fit">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600 animate-spin" />
+                    <span>{practiceSettings.bot_assistant_name} está respondiendo...</span>
                   </div>
                 )}
 
@@ -405,13 +391,13 @@ export const AssistantBotView: React.FC = () => {
               </div>
 
               {/* Quick suggestion chips */}
-              <div className="px-3 sm:px-4 py-2 bg-white/90 dark:bg-[#14161c] border-t border-neutral-200 dark:border-neutral-800 flex items-center gap-1.5 overflow-x-auto text-[11px] w-full min-w-0 no-scrollbar">
-                <span className="text-neutral-400 dark:text-neutral-400 shrink-0 font-medium text-[10px] sm:text-[11px]">Probar:</span>
+              <div className="px-4 py-2 bg-white/90 border-t border-neutral-200 flex items-center gap-1.5 overflow-x-auto text-[11px]">
+                <span className="text-neutral-400 shrink-0 font-medium">Probar:</span>
                 {quickPrompts.map((qp, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSendMessage(qp)}
-                    className="px-2.5 py-1 bg-neutral-100 dark:bg-neutral-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-800 dark:hover:text-emerald-300 text-neutral-700 dark:text-neutral-200 rounded-full shrink-0 border border-neutral-200 dark:border-neutral-700 transition-colors whitespace-nowrap text-[11px] cursor-pointer"
+                    className="px-2.5 py-1 bg-neutral-100 hover:bg-emerald-50 hover:text-emerald-800 text-neutral-700 rounded-full shrink-0 border border-neutral-200 transition-colors"
                   >
                     {qp}
                   </button>
@@ -419,13 +405,13 @@ export const AssistantBotView: React.FC = () => {
               </div>
 
               {/* Input Box */}
-              <div className="p-2.5 sm:p-3 bg-white border-t border-neutral-200 flex items-center gap-2 w-full min-w-0">
+              <div className="p-3 bg-white border-t border-neutral-200 flex items-center gap-2">
                 <input
                   type="text"
                   placeholder={
                     activeConv.ai_handled
-                      ? "Escribe como paciente..."
-                      : "Escribe tu respuesta..."
+                      ? "Escribe como si fueras el paciente (ej. 'Quiero un turno para mañana')..."
+                      : "Escribe tu respuesta profesional como consultorio..."
                   }
                   value={inputText}
                   onChange={e => setInputText(e.target.value)}
@@ -435,13 +421,13 @@ export const AssistantBotView: React.FC = () => {
                       handleSendMessage();
                     }
                   }}
-                  className="flex-1 min-w-0 px-3.5 py-2 sm:py-2.5 text-xs bg-neutral-100 border border-neutral-200 rounded-xl sm:rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  className="flex-1 px-4 py-2.5 text-xs bg-neutral-100 border border-neutral-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
 
                 <button
                   onClick={() => handleSendMessage()}
                   disabled={loading || !inputText.trim()}
-                  className="p-2 sm:p-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl sm:rounded-2xl shadow-xs transition-colors shrink-0"
+                  className="p-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-2xl shadow-xs transition-colors"
                 >
                   <Send className="w-4 h-4" />
                 </button>
