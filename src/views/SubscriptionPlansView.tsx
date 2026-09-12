@@ -1258,9 +1258,21 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
 
                   <div className="pt-2 text-[10px] text-center text-neutral-400">
                     Al suscribirte aceptas nuestros{' '}
-                    <a href="/terminos" target="_blank" rel="noopener noreferrer" className="underline hover:text-neutral-700">Términos y Condiciones</a>
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTab?.('terminos')}
+                      className="underline hover:text-neutral-700 cursor-pointer font-medium"
+                    >
+                      Términos y Condiciones
+                    </button>
                     {' '}y{' '}
-                    <a href="/privacidad" target="_blank" rel="noopener noreferrer" className="underline hover:text-neutral-700">Política de Privacidad</a>.
+                    <button
+                      type="button"
+                      onClick={() => onNavigateTab?.('privacidad')}
+                      className="underline hover:text-neutral-700 cursor-pointer font-medium"
+                    >
+                      Política de Privacidad
+                    </button>.
                   </div>
                 </div>
               </div>

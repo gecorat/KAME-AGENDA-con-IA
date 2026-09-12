@@ -119,6 +119,10 @@ export interface DayAvailability {
   break_end?: string;   // "14:00"
 }
 
+export type BotAiModel = 'gemini-3.8-flash' | 'gemini-3.1-flash-lite' | 'gemini-2.5-flash' | 'gemini-2.5-pro';
+export type BotIdentityMode = 'professional' | 'assistant';
+export type BotPersonalityPreset = 'warm' | 'formal' | 'concise' | 'custom';
+
 export interface PracticeSettings {
   practice_name: string;
   handle: string; // p. ej. "consultorio-medico"
@@ -138,6 +142,18 @@ export interface PracticeSettings {
   bot_assistant_name: string;
   bot_tone: string;
   bot_enabled: boolean;
+  bot_ai_model?: BotAiModel;
+  bot_identity_mode?: BotIdentityMode;
+  bot_personality_preset?: BotPersonalityPreset;
+  bot_custom_instructions?: string;
+  bot_feature_pricing?: boolean;
+  bot_feature_booking?: boolean;
+  bot_feature_location?: boolean;
+  bot_feature_deposit_info?: boolean;
+  bot_feature_human_handoff?: boolean;
+  bot_response_delay_seconds?: number; // 0, 5, 15, 30, 60 (seconds delay for anti-bot simulation)
+  bot_typing_simulation?: boolean; // Show typing status in WhatsApp simulation
+  bot_avatar_url?: string; // Profile photo for WhatsApp Assistant / Doctor
   page_color: string;
   welcome_message: string;
   auto_confirm_bookings: boolean;

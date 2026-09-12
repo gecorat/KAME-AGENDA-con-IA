@@ -506,9 +506,9 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
           {selectedPatient ? (
             <div className="space-y-4 min-w-0">
               {/* 1. Header Profile Banner with Actions */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b border-neutral-200/80 min-w-0">
+              <div className="flex items-start sm:items-center justify-between gap-3 pb-3.5 border-b border-neutral-200/80 min-w-0">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-neutral-900 text-white font-bold text-sm sm:text-base flex items-center justify-center shadow-xs shrink-0">
+                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-neutral-900 text-white font-bold text-sm sm:text-base flex items-center justify-center shadow-xs shrink-0">
                     {selectedPatient.first_name[0]}{selectedPatient.last_name[0]}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -566,71 +566,73 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   </div>
                 </div>
 
-                {/* Primary Action Buttons: Agendar Turno, Nueva Sesión, Cobrar */}
-                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                {/* Patient Profile Actions */}
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => onScheduleForPatient(selectedPatient)}
-                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
-                    title={`Agendar para este ${clientTermSingular.toLowerCase()}`}
+                    onClick={() => onEditPatient(selectedPatient)}
+                    className="h-8 px-2.5 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-700 transition-colors flex items-center justify-center gap-1 text-xs font-semibold cursor-pointer shadow-2xs"
+                    title={`Editar datos del ${clientTermSingular.toLowerCase()}`}
                   >
-                    <Calendar className="w-3.5 h-3.5 shrink-0" />
-                    <span>Agendar Turno</span>
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Editar</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => {
-                      setConsultationToEdit(null);
-                      setIsConsultationModalOpen(true);
-                    }}
-                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
-                    title={`Ver Ficha / Registrar ${consultationTermSingular}`}
+                    onClick={() => handleDeletePatient(selectedPatient)}
+                    className="h-8 w-8 rounded-lg border border-neutral-200 hover:bg-rose-50 hover:text-rose-600 text-neutral-400 transition-colors flex items-center justify-center shrink-0 cursor-pointer shadow-2xs"
+                    title={`Eliminar ${clientTermSingular.toLowerCase()}`}
                   >
-                    <FileText className="w-3.5 h-3.5 shrink-0" />
-                    <span>Nueva Ficha / Sesión</span>
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsPaymentModalOpen(true)}
-                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
-                    title={`Registrar cobro confirmado de ${professionInfo.billingTerm.toLowerCase()} en caja`}
-                  >
-                    <DollarSign className="w-3.5 h-3.5 shrink-0" />
-                    <span>Registrar Cobro</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleSendPaymentRequest()}
-                    className="flex-1 sm:flex-initial min-h-[38px] px-3.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
-                    title="Solicitar pago por WhatsApp (Alias / CBU / Link MP / QR)"
-                  >
-                    <Send className="w-3.5 h-3.5 shrink-0" />
-                    <span>Solicitar Pago</span>
-                  </button>
-
-                  <div className="flex items-center gap-1 shrink-0 ml-auto sm:ml-0">
-                    <button
-                      type="button"
-                      onClick={() => onEditPatient(selectedPatient)}
-                      className="min-h-[38px] min-w-[38px] p-2 rounded-lg border border-neutral-200 hover:bg-neutral-100 text-neutral-600 transition-colors flex items-center justify-center shrink-0"
-                      title={`Editar datos del ${clientTermSingular.toLowerCase()}`}
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleDeletePatient(selectedPatient)}
-                      className="min-h-[38px] min-w-[38px] p-2 rounded-lg border border-neutral-200 hover:bg-rose-50 hover:text-rose-600 text-neutral-400 transition-colors flex items-center justify-center shrink-0"
-                      title={`Eliminar ${clientTermSingular.toLowerCase()}`}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
                 </div>
+              </div>
+
+              {/* Primary Action Toolbar: Agendar Turno, Nueva Sesión, Cobrar, Solicitar Pago */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => onScheduleForPatient(selectedPatient)}
+                  className="px-2.5 py-2 bg-neutral-900 hover:bg-neutral-800 active:scale-[0.98] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer"
+                  title={`Agendar para este ${clientTermSingular.toLowerCase()}`}
+                >
+                  <Calendar className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Agendar Turno</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConsultationToEdit(null);
+                    setIsConsultationModalOpen(true);
+                  }}
+                  className="px-2.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:scale-[0.98] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer"
+                  title={`Ver Ficha / Registrar ${consultationTermSingular}`}
+                >
+                  <FileText className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Nueva Ficha</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPaymentModalOpen(true)}
+                  className="px-2.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer"
+                  title={`Registrar cobro confirmado de ${professionInfo.billingTerm.toLowerCase()} en caja`}
+                >
+                  <DollarSign className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Registrar Cobro</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendPaymentRequest()}
+                  className="px-2.5 py-2 bg-sky-600 hover:bg-sky-700 active:scale-[0.98] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer"
+                  title="Solicitar pago por WhatsApp (Alias / CBU / Link MP / QR)"
+                >
+                  <Send className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">Solicitar Pago</span>
+                </button>
               </div>
 
               {/* 2. Coordinated Metric Badges (Moved right below header) */}

@@ -30,7 +30,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
           <div className="pt-2 flex flex-wrap items-center justify-center gap-4">
             <button
               type="button"
-              onClick={onOpenContact}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenContact?.();
+              }}
               className="bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-xs sm:text-sm px-6 py-3 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-2"
             >
               <span>Contactanos</span>
@@ -38,7 +42,7 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
             </button>
             <a
               href="mailto:contacto@agenfacil.com"
-              className="text-neutral-800 hover:text-neutral-950 font-semibold text-xs sm:text-sm underline underline-offset-4 decoration-neutral-300 hover:decoration-neutral-950 transition"
+              className="text-neutral-800 hover:text-neutral-950 font-semibold text-xs sm:text-sm underline underline-offset-4 decoration-neutral-300 hover:decoration-neutral-950 transition cursor-pointer"
             >
               contacto@agenfacil.com
             </a>
@@ -82,7 +86,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
                 <li>
                   <button
                     type="button"
-                    onClick={onOpenContact}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenContact?.();
+                    }}
                     className="text-slate-400 hover:text-white underline underline-offset-4 decoration-slate-600 hover:decoration-white transition cursor-pointer text-left"
                   >
                     Formulario de contacto
@@ -100,7 +108,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
                 <li>
                   <button
                     type="button"
-                    onClick={onOpenTerms}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenTerms?.();
+                    }}
                     className="text-slate-400 hover:text-white transition cursor-pointer text-left"
                   >
                     Términos y Condiciones
@@ -109,7 +121,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
                 <li>
                   <button
                     type="button"
-                    onClick={onOpenPrivacy}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenPrivacy?.();
+                    }}
                     className="text-slate-400 hover:text-white transition cursor-pointer text-left"
                   >
                     Política de Privacidad
@@ -140,7 +156,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
                 {onOpenPortal && (
                   <button
                     type="button"
-                    onClick={onOpenPortal}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenPortal();
+                    }}
                     className="hover:text-white transition cursor-pointer"
                   >
                     Portal de Pacientes
@@ -149,7 +169,11 @@ export const LandingFooter: React.FC<LandingFooterProps> = ({
                 {onOpenLogin && (
                   <button
                     type="button"
-                    onClick={onOpenLogin}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onOpenLogin();
+                    }}
                     className="hover:text-white transition cursor-pointer"
                   >
                     Ingresar al Panel

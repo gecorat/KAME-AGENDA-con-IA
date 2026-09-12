@@ -90,6 +90,13 @@ function MainApp() {
   const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
   const trialExpired = isTrial && (practiceSettings.trial_days_left ?? 0) <= 0 && !practiceSettings.is_permanent;
 
+  // Automatically scroll to top whenever active tab changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, [activeTab]);
+
   // Handle browser popstate (back/forward navigation)
   useEffect(() => {
     const handlePopState = () => {

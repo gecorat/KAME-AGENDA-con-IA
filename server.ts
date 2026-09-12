@@ -57,8 +57,20 @@ async function startServer() {
 
       const ai = getAI();
       const practiceName = practiceSettings.practice_name || "Agenfacil";
-      const assistantName = practiceSettings.bot_assistant_name || "Asistente Virtual";
+      const professionalName = practiceSettings.professional_name || "el profesional a cargo";
+      const professionalTitle = practiceSettings.professional_title || "Especialista";
+      const isProfessionalIdentity = practiceSettings.bot_identity_mode === 'professional';
+      const assistantName = practiceSettings.bot_assistant_name || "Sofía (IA)";
       const botTone = practiceSettings.bot_tone || "cálido, profesional y conciso";
+      const modelToUse = practiceSettings.bot_ai_model || "gemini-3.8-flash";
+      const customRules = practiceSettings.bot_custom_instructions ? `\n\nREGLAS Y RESTRICCIONES ESPECÍFICAS DEL CONSULTORIO (OBLIGATORIAS):\n${practiceSettings.bot_custom_instructions}` : "";
+
+      // Features enabled
+      const featPricing = practiceSettings.bot_feature_pricing ?? true;
+      const featBooking = practiceSettings.bot_feature_booking ?? true;
+      const featLocation = practiceSettings.bot_feature_location ?? true;
+      const featDeposit = practiceSettings.bot_feature_deposit_info ?? true;
+      const featHandoff = practiceSettings.bot_feature_human_handoff ?? true;
 
       // Services context
       const servicesList = services.length > 0
@@ -107,32 +119,46 @@ async function startServer() {
         botReq.address ? "- Domicilio o localidad de residencia" : null,
       ].filter(Boolean).join("\n");
 
-      const systemInstruction = `Eres ${assistantName}, la asistente virtual inteligente de "${practiceName}".
-Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro y amigable, con emojis sutiles, de forma conversacional y concisa como en WhatsApp.
+      let identityPrompt = "";
+      if (isProfessionalIdentity) {
+        identityPrompt = `Eres ${professionalName} (${professionalTitle}), el profesional a cargo de "${practiceName}".
+Respondes directamente tú en primera persona a tus pacientes con trato cercano y profesional.
+Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp.`;
+      } else {
+        identityPrompt = `Eres ${assistantName}, la asistente virtual inteligente de "${practiceName}" del profesional ${professionalName}.
+Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp.`;
+      }
+
+      const systemInstruction = `${identityPrompt}
 
 Fecha y hora actual del consultorio: ${todayString}.
+Dirección del consultorio: ${practiceSettings.address || "Consultorio céntrico"}, ${practiceSettings.city || "Ciudad"}.
+Teléfono de contacto: ${practiceSettings.phone || practiceSettings.whatsapp_number || ""}.
 
 INFORMACIÓN DEL CONSULTORIO:
 Servicios y aranceles:
-${servicesList}
+${featPricing ? servicesList : "Informar que los aranceles se coordinan en la consulta presencial."}
 
 Horarios de atención habituales:
 ${scheduleList}
 
 Turnos ya reservados (NO disponibles):
 ${bookedList}
+${customRules}
 
-OBJETIVOS:
-1. Responder preguntas sobre servicios, precios, duración y cómo reservar.
-2. Ayudar al paciente a elegir un horario disponible. Recuerda verificar que el día y horario solicitado esté dentro de los horarios de atención y NO coincida con turnos ya reservados.
+OBJETIVOS Y FUNCIONES HABILITADAS:
+1. Responder preguntas sobre servicios${featPricing ? ", precios" : ""}, duración y ubicación.
+2. ${featBooking ? "Ayudar al paciente a elegir un horario disponible según los huecos libres y horarios de atención." : "Informar los horarios de atención y pedirle que aguarde confirmación del equipo."}
 3. DATOS OBLIGATORIOS QUE DEBES PEDIR Y RECOLECTAR ANTES DE CONFIRMAR LA CITA:
-${requiredFieldsDescriptions}
-No cierres ni confirmes la reserva hasta que el paciente te haya proporcionado TODOS estos datos obligatorios. Si falta alguno, pídeselo amablemente.
-4. Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos obligatorios solicitados, indícale una confirmación cálida con el resumen y emite el bloque JSON estructurado al final con tag 'json_action'.
+${requiredFieldsDescriptions || "- Nombre y Apellido\n- Teléfono"}
+No cierres ni confirmes la reserva hasta que el paciente te haya proporcionado TODOS estos datos obligatorios. Si falta alguno, pídeselo con amabilidad y naturalidad.
+4. ${featDeposit && practiceSettings.patient_deposit_alias ? `Si el paciente desea señar su turno o pregunta por pagos, puedes informarle que la seña se realiza al Alias: ${practiceSettings.patient_deposit_alias}.` : ""}
+5. ${featHandoff ? "Si el paciente solicita hablar con una persona real o tiene un reclamo complejo, dile amablemente que dejas su mensaje registrado para que el equipo humano lo contacte a la brevedad." : ""}
+6. ${featBooking ? "Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos obligatorios solicitados, indícale una confirmación cálida con el resumen y emite el bloque JSON estructurado al final con tag 'json_action'." : ""}
 
 FORMATO DE RESPUESTA:
-Provee tu mensaje amigable para el paciente.
-Si se concreta o confirma una reserva, agrega al final un bloque de código markdown con tag 'json_action':
+Provee tu mensaje amigable y humano para el paciente.
+${featBooking ? `Si se concreta o confirma una reserva con todos los datos requeridos, agrega al final un bloque de código markdown con tag 'json_action':
 \`\`\`json_action
 {
   "action": "book_appointment",
@@ -144,19 +170,19 @@ Si se concreta o confirma una reserva, agrega al final un bloque de código mark
   "notes": "Notas adicionales"
 }
 \`\`\`
-Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el bloque 'json_action'.`;
+Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el bloque 'json_action'.` : ""}`;
 
       if (ai) {
         // Prepare conversation
         const conversationText = history
           .slice(-10)
-          .map((m: any) => `${m.role === "user" ? "Paciente" : "Asistente"}: ${m.content}`)
+          .map((m: any) => `${m.role === "user" ? "Paciente" : (isProfessionalIdentity ? professionalName : "Asistente")}: ${m.content}`)
           .join("\n");
 
-        const fullPrompt = `${systemInstruction}\n\n=== HISTORIAL DE LA CONVERSACIÓN ===\n${conversationText}\n\nPaciente: ${message}\nAsistente:`;
+        const fullPrompt = `${systemInstruction}\n\n=== HISTORIAL DE LA CONVERSACIÓN ===\n${conversationText}\n\nPaciente: ${message}\n${isProfessionalIdentity ? professionalName : "Asistente"}:`;
 
         const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
+          model: modelToUse,
           contents: fullPrompt,
         });
 
@@ -174,6 +200,12 @@ Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el 
           } catch (err) {
             console.error("Failed to parse json_action:", err);
           }
+        }
+
+        // Bot human-like response delay pacing (e.g. 10s, 15s, 30s)
+        const delaySeconds = Math.min(Math.max(Number(practiceSettings.bot_response_delay_seconds) || 0, 0), 60);
+        if (delaySeconds > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
         }
 
         return res.json({
@@ -196,6 +228,11 @@ Si aún falta definir algún dato obligatorio o no se confirmó, NO incluyas el 
           reply = `¡Claro que sí! Para coordinar tu turno para *${firstService}*, ¿prefieres un horario por la mañana o por la tarde? Y por favor indícame tu nombre completo.`;
         } else {
           reply = `¡Hola! Soy la asistente virtual de ${practiceName}. Puedo ayudarte a consultar aranceles, horarios disponibles o agendar y reprogramar turnos fácilmente. ¿En qué te puedo asesorar hoy? ✨`;
+        }
+
+        const delaySeconds = Math.min(Math.max(Number(practiceSettings.bot_response_delay_seconds) || 0, 0), 60);
+        if (delaySeconds > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
         }
 
         return res.json({
@@ -364,7 +401,7 @@ Si no requiere acción, no agregues el bloque de código.`;
           const fullPrompt = `${systemInstruction}\n\n=== CONVERSACIÓN RECIENTE ===\n${conversationText}\n\nDoctor: ${message}\nCopiloto:`;
 
           const response = await ai.models.generateContent({
-            model: "gemini-3.8-flash",
+            model: "gemini-2.5-flash",
             contents: fullPrompt,
           });
 
@@ -443,6 +480,45 @@ Si no requiere acción, no agregues el bloque de código.`;
     } catch (err: any) {
       console.error("Error in /api/copilot/chat:", err);
       res.status(500).json({ error: err.message || "Error procesando consulta con el Copiloto" });
+    }
+  });
+
+  // Copilot Audio Voice Transcription with Gemini
+  app.post("/api/copilot/transcribe-voice", async (req, res) => {
+    try {
+      const { audioBase64, mimeType = "audio/webm" } = req.body;
+      if (!audioBase64) {
+        return res.status(400).json({ error: "No se proporcionó audio" });
+      }
+
+      const ai = getAI();
+      const rawBase64 = audioBase64.replace(/^data:audio\/[a-zA-Z0-9.\-_]+;base64,/, "");
+
+      if (ai) {
+        const cleanMime = mimeType.split(";")[0].trim() || "audio/webm";
+        const response = await ai.models.generateContent({
+          model: "gemini-2.5-flash",
+          contents: [
+            {
+              inlineData: {
+                mimeType: cleanMime,
+                data: rawBase64
+              }
+            },
+            {
+              text: "Transcribe con la máxima precisión el audio en español de la consulta médica o administrativa. Devuelve ÚNICAMENTE el texto transcripto de lo que dice el usuario, sin introducciones, sin comillas, sin explicaciones ni formato adicional."
+            }
+          ]
+        });
+
+        const transcription = response.text?.trim() || "";
+        return res.json({ transcription });
+      }
+
+      return res.json({ transcription: "Audio procesado con éxito." });
+    } catch (err: any) {
+      console.error("Error in /api/copilot/transcribe-voice:", err);
+      res.status(500).json({ error: err.message || "Error al transcribir audio" });
     }
   });
 

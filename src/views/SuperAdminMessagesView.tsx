@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import {
   Mail,
   Phone,
-  MessageSquare,
   Search,
   CheckCircle2,
   Clock,
@@ -13,10 +12,6 @@ import {
   Copy,
   Check,
   Calendar,
-  Filter,
-  TrendingUp,
-  Key,
-  AlertCircle,
   FileText,
   UserCheck
 } from 'lucide-react';
@@ -108,53 +103,29 @@ export const SuperAdminMessagesView: React.FC<SuperAdminMessagesViewProps> = ({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-16">
-      {/* TOP BANNER & FAST NAVIGATION */}
-      <div className="bg-gradient-to-r from-neutral-900 via-neutral-850 to-neutral-900 text-white rounded-3xl p-6 sm:p-8 border border-neutral-800 shadow-sm relative overflow-hidden">
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-amber-400/20 text-amber-300 border border-amber-400/30">
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>Super Administrador • AgenFacil</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
-              Buzón de Mensajes de Contacto (Web)
-            </h1>
-            <p className="text-neutral-300 text-xs sm:text-sm leading-relaxed">
-              Consultas recibidas desde la página pública de contacto (<code className="px-1.5 py-0.5 bg-neutral-800 text-emerald-300 rounded font-mono text-xs">/contacto</code>).
-              Todos los mensajes cuentan con verificación humana anti-bot y sincronización en tiempo real.
-            </p>
-          </div>
-
-          {/* Superadmin Jump Tabs */}
-          {onNavigateToTab && (
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => onNavigateToTab('superadmin-apis')}
-                className="px-3.5 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <Key className="w-3.5 h-3.5 text-amber-400" />
-                <span>APIs & Pasarelas</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateToTab('superadmin-analytics')}
-                className="px-3.5 py-2 rounded-xl bg-neutral-800/80 hover:bg-neutral-800 text-neutral-200 hover:text-white border border-neutral-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Estadísticas SaaS</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onNavigateToTab('contacto')}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-sm"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Ver Formulario Público</span>
-              </button>
-            </div>
-          )}
+      {/* HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-neutral-900 font-display">
+            Buzón de Mensajes de Contacto (Web)
+          </h1>
+          <p className="text-xs sm:text-sm text-neutral-500 mt-1 max-w-2xl leading-relaxed">
+            Consultas recibidas desde la página pública de contacto (<code className="px-1.5 py-0.5 bg-neutral-100 text-emerald-700 rounded font-mono text-xs border border-neutral-200">/contacto</code>). Todos los mensajes cuentan con verificación humana anti-bot y sincronización en tiempo real.
+          </p>
         </div>
+
+        {onNavigateToTab && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('contacto')}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Ver Formulario Público</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* METRIC COUNTER CARDS */}

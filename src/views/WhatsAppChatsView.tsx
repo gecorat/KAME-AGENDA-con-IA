@@ -21,17 +21,29 @@ import {
   Clock,
   DollarSign,
   AlertCircle,
+  AlertTriangle,
   Copy,
   ChevronRight,
   Filter,
   ArrowLeft,
   ArrowRight,
-  Lock
+  Lock,
+  Sliders,
+  CheckSquare,
+  Globe,
+  Crown,
+  Power,
+  PauseCircle,
+  PlayCircle,
+  ShieldAlert,
+  Smartphone
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { Conversation, ChatMessage } from '../types';
 import { ConfirmModal } from '../components/ConfirmModal';
+import { BotPersonalitySettings } from '../components/settings/BotPersonalitySettings';
+import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
 
 interface WhatsAppChatsViewProps {
   onOpenNewAppointmentWithPatient?: (patientName: string, patientPhone: string) => void;
@@ -52,12 +64,16 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
     createConversation,
     toggleAiHandled,
     addAppointment,
-    updatePracticeSettings
+    updatePracticeSettings,
+    currentUser
   } = useAgendaStore();
 
+  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
   const isPro = practiceSettings.subscription_plan === 'pro';
   const isTrial = practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active);
 
+  const [subTab, setSubTab] = useState<'chats' | 'personality' | 'fields' | 'connection'>('chats');
   const [activeConvId, setActiveConvId] = useState<string>(conversations[0]?.id || '');
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [inputText, setInputText] = useState('');
@@ -327,7 +343,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm sm:text-base font-semibold text-neutral-900 font-display">
-                {isPro ? 'WhatsApp & Mensajería' : 'Simulador Bot IA (Datos Reales)'}
+                {isPro ? 'WhatsApp & Mensajería' : 'Asistente Virtual & WhatsApp'}
               </h2>
 
               {isPro ? (
@@ -348,11 +364,31 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   Trial Activo (Plan Básico)
                 </span>
               )}
+
+              {isSuperAdmin && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-50 text-amber-900 border border-amber-300 flex items-center gap-1">
+                  <Crown className="w-3 h-3 text-amber-600" />
+                  {practiceSettings.bot_ai_model || 'gemini-2.5-flash'}
+                </span>
+              )}
+
+              {/* Bot Global Switch Badge */}
+              <button
+                type="button"
+                onClick={() => updatePracticeSettings({ bot_enabled: practiceSettings.bot_enabled === false ? true : false })}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition-all border shadow-2xs ${
+                  practiceSettings.bot_enabled !== false
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                    : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                }`}
+                title="Haga clic para pausar o activar la respuesta automática del bot en todos los chats"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${practiceSettings.bot_enabled !== false ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span>{practiceSettings.bot_enabled !== false ? 'Bot General Activo' : 'Bot General Pausado'}</span>
+              </button>
             </div>
             <p className="text-[11px] text-neutral-500 mt-0.5 max-w-2xl">
-              {isPro
-                ? 'Bandeja en vivo conectada con tu línea de WhatsApp Business y bot de agendamiento 24/7.'
-                : 'Simulador inteligente con acceso a tu agenda, servicios y turnos reales. Conecta tu línea real con el Plan Pro.'}
+              Configuración de personalidad del bot, identidad, requisitos de turnos y chat en vivo con simulación estilo WhatsApp Web.
             </p>
           </div>
         </div>
@@ -399,7 +435,10 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowNewSimModal(true)}
+            onClick={() => {
+              setSubTab('chats');
+              setShowNewSimModal(true);
+            }}
             className="px-3 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5"
           >
             <Plus className="w-3.5 h-3.5" />
@@ -408,8 +447,165 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         </div>
       </div>
 
-      {/* Main Two/Three Columns Layout - Fully Responsive for Mobile, Tablet & Desktop */}
-      <div className="bg-white rounded-xl border border-neutral-200/75 shadow-2xs overflow-hidden grid lg:grid-cols-12 min-h-[580px]">
+      {/* Sub-Tab Navigation Bar */}
+      <div className="flex items-center gap-1.5 p-1 bg-neutral-100/80 rounded-xl border border-neutral-200/80 w-fit overflow-x-auto max-w-full">
+        <button
+          type="button"
+          onClick={() => setSubTab('chats')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            subTab === 'chats'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          <span>Bandeja & Simulador en Vivo</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('personality')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            subTab === 'personality'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <Sliders className="w-3.5 h-3.5 text-sky-600" />
+          <span>{isSuperAdmin ? 'Personalidad, Motor IA & Reglas' : 'Personalidad, Identidad & Reglas'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('fields')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            subTab === 'fields'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <CheckSquare className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Requisitos de Reserva (Bot & Web)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setSubTab('connection')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            subTab === 'connection'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <QrCode className="w-3.5 h-3.5 text-neutral-700" />
+          <span>Conexión WhatsApp QR</span>
+        </button>
+      </div>
+
+      {/* SUB-TAB 1: PERSONALIDAD, MODELO IA Y REGLAS */}
+      {subTab === 'personality' && (
+        <BotPersonalitySettings
+          onSaveSuccess={() => {
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+          }}
+        />
+      )}
+
+      {/* SUB-TAB 2: DATOS OBLIGATORIOS Y OPCIONALES (UNIFICADOS) */}
+      {subTab === 'fields' && (
+        <RequiredFieldsSettings
+          standalone={true}
+          onSaveSuccess={() => {
+            confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
+          }}
+        />
+      )}
+
+      {/* SUB-TAB 3: CONEXIÓN DIRECTA */}
+      {subTab === 'connection' && (
+        <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-6 max-w-3xl">
+          <div className="flex items-center justify-between pb-4 border-b border-neutral-100">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-neutral-900 text-white flex items-center justify-center font-bold">
+                <QrCode className="w-5 h-5 text-sky-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-neutral-900 font-display">
+                  Conexión con WhatsApp Business
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  Vincula tu número oficial para que el Bot IA responda turnos las 24 hs.
+                </p>
+              </div>
+            </div>
+
+            {practiceSettings.whatsapp_connected ? (
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                Conectado ({practiceSettings.whatsapp_session_phone || practiceSettings.whatsapp_number})
+              </span>
+            ) : (
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                Línea Desconectada
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {/* Warning banner */}
+            <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-amber-950 space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-xs text-amber-900">
+                <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Uso responsable de Evolution API (No Oficial)</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Este método vincula tu dispositivo de forma similar a WhatsApp Web. Recomendamos enfáticamente utilizar un chip o línea exclusiva para el consultorio/negocio y no la línea personal diaria.
+              </p>
+            </div>
+
+            <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2">
+              <label className="block text-xs font-bold text-neutral-900">
+                Número de WhatsApp Asignado:
+              </label>
+              <input
+                type="tel"
+                value={customPhoneInput}
+                onChange={e => setCustomPhoneInput(e.target.value)}
+                placeholder="+54 9 11 5000-0000"
+                className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl font-mono text-xs focus:ring-2 focus:ring-neutral-900"
+              />
+              <p className="text-[11px] text-neutral-500">
+                Ingresa el número con código de país (+54 9 para Argentina) donde atenderá el bot.
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleOpenQrModal}
+                className="px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold shadow-xs flex items-center justify-center gap-2"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>{practiceSettings.whatsapp_connected ? 'Ver Código QR / Reconectar' : 'Generar Código QR'}</span>
+              </button>
+
+              {practiceSettings.whatsapp_connected && (
+                <button
+                  type="button"
+                  onClick={() => setShowDisconnectConfirm(true)}
+                  className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-semibold transition-colors"
+                >
+                  Desconectar Sesión
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-TAB 0: BANDEJA DE MENSAJES & SIMULADOR EN VIVO */}
+      {subTab === 'chats' && (
+        <div className="bg-white rounded-xl border border-neutral-200/75 shadow-2xs overflow-hidden grid lg:grid-cols-12 min-h-[580px]">
         {/* Column 1: Conversations List */}
         <div className={`${mobileView === 'chat' ? 'hidden lg:flex' : 'flex'} lg:col-span-4 border-r border-neutral-200/80 flex-col bg-neutral-50/40 w-full`}>
           {/* Search and Filters */}
@@ -566,19 +762,44 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => toggleAiHandled(activeConv.id)}
-                    className={`px-2.5 py-1 text-xs font-medium rounded-md border transition-colors flex items-center gap-1.5 ${
-                      activeConv.ai_handled
-                        ? 'bg-neutral-900 text-white border-neutral-900'
-                        : 'bg-white text-neutral-700 border-neutral-200 hover:bg-neutral-50'
-                    }`}
-                    title="Alternar entre atención con IA automática o respuesta manual del profesional"
-                  >
-                    <Bot className="w-3.5 h-3.5" />
-                    <span>{activeConv.ai_handled ? 'Bot IA Piloto' : 'Manual'}</span>
-                  </button>
+                  {/* Bot Activo / Pausado Switch for this specific chat */}
+                  <div className="flex items-center gap-1 bg-neutral-100 p-0.5 rounded-lg border border-neutral-200">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!activeConv.ai_handled) {
+                          toggleAiHandled(activeConv.id);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                        activeConv.ai_handled
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-neutral-500 hover:text-neutral-800'
+                      }`}
+                      title="Activar Bot IA para este chat"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5" />
+                      <span>Bot Activo</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeConv.ai_handled) {
+                          toggleAiHandled(activeConv.id);
+                        }
+                      }}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all flex items-center gap-1.5 ${
+                        !activeConv.ai_handled
+                          ? 'bg-neutral-800 text-white shadow-2xs'
+                          : 'text-neutral-500 hover:text-neutral-800'
+                      }`}
+                      title="Pausar Bot y atender manualmente este chat"
+                    >
+                      <PauseCircle className="w-3.5 h-3.5" />
+                      <span>Pausado (Manual)</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -625,9 +846,43 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               </div>
 
               {/* Message Stream */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-3">
+              <div className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#f0f2f5] bg-[radial-gradient(#00000008_1px,transparent_1px)] [background-size:16px_16px]">
+                {/* Global Paused Banner if bot_enabled is false */}
+                {practiceSettings.bot_enabled === false && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>El <strong>Bot General está Pausado</strong> globalmente. Las respuestas automáticas están suspendidas.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updatePracticeSettings({ bot_enabled: true })}
+                      className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-medium text-[11px] whitespace-nowrap transition-colors"
+                    >
+                      Reanudar Bot
+                    </button>
+                  </div>
+                )}
+
+                {/* Per-chat Paused Notice */}
+                {!activeConv.ai_handled && practiceSettings.bot_enabled !== false && (
+                  <div className="p-2 bg-neutral-100/90 border border-neutral-200 rounded-lg flex items-center justify-between text-[11px] text-neutral-600">
+                    <div className="flex items-center gap-1.5">
+                      <PauseCircle className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>Bot pausado para este paciente. Las respuestas que envíes serán 100% manuales.</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => toggleAiHandled(activeConv.id)}
+                      className="text-neutral-900 font-semibold hover:underline"
+                    >
+                      Activar Bot
+                    </button>
+                  </div>
+                )}
+
                 <div className="text-center my-1">
-                  <span className="text-[10px] bg-white border border-neutral-200 text-neutral-500 px-2.5 py-0.5 rounded font-mono">
+                  <span className="text-[10px] bg-white border border-neutral-200 text-neutral-500 px-2.5 py-0.5 rounded font-mono shadow-2xs">
                     Sesión de WhatsApp activa • Encriptación de extremo a extremo
                   </span>
                 </div>
@@ -638,20 +893,45 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col ${isAssistant ? 'items-start' : 'items-end'}`}
+                      className={`flex gap-2 ${isAssistant ? 'items-start justify-start' : 'items-end justify-end'}`}
                     >
+                      {/* Synchronized Bot Profile Photo */}
+                      {isAssistant && (
+                        <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-neutral-200 shadow-2xs mt-0.5 bg-neutral-100 flex items-center justify-center">
+                          {practiceSettings.bot_avatar_url ? (
+                            <img
+                              src={practiceSettings.bot_avatar_url}
+                              alt={practiceSettings.bot_assistant_name}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-emerald-700 text-white flex items-center justify-center text-[10px] font-bold">
+                              {practiceSettings.bot_assistant_name.slice(0, 1)}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       <div
-                        className={`max-w-[85%] sm:max-w-[75%] rounded-lg p-3 text-xs leading-relaxed ${
+                        className={`max-w-[85%] sm:max-w-[75%] rounded-xl p-3 text-xs leading-relaxed shadow-2xs ${
                           isAssistant
-                            ? 'bg-white text-neutral-800 border border-neutral-200/80 shadow-2xs'
-                            : 'bg-neutral-900 text-white shadow-2xs'
+                            ? 'bg-white text-neutral-800 border border-neutral-200/80 rounded-tl-xs'
+                            : 'bg-[#d9fdd3] text-neutral-900 border border-emerald-200/60 rounded-tr-xs'
                         }`}
                       >
+                        {isAssistant && (
+                          <div className="flex items-center gap-1.5 pb-1 mb-1 border-b border-neutral-100 text-[10px] font-semibold text-emerald-800">
+                            <span>{practiceSettings.bot_assistant_name}</span>
+                            <span className="text-neutral-400">• Asistente Virtual</span>
+                          </div>
+                        )}
+
                         <p className="whitespace-pre-wrap">{msg.content}</p>
 
                         {/* If an action was taken (e.g. appointment created) */}
                         {msg.actionTaken && (
-                          <div className="mt-2.5 p-2 bg-neutral-50 rounded border border-neutral-200/80 text-[11px] text-neutral-800 flex items-center justify-between gap-2">
+                          <div className="mt-2.5 p-2 bg-neutral-50 rounded-lg border border-neutral-200/80 text-[11px] text-neutral-800 flex items-center justify-between gap-2">
                             <div className="flex items-center gap-1.5">
                               <Calendar className="w-3.5 h-3.5 text-neutral-700" />
                               <span className="font-semibold">{msg.actionTaken.details}</span>
@@ -664,11 +944,11 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
                         <div
                           className={`flex items-center justify-end gap-1 mt-1 text-[10px] ${
-                            isAssistant ? 'text-neutral-400' : 'text-neutral-400'
+                            isAssistant ? 'text-neutral-400' : 'text-neutral-500'
                           }`}
                         >
                           <span>{msg.timestamp}</span>
-                          {!isAssistant && <CheckCheck className="w-3 h-3 text-neutral-300" />}
+                          {!isAssistant && <CheckCheck className="w-3.5 h-3.5 text-sky-500" />}
                         </div>
                       </div>
                     </div>
@@ -676,9 +956,23 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 })}
 
                 {loading && (
-                  <div className="flex items-center gap-2 text-xs text-neutral-500 p-2 bg-white border border-neutral-200 rounded-lg w-fit shadow-2xs">
-                    <RefreshCw className="w-3 h-3 animate-spin text-neutral-600" />
-                    <span>{practiceSettings.bot_assistant_name} está escribiendo...</span>
+                  <div className="flex items-center gap-2 text-xs text-neutral-600 p-2.5 bg-white border border-neutral-200 rounded-xl w-fit shadow-2xs">
+                    <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-neutral-200 bg-neutral-100">
+                      {practiceSettings.bot_avatar_url ? (
+                        <img
+                          src={practiceSettings.bot_avatar_url}
+                          alt={practiceSettings.bot_assistant_name}
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-emerald-700 text-white flex items-center justify-center text-[9px] font-bold">
+                          {practiceSettings.bot_assistant_name.slice(0, 1)}
+                        </div>
+                      )}
+                    </div>
+                    <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                    <span>{practiceSettings.bot_assistant_name} está escribiendo respuesta...</span>
                   </div>
                 )}
 
@@ -724,6 +1018,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           )}
         </div>
       </div>
+      )}
 
       {/* WhatsApp QR Connection Modal */}
       {showQrModal && (
@@ -746,6 +1041,27 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
             </div>
 
             <div className="space-y-3 text-xs text-neutral-600">
+              {/* Unofficial API Warning & Best Practices Banner */}
+              <div className="p-3.5 bg-amber-50/90 rounded-xl border border-amber-200/90 text-amber-950 space-y-1.5 shadow-2xs">
+                <div className="flex items-center gap-2 font-bold text-xs text-amber-900">
+                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Aviso Importante: Conexión mediante Evolution API</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-amber-800">
+                  Esta integración conecta tu sesión mediante el protocolo web de WhatsApp (no utiliza la API oficial de Cloud API de Meta). 
+                </p>
+                <div className="pt-1 border-t border-amber-200/60 text-[10px] space-y-1 text-amber-900 font-medium">
+                  <div className="flex items-center gap-1.5">
+                    <Smartphone className="w-3 h-3 text-amber-700 shrink-0" />
+                    <span><strong>Recomendación:</strong> Usar una línea exclusiva de trabajo o chip corporativo, nunca tu número personal principal.</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                    <span>El bot respeta los intervalos de espera configurados ({practiceSettings.bot_response_delay_seconds || 20}s) para evitar bloqueos por automatización rápida.</span>
+                  </div>
+                </div>
+              </div>
+
               <div className="p-3 bg-neutral-50 rounded-lg border border-neutral-200/80 space-y-1.5">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-neutral-800">Estado actual:</span>

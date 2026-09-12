@@ -37,6 +37,12 @@ export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
   bot_assistant_name: "Sofía (IA)",
   bot_tone: "cálido, empático y resolutivo",
   bot_enabled: true,
+  bot_ai_model: 'gemini-2.5-flash',
+  bot_identity_mode: 'assistant',
+  bot_personality_preset: 'warm',
+  bot_response_delay_seconds: 20,
+  bot_typing_simulation: true,
+  bot_avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
   page_color: "#0284c7", // Sky blue profesional
   welcome_message: "¡Hola! Soy Sofía, asistente virtual de Agenfacil. Puedo ayudarte a conocer nuestros tratamientos, aranceles o coordinar tu próximo turno.",
   auto_confirm_bookings: true,

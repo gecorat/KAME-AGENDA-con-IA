@@ -270,10 +270,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
       {/* Metrics Row - Responsive minimalist cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-3.5">
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors">
+        <div 
+          onClick={() => onNavigateToTab('agenda')}
+          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          title="Ver agenda completa de turnos"
+        >
           <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight">Turnos de Hoy</span>
-            <Calendar className="w-4 h-4 text-neutral-400" />
+            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Turnos de Hoy</span>
+            <Calendar className="w-4 h-4 text-neutral-400 group-hover:text-neutral-700 transition-colors" />
           </div>
           <div className="text-2xl font-bold text-neutral-900 tracking-tight font-display">
             {todayRealAppointments.length}
@@ -283,16 +287,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               1 turno de ejemplo (no sumado)
             </p>
           ) : (
-            <p className="text-[11px] text-neutral-500 mt-1">
-              {todayRealAppointments.filter(a => a.status === 'confirmed').length} confirmados • {todayRealAppointments.filter(a => a.status === 'completed').length} atendidos
+            <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center justify-between">
+              <span>{todayRealAppointments.filter(a => a.status === 'confirmed').length} confirmados • {todayRealAppointments.filter(a => a.status === 'completed').length} atendidos</span>
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
             </p>
           )}
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors">
+        <div 
+          onClick={() => onNavigateToTab('pacientes')}
+          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          title="Ver directorio de pacientes e historias clínicas"
+        >
           <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight">Pacientes Registrados</span>
-            <Users className="w-4 h-4 text-neutral-400" />
+            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Pacientes Registrados</span>
+            <Users className="w-4 h-4 text-neutral-400 group-hover:text-neutral-700 transition-colors" />
           </div>
           <div className="text-2xl font-bold text-neutral-900 tracking-tight font-display">
             {realPatients.length}
@@ -302,8 +311,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               1 paciente de ejemplo (no sumado)
             </p>
           ) : (
-            <p className="text-[11px] text-emerald-700 font-medium mt-1">
-              {newPatientsThisWeek > 0 ? `+${newPatientsThisWeek} pacientes nuevos esta semana` : 'Sin registros esta semana'}
+            <p className="text-[11px] text-emerald-700 group-hover:text-emerald-800 font-medium mt-1 flex items-center justify-between">
+              <span>{newPatientsThisWeek > 0 ? `+${newPatientsThisWeek} nuevos esta semana` : 'Ver directorio completo'}</span>
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
             </p>
           )}
         </div>
@@ -311,6 +321,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div 
           onClick={() => onNavigateToTab('cobros')}
           className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          title="Ver caja y recibos emitidos"
         >
           <div className="flex items-center justify-between text-neutral-500 mb-2">
             <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Cobrado en el Mes</span>
@@ -319,16 +330,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="text-2xl font-bold font-mono text-neutral-900 tracking-tight">
             ${monthCollected.toLocaleString('es-AR')}
           </div>
-          <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center gap-1">
+          <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center justify-between">
             <span>Ver caja y recibos</span>
-            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform" />
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
           </p>
         </div>
 
-        <div className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors">
+        <div 
+          onClick={() => onNavigateToTab('chats')}
+          className="bg-white p-4 sm:p-5 rounded-xl border border-neutral-200/75 shadow-2xs hover:border-neutral-300 transition-colors cursor-pointer group"
+          title="Ver chats y asistente de WhatsApp"
+        >
           <div className="flex items-center justify-between text-neutral-500 mb-2">
-            <span className="text-xs font-medium tracking-tight">Asistente IA WhatsApp</span>
-            <Sparkles className="w-4 h-4 text-neutral-400" />
+            <span className="text-xs font-medium tracking-tight group-hover:text-neutral-900 transition-colors">Asistente IA WhatsApp</span>
+            <Sparkles className="w-4 h-4 text-neutral-400 group-hover:text-emerald-600 transition-colors" />
           </div>
           <div className="text-2xl font-bold text-neutral-900 tracking-tight flex items-center gap-2 flex-wrap font-display">
             <span>24/7</span>
@@ -336,8 +351,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               Activo
             </span>
           </div>
-          <p className="text-[11px] text-neutral-500 mt-1">
-            Respuestas y agenda automatizada
+          <p className="text-[11px] text-neutral-500 group-hover:text-neutral-800 font-medium mt-1 flex items-center justify-between">
+            <span>Abrir Asistente & Chats</span>
+            <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-neutral-400 shrink-0 ml-1" />
           </p>
         </div>
       </div>
@@ -527,11 +543,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
 
             <button
-              onClick={() => onNavigateToTab('asistente')}
-              className="w-full py-2 px-3 bg-white text-zinc-900 hover:bg-neutral-100 font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5"
+              onClick={() => onNavigateToTab('chats')}
+              className="w-full py-2 px-3 bg-white text-zinc-900 hover:bg-neutral-100 font-semibold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
             >
-              <MessageSquare className="w-3.5 h-3.5" />
-              Probar Asistente IA
+              <MessageSquare className="w-3.5 h-3.5 text-zinc-900" />
+              <span>Probar Asistente & WhatsApp</span>
             </button>
           </div>
 

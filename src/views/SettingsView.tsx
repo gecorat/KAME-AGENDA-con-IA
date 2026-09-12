@@ -15,7 +15,8 @@ import {
   Lock,
   Calendar,
   Bell,
-  CheckSquare
+  CheckSquare,
+  Clock
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { PracticeSettings } from '../types';
@@ -36,7 +37,7 @@ export const SettingsView: React.FC = () => {
   const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
   const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'required-fields' | 'notifications' | 'deposits' | 'workspace'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'deposits' | 'workspace'>('general');
   const [savedNotice, setSavedNotice] = useState(false);
 
   const handleChange = (field: keyof PracticeSettings, value: any) => {
@@ -131,19 +132,6 @@ export const SettingsView: React.FC = () => {
         >
           <Building2 className="w-3.5 h-3.5" />
           <span>Consultorio & Perfil</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('required-fields')}
-          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'required-fields'
-              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
-              : 'text-neutral-600 hover:text-neutral-900'
-          }`}
-        >
-          <CheckSquare className="w-3.5 h-3.5 text-sky-600" />
-          <span>Datos Obligatorios</span>
         </button>
 
         <button
@@ -301,61 +289,18 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
-            {/* Virtual Assistant (IA) Customization */}
+            {/* General Booking Preferences */}
             <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-xs space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
                 <div className="flex items-center gap-2">
-                  <Bot className="w-4 h-4 text-sky-600" />
+                  <Clock className="w-4 h-4 text-sky-600" />
                   <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-                    Asistente Virtual IA para WhatsApp & Web
+                    Preferencias de Reserva del Consultorio
                   </h3>
                 </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-neutral-900 text-white">
-                  GEMINI AI
-                </span>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div>
-                  <label className="font-semibold text-neutral-700 block mb-1">
-                    Nombre del Asistente Bot:
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.bot_assistant_name}
-                    onChange={e => handleChange('bot_assistant_name', e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 font-medium"
-                    placeholder="Ej. Sofía (IA)"
-                  />
-                </div>
-
-                <div>
-                  <label className="font-semibold text-neutral-700 block mb-1">
-                    Tono de Conversación:
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.bot_tone}
-                    onChange={e => handleChange('bot_tone', e.target.value)}
-                    className="w-full px-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900"
-                    placeholder="Ej. cálido, profesional y conciso"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-semibold text-neutral-700 block mb-1">
-                  Mensaje Inicial de Bienvenida (Saludo):
-                </label>
-                <textarea
-                  rows={2}
-                  value={formData.welcome_message}
-                  onChange={e => handleChange('welcome_message', e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-neutral-900 leading-relaxed"
-                />
-              </div>
-
-              <div className="space-y-3 pt-2">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between p-3.5 bg-neutral-50 rounded-xl border border-neutral-200">
                   <div>
                     <p className="text-xs font-bold text-neutral-900">Auto-confirmar reservas de la web y bot</p>
@@ -388,11 +333,6 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
           </>
-        )}
-
-        {/* TAB: DATOS OBLIGATORIOS PARA AGENDAR Y BOT */}
-        {activeTab === 'required-fields' && (
-          <RequiredFieldsSettings />
         )}
 
         {/* TAB: NOTIFICACIONES DEL NAVEGADOR & ALERTAS */}
