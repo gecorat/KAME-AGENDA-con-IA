@@ -64,6 +64,267 @@ let cachedPracticeSettings: any = {};
 // este contexto existe y esta fresco: sin agenda real preferimos no contestar
 // antes que inventar precios u horarios.
 // ============================================================================
+// Ultimo intento de registro del webhook, para poder diagnosticarlo desde fuera.
+let lastWebhookResult: any = null;
+
+// ============================================================================
+// PERSISTENCIA EN FIRESTORE (REST)
+// Hasta ahora las conversaciones vivian solo en memoria: cada reinicio o
+// republicacion vaciaba la bandeja. Aca hablamos con Firestore directamente
+// desde el servidor, firmando un token con la cuenta de servicio.
+// Si no hay credencial cargada, todo sigue funcionando en memoria como antes.
+// ============================================================================
+const FIREBASE_PROJECT_ID = "gen-lang-client-0700931315";
+const FIREBASE_DATABASE_ID = "ai-studio-kameagendaia-7c97d798-89c9-4a66-bba0-fd548dfaf219";
+const CONVERSACIONES_COLECCION = "whatsapp_conversations";
+
+let serviceAccount: any = null;
+try {
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT || "";
+  if (raw.trim()) {
+    serviceAccount = JSON.parse(raw.trim().startsWith("{") ? raw : Buffer.from(raw, "base64").toString("utf8"));
+  }
+} catch (err) {
+  console.error("[Firestore] FIREBASE_SERVICE_ACCOUNT no es un JSON valido:", (err as any)?.message);
+}
+
+const hayPersistencia = () => Boolean(serviceAccount?.client_email && serviceAccount?.private_key);
+
+let tokenCache: { token: string; exp: number } | null = null;
+
+const obtenerTokenFirestore = async (): Promise<string | null> => {
+  if (!hayPersistencia()) return null;
+  const ahora = Math.floor(Date.now() / 1000);
+  if (tokenCache && tokenCache.exp - 60 > ahora) return tokenCache.token;
+
+  try {
+    const crypto = await import("crypto");
+    const header = { alg: "RS256", typ: "JWT" };
+    const claim = {
+      iss: serviceAccount.client_email,
+      scope: "https://www.googleapis.com/auth/datastore",
+      aud: "https://oauth2.googleapis.com/token",
+      exp: ahora + 3600,
+      iat: ahora
+    };
+    const b64 = (o: any) => Buffer.from(JSON.stringify(o)).toString("base64url");
+    const sinFirma = `${b64(header)}.${b64(claim)}`;
+    const firma = crypto.createSign("RSA-SHA256").update(sinFirma).sign(serviceAccount.private_key, "base64url");
+    const jwt = `${sinFirma}.${firma}`;
+
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion: jwt
+      }).toString()
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || !data.access_token) {
+      console.error("[Firestore] No se pudo obtener el token:", res.status, JSON.stringify(data).slice(0, 200));
+      return null;
+    }
+    tokenCache = { token: data.access_token, exp: ahora + (data.expires_in || 3600) };
+    return tokenCache.token;
+  } catch (err: any) {
+    console.error("[Firestore] Error firmando el token:", err?.message || err);
+    return null;
+  }
+};
+
+const baseFirestoreUrl = () =>
+  `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/${FIREBASE_DATABASE_ID}/documents`;
+
+// Conversion de valores JS al formato de campos de Firestore.
+const aValorFirestore = (v: any): any => {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(aValorFirestore) } };
+  if (typeof v === "object") {
+    const fields: any = {};
+    for (const k of Object.keys(v)) fields[k] = aValorFirestore(v[k]);
+    return { mapValue: { fields } };
+  }
+  return { stringValue: String(v) };
+};
+
+const guardarDocumento = async (coleccion: string, docId: string, datos: any): Promise<boolean> => {
+  const token = await obtenerTokenFirestore();
+  if (!token) return false;
+  try {
+    const fields: any = {};
+    for (const k of Object.keys(datos)) fields[k] = aValorFirestore(datos[k]);
+    const res = await fetch(`${baseFirestoreUrl()}/${coleccion}/${encodeURIComponent(docId)}`, {
+      method: "PATCH",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error(`[Firestore] Error guardando ${coleccion}/${docId}: ${res.status} ${t.slice(0, 200)}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error("[Firestore] Error de red guardando documento:", err?.message || err);
+    return false;
+  }
+};
+
+const crearDocumento = async (coleccion: string, datos: any): Promise<string | null> => {
+  const token = await obtenerTokenFirestore();
+  if (!token) return null;
+  try {
+    const fields: any = {};
+    for (const k of Object.keys(datos)) fields[k] = aValorFirestore(datos[k]);
+    const res = await fetch(`${baseFirestoreUrl()}/${coleccion}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error(`[Firestore] Error creando en ${coleccion}: ${res.status} ${JSON.stringify(data).slice(0, 200)}`);
+      return null;
+    }
+    return String(data?.name || "").split("/").pop() || null;
+  } catch (err: any) {
+    console.error("[Firestore] Error de red creando documento:", err?.message || err);
+    return null;
+  }
+};
+
+const borrarDocumento = async (coleccion: string, docId: string): Promise<boolean> => {
+  const token = await obtenerTokenFirestore();
+  if (!token) return false;
+  try {
+    const res = await fetch(`${baseFirestoreUrl()}/${coleccion}/${encodeURIComponent(docId)}`, {
+      method: "DELETE",
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Conversaciones: se guardan como un unico documento por chat, con el contenido
+// serializado. Solo las usa el servidor para rehidratarse, asi que no necesitan
+// estructura de campos.
+// ---------------------------------------------------------------------------
+const guardadosPendientes = new Map<string, any>();
+let temporizadorGuardado: any = null;
+
+const persistirConversacion = (conv: any) => {
+  if (!hayPersistencia() || !conv?.id) return;
+  guardadosPendientes.set(conv.id, conv);
+  if (temporizadorGuardado) return;
+  temporizadorGuardado = setTimeout(async () => {
+    const pendientes = Array.from(guardadosPendientes.values());
+    guardadosPendientes.clear();
+    temporizadorGuardado = null;
+    for (const c of pendientes) {
+      await guardarDocumento(CONVERSACIONES_COLECCION, c.id, {
+        id: c.id,
+        patient_phone: c.patient_phone || "",
+        patient_name: c.patient_name || "",
+        last_timestamp: c.last_timestamp || new Date().toISOString(),
+        contenido: JSON.stringify(c)
+      });
+    }
+  }, 2500);
+};
+
+// Crea el turno en la coleccion que lee la app. Devuelve null si no se pudo,
+// para que la conversacion quede marcada para revision humana.
+const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string; detalle: string } | null> => {
+  if (!hayPersistencia()) {
+    console.error("[Turnos] Sin credencial de Firestore no se puede crear el turno.");
+    return null;
+  }
+  try {
+    const servicios = businessContext.services || [];
+    const servicio =
+      servicios.find((s: any) => String(s.name || "").toLowerCase() === String(accion.service_name || "").toLowerCase()) ||
+      servicios.find((s: any) => String(s.name || "").toLowerCase().includes(String(accion.service_name || "").toLowerCase())) ||
+      servicios[0];
+
+    const inicio = new Date(accion.datetime);
+    if (isNaN(inicio.getTime())) return null;
+    const duracion = Number(servicio?.duration_minutes) > 0 ? Number(servicio.duration_minutes) : 30;
+    const fin = new Date(inicio.getTime() + duracion * 60000);
+
+    const id = await crearDocumento("appointments", {
+      patient_id: "pat-bot",
+      patient_name: accion.patient_name || conv.patient_name || "Paciente",
+      patient_phone: accion.patient_phone || conv.patient_phone || "",
+      service_id: servicio?.id || "",
+      service_name: servicio?.name || accion.service_name || "Consulta",
+      service_price: Number(servicio?.price) || 0,
+      start_datetime: inicio.toISOString(),
+      end_datetime: fin.toISOString(),
+      status: "confirmed",
+      payment_status: "pending",
+      notes: `Agendado por el bot de WhatsApp. ${accion.notes || ""}`.trim(),
+      origin: "bot_whatsapp",
+      created_at: new Date().toISOString()
+    });
+
+    if (!id) return null;
+
+    // Lo sumamos al contexto para que el bot no ofrezca ese horario de nuevo
+    // antes del proximo sync.
+    businessContext.existingAppointments = [
+      ...(businessContext.existingAppointments || []),
+      { start_datetime: inicio.toISOString(), duration_minutes: duracion, status: "confirmed", service_name: servicio?.name }
+    ];
+
+    const detalle = `${servicio?.name || "Consulta"} el ${inicio.toLocaleDateString("es-AR")} a las ${inicio.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} hs`;
+    console.log(`[Turnos] Turno creado por el bot: ${id} (${detalle})`);
+    return { id, detalle };
+  } catch (err: any) {
+    console.error("[Turnos] Error creando el turno:", err?.message || err);
+    return null;
+  }
+};
+
+const cargarConversacionesGuardadas = async () => {
+  if (!hayPersistencia()) {
+    console.log("[Firestore] Sin FIREBASE_SERVICE_ACCOUNT: las conversaciones viven solo en memoria.");
+    return;
+  }
+  const token = await obtenerTokenFirestore();
+  if (!token) return;
+  try {
+    const res = await fetch(`${baseFirestoreUrl()}/${CONVERSACIONES_COLECCION}?pageSize=300`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      console.error("[Firestore] No se pudieron cargar las conversaciones:", res.status);
+      return;
+    }
+    let cargadas = 0;
+    for (const doc of data.documents || []) {
+      const crudo = doc?.fields?.contenido?.stringValue;
+      if (!crudo) continue;
+      try {
+        const conv = JSON.parse(crudo);
+        if (conv?.id) {
+          realWhatsAppConversations.set(conv.id, conv);
+          cargadas++;
+        }
+      } catch { /* documento corrupto: lo ignoramos */ }
+    }
+    console.log(`[Firestore] ${cargadas} conversaciones restauradas desde la base.`);
+  } catch (err: any) {
+    console.error("[Firestore] Error cargando conversaciones:", err?.message || err);
+  }
+};
+
 let businessContext: {
   services: any[];
   availability: any[];
@@ -349,7 +610,14 @@ ${featBooking ? `Si se concreta o confirma una reserva con todos los datos reque
 Si aún falta definir algún dato obligatorio o la fecha/hora no está confirmada por el paciente, NO incluyas el bloque 'json_action'.` : ""}`;
 
   if (ai) {
-    const candidateModels = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-pro-preview"];
+    // El modelo elegido en Ajustes manda; los demas quedan como respaldo si falla.
+    const modeloElegido = effectiveSettings.bot_ai_model;
+    const candidateModels = Array.from(new Set([
+      ...(modeloElegido ? [modeloElegido] : []),
+      "gemini-3.8-flash",
+      "gemini-flash-latest",
+      "gemini-3.1-pro-preview"
+    ]));
     for (const modelName of candidateModels) {
       try {
         const conversationText = history
@@ -1323,6 +1591,12 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         if (isBotActive) {
           try {
             console.log(`[WhatsApp Bot] Generating auto-reply for incoming live message from ${conv.patient_name} (${senderPhone}): "${text}"`);
+            // Demora configurada en Ajustes: hasta ahora solo se aplicaba en el
+            // chat interno y el bot de WhatsApp respondia al instante.
+            const demoraSeg = Math.min(Math.max(Number(cachedPracticeSettings.bot_response_delay_seconds) || 0, 0), 60);
+            if (demoraSeg > 0) await new Promise(r => setTimeout(r, demoraSeg * 1000));
+
+            // (la creacion del turno se hace mas abajo, con crearTurnoDesdeBot)
             // Siempre la agenda REAL: el webhook no recibia estos datos y el bot
             // terminaba contestando con los valores por defecto del prompt.
             const botResult = await generateAiBotResponse({
@@ -1337,6 +1611,15 @@ Responde ÚNICAMENTE con un JSON con la estructura:
             if (botResult && botResult.reply && options.targetUrl && options.targetKey && options.targetInstance) {
               // Respondemos al JID exacto que mando el mensaje.
               const destino = conv.remote_jid || remoteJid || senderPhone;
+
+              // Simulacion de tipeo: le avisamos a WhatsApp que estamos escribiendo.
+              if (cachedPracticeSettings.bot_typing_simulation) {
+                await fetch(`${options.targetUrl}/chat/sendPresence/${options.targetInstance}`, {
+                  method: "POST",
+                  headers: { "apikey": options.targetKey, "Content-Type": "application/json" },
+                  body: JSON.stringify({ number: conv.remote_jid || remoteJid || senderPhone, presence: "composing", delay: 2000 })
+                }).catch(() => {});
+              }
 
               const sendResult = await sendEvolutionText({
                 targetUrl: options.targetUrl,
@@ -1364,6 +1647,22 @@ Responde ÚNICAMENTE con un JSON con la estructura:
               conv.messages.push(assistantMsg);
               conv.last_message = botResult.reply;
               conv.last_timestamp = new Date().toISOString();
+
+              // La reserva se creaba SOLO desde el front: por WhatsApp el bot
+              // confirmaba el turno y no quedaba agendado en ningun lado.
+              if (sendResult.ok && botResult.action?.action === "book_appointment") {
+                const creado = await crearTurnoDesdeBot(botResult.action, conv);
+                if (creado) {
+                  assistantMsg.actionTaken = {
+                    type: "appointment_created",
+                    appointmentId: creado.id,
+                    details: creado.detalle
+                  };
+                } else {
+                  conv.needs_human = true;
+                  console.error("[WhatsApp Bot] El turno NO se pudo crear pese a que el bot lo confirmo.");
+                }
+              }
             }
           } catch (botErr) {
             console.error("Bot auto-reply error:", botErr);
@@ -1372,6 +1671,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       }
     }
 
+    persistirConversacion(conv);
     return conv;
   };
 
@@ -1390,47 +1690,80 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       return { success: false, error: "Invalid public app URL" };
     }
 
+    // Solo nombres de evento validos. Antes se mandaban los dos formatos
+    // ("MESSAGES_UPSERT" y "messages.upsert") en la misma lista: Evolution v2
+    // valida el enum y rechazaba TODA la peticion con 400, asi que el webhook
+    // nunca quedaba registrado.
     const eventsList = [
       "MESSAGES_UPSERT",
       "MESSAGES_UPDATE",
-      "MESSAGES_DELETE",
       "SEND_MESSAGE",
-      "CONNECTION_UPDATE",
-      "messages.upsert",
-      "messages.update",
-      "messages.delete",
-      "send.message",
-      "connection.update"
+      "CONNECTION_UPDATE"
     ];
 
-    try {
-      // Send both v1 and v2 payload format to support all Evolution API releases
-      const res = await fetch(`${targetUrl}/webhook/set/${targetInstance}`, {
-        method: "POST",
-        headers: {
-          "apikey": targetKey,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          url: webhookUrl,
-          enabled: true,
-          webhook_by_events: false,
-          events: eventsList,
-          webhook: {
-            url: webhookUrl,
-            enabled: true,
-            byEvents: false,
-            base64: false,
-            events: eventsList
-          }
-        })
-      });
+    const url = `${targetUrl}/webhook/set/${targetInstance}`;
+    const headers = { "apikey": targetKey, "Content-Type": "application/json" };
 
-      const data = await res.json().catch(() => ({}));
-      console.log(`[Evolution API] Webhook configured for ${targetInstance} -> ${webhookUrl}. Status: ${res.status}`);
-      return { success: res.ok, data, webhookUrl };
+    // v2 espera el body anidado; v1 lo espera plano. Probamos uno y despues el otro.
+    const cuerpoV2 = {
+      webhook: {
+        url: webhookUrl,
+        enabled: true,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: eventsList
+      }
+    };
+    const cuerpoV1 = {
+      url: webhookUrl,
+      enabled: true,
+      webhook_by_events: false,
+      webhook_base64: false,
+      events: eventsList
+    };
+
+    const intentar = async (cuerpo: any, etiqueta: string) => {
+      const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(cuerpo) });
+      const texto = await res.text().catch(() => "");
+      let data: any = {};
+      try { data = texto ? JSON.parse(texto) : {}; } catch { data = { raw: texto.slice(0, 300) }; }
+      return { ok: res.ok, status: res.status, data, etiqueta, detalle: texto.slice(0, 300) };
+    };
+
+    try {
+      let r = await intentar(cuerpoV2, "v2");
+      if (!r.ok) {
+        console.warn(`[Evolution API] webhook/set v2 fallo (${r.status}): ${r.detalle}`);
+        r = await intentar(cuerpoV1, "v1");
+      }
+
+      lastWebhookResult = {
+        at: new Date().toISOString(),
+        instancia: targetInstance,
+        webhookUrl,
+        formato: r.etiqueta,
+        ok: r.ok,
+        status: r.status,
+        detalle: r.ok ? "" : r.detalle
+      };
+
+      if (r.ok) {
+        console.log(`[Evolution API] Webhook registrado (${r.etiqueta}) para ${targetInstance} -> ${webhookUrl}`);
+      } else {
+        console.error(`[Evolution API] NO se pudo registrar el webhook (${r.status}): ${r.detalle}`);
+      }
+      return { success: r.ok, data: r.data, webhookUrl, status: r.status, detalle: r.detalle };
     } catch (err: any) {
-      console.warn(`[Evolution API] Error configuring webhook for ${targetInstance}:`, err);
+      lastWebhookResult = {
+        at: new Date().toISOString(),
+        instancia: targetInstance,
+        webhookUrl,
+        formato: "error",
+        ok: false,
+        status: 0,
+        detalle: err?.message || "network error"
+      };
+      console.error(`[Evolution API] Error de red configurando webhook para ${targetInstance}:`, err);
       return { success: false, error: err.message };
     }
   };
@@ -1501,12 +1834,24 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       ).replace(/\/$/, "");
 
       if (resolvedAppUrl && !resolvedAppUrl.includes("localhost")) {
+        // Antes esto terminaba en .catch(() => {}) y un fallo de registro era invisible.
         configureEvolutionWebhook({
           targetUrl,
           targetKey,
           targetInstance,
           appUrl: resolvedAppUrl
-        }).catch(() => {});
+        }).catch(err => {
+          lastWebhookResult = {
+            at: new Date().toISOString(),
+            instancia: targetInstance,
+            webhookUrl: `${resolvedAppUrl}/api/evolution/webhook`,
+            formato: "error",
+            ok: false,
+            status: 0,
+            detalle: err?.message || "error desconocido"
+          };
+          console.error("[Evolution API] Fallo el registro del webhook durante el sync:", err);
+        });
       }
 
       // 2. Proactive Sync: Query recent messages and active threads from Evolution API
@@ -1566,9 +1911,14 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   });
 
   // Clear all real WhatsApp conversations from server in-memory store
-  app.post("/api/evolution/clear-chats", (req, res) => {
+  app.post("/api/evolution/clear-chats", async (req, res) => {
     try {
+      // Borramos tambien lo guardado: si no, volverian al reiniciar.
+      const ids = Array.from(realWhatsAppConversations.keys());
       realWhatsAppConversations.clear();
+      if (hayPersistencia()) {
+        for (const id of ids) await borrarDocumento(CONVERSACIONES_COLECCION, id);
+      }
       instanceConnectedAt = Date.now();
       console.log(`[Evolution API] Cleared all WhatsApp chats. instanceConnectedAt set to ${new Date(instanceConnectedAt).toISOString()}`);
       return res.json({
@@ -1669,6 +2019,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         });
       }
 
+      persistirConversacion(conv);
       return res.json({ success: true, message: newMsg, apiResponse });
     } catch (err: any) {
       console.error("Error in /api/evolution/conversations/:id/send:", err);
@@ -1874,6 +2225,61 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   });
 
   // Incoming Webhook from Evolution API
+  // Marca una conversacion como leida: pone el contador en cero y pasa los
+  // mensajes del paciente a 'read'. Lo llama el front al abrir el chat.
+  app.post("/api/evolution/conversations/:id/read", (req, res) => {
+    const conv = realWhatsAppConversations.get(req.params.id);
+    if (!conv) return res.status(404).json({ success: false, error: "Conversacion no encontrada" });
+    conv.unread_count = 0;
+    conv.messages.forEach(m => { if (m.role === 'user') m.status = 'read'; });
+    persistirConversacion(conv);
+    return res.json({ success: true, id: conv.id });
+  });
+
+  // Diagnostico: que webhook tiene registrado Evolution para la instancia y
+  // como salio el ultimo intento de registro desde esta app.
+  app.get("/api/evolution/webhook-status", async (req, res) => {
+    try {
+      const targetUrl = (lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+
+      const base: any = {
+        ultimoIntento: lastWebhookResult,
+        instancia: targetInstance || null,
+        tieneCredenciales: Boolean(targetUrl && targetKey),
+        persistenciaActiva: hayPersistencia(),
+        conversacionesEnMemoria: realWhatsAppConversations.size
+      };
+
+      if (!targetUrl || !targetKey || !targetInstance) {
+        return res.json({ ...base, registrado: null, nota: "El servidor todavia no recibio credenciales de Evolution (las manda el front al sincronizar)." });
+      }
+
+      const r = await fetch(`${targetUrl}/webhook/find/${targetInstance}`, {
+        method: "GET",
+        headers: { "apikey": targetKey, "Content-Type": "application/json" }
+      });
+      const txt = await r.text().catch(() => "");
+      let data: any = {};
+      try { data = txt ? JSON.parse(txt) : {}; } catch { data = { raw: txt.slice(0, 300) }; }
+
+      const w = data?.webhook || data;
+      return res.json({
+        ...base,
+        status: r.status,
+        registrado: {
+          url: w?.url || null,
+          enabled: w?.enabled ?? null,
+          eventos: w?.events || null,
+          porEventos: w?.webhookByEvents ?? w?.webhook_by_events ?? null
+        }
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || "error" });
+    }
+  });
+
   app.post("/api/evolution/webhook", async (req, res) => {
     // Respondemos 200 ANTES de procesar. Evolution corta a los pocos segundos y
     // reintenta: esperar al modelo aca era lo que generaba respuestas duplicadas.
@@ -2587,6 +2993,11 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Restauramos la bandeja guardada antes de empezar a atender pedidos.
+  cargarConversacionesGuardadas().catch(err =>
+    console.error("[Firestore] Fallo la restauracion inicial:", err?.message || err)
+  );
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Agenfacil Server running on http://0.0.0.0:${PORT}`);

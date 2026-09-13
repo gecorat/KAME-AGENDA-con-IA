@@ -78,7 +78,8 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
   const [subTab, setSubTab] = useState<'chats' | 'personality' | 'fields' | 'connection'>('chats');
   const [realConversations, setRealConversations] = useState<Conversation[]>([]);
-  const [activeConvId, setActiveConvId] = useState<string>(conversations[0]?.id || '');
+  // Arranca sin ningun chat abierto: la bandeja se ve completa.
+  const [activeConvId, setActiveConvId] = useState<string>('');
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -216,15 +217,10 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           }));
           updateConversationsIfChanged(mapped);
 
-          // If current conversation is demo and real conversation exists, switch to real on initial load
-          if (mapped.length > 0) {
-            setActiveConvId(prev => {
-              if (!prev || prev.startsWith('conv-')) {
-                return mapped[0].id;
-              }
-              return prev;
-            });
-          }
+          // Nunca abrimos un chat solos: si llega un mensaje mientras estas en
+          // la bandeja, se marca como no leido y listo. Solo saltamos de una
+          // conversacion de demo a la real equivalente si ya la tenias abierta.
+          setActiveConvId(prev => (prev && prev.startsWith('conv-') ? '' : prev));
         }
       }
     } catch (e) {
@@ -303,7 +299,30 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
     ...conversations.filter(c => !realConversations.some(rc => rc.id === c.id))
   ];
 
-  const activeConv = allConversations.find(c => c.id === activeConvId) || allConversations[0];
+  const activeConv = activeConvId ? allConversations.find(c => c.id === activeConvId) : undefined;
+
+  // Pone el contador en cero al abrir el chat, en pantalla y en el servidor.
+  const marcarComoLeida = (id: string) => {
+    if (!id) return;
+    setRealConversations(prev =>
+      prev.map(c => (c.id === id ? { ...c, unread_count: 0 } : c))
+    );
+    if (id.startsWith('real-') || !id.startsWith('conv-')) {
+      fetch(`/api/evolution/conversations/${id}/read`, { method: 'POST' }).catch(() => {});
+    }
+  };
+
+  // Escape cierra el chat y te deja en la bandeja.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveConvId('');
+        setMobileView('list');
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     if (messagesContainerRef.current) {
@@ -1129,6 +1148,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                     onClick={() => {
                       setActiveConvId(conv.id);
                       setMobileView('chat');
+                      marcarComoLeida(conv.id);
                     }}
                     className={`p-3 cursor-pointer transition-colors flex items-center gap-2.5 ${
                       isSelected
@@ -1478,7 +1498,17 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                           }`}
                         >
                           <span>{msg.timestamp}</span>
-                          {isAssistant && <CheckCheck className="w-3.5 h-3.5 text-sky-500 shrink-0" />}
+                          {isAssistant && (
+                            msg.status === 'failed' ? (
+                              <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                            ) : msg.status === 'read' ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-sky-500 shrink-0" />
+                            ) : msg.status === 'delivered' ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                            )
+                          )}
                         </div>
                       </div>
                     </div>
