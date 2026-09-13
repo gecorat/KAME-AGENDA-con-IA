@@ -43,11 +43,12 @@ import {
   Briefcase,
   AlertTriangle,
   Zap,
+  Sparkles,
   Send,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
-import { useAgendaStore } from '../lib/store';
+import { useAgendaStore, normalizeText, normalizePhoneDigits } from '../lib/store';
 import { Patient, ConsultationRecord, MedicalCertificate, PaymentRecord, Appointment } from '../types';
 import { ConsultationModal } from '../components/ConsultationModal';
 import { NewPaymentModal } from '../components/NewPaymentModal';
@@ -101,6 +102,10 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   const [search, setSearch] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string>(patients[0]?.id || '');
   const [activeTab, setActiveTab] = useState<PatientTab>('consultations');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'prospect'>('all');
+
+  const prospectCount = patients.filter(p => p.relationship_status === 'prospect' || (!p.relationship_status && (p.completed_appointments_count || 0) === 0)).length;
+  const activeCount = patients.length - prospectCount;
 
   // Interactive timeline & date filter
   const [selectedTimelineFilter, setSelectedTimelineFilter] = useState<'all' | 'appointments' | 'consultations'>('all');
@@ -145,8 +150,12 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
     patientPhone?: string;
   } | null>(null);
 
-  // Filtered patients (multi-field search including case, cuit, company, etc.)
+  // Filtered patients (multi-field search including status, case, cuit, company, etc.)
   const filteredPatients = patients.filter(p => {
+    const isProspect = p.relationship_status === 'prospect' || (!p.relationship_status && (p.completed_appointments_count || 0) === 0);
+    if (statusFilter === 'active' && isProspect) return false;
+    if (statusFilter === 'prospect' && !isProspect) return false;
+
     const q = search.toLowerCase().trim();
     if (!q) return true;
     const fullName = `${p.first_name} ${p.last_name}`.toLowerCase();
@@ -199,13 +208,39 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
   // Coordinated patient data
   const patientAppointments = selectedPatient
     ? appointments
-        .filter(a => a.patient_id === selectedPatient.id || a.patient_phone === selectedPatient.phone)
+        .filter(a => {
+          if (a.patient_id === selectedPatient.id) return true;
+          const aptNormName = normalizeText(a.patient_name);
+          const patNormName = normalizeText(`${selectedPatient.first_name} ${selectedPatient.last_name}`);
+          const aptPhone = normalizePhoneDigits(a.patient_phone);
+          const patPhone = normalizePhoneDigits(selectedPatient.phone);
+          const phonesMatch = Boolean(aptPhone && patPhone && aptPhone.length >= 7 && (aptPhone === patPhone || aptPhone.endsWith(patPhone) || patPhone.endsWith(aptPhone)));
+          if (phonesMatch) {
+            if (!aptNormName || !patNormName || aptNormName === patNormName || aptNormName.includes(patNormName) || patNormName.includes(aptNormName)) {
+              return true;
+            }
+          }
+          return false;
+        })
         .sort((a, b) => new Date(b.start_datetime).getTime() - new Date(a.start_datetime).getTime())
     : [];
 
   const patientConsultations = selectedPatient
     ? consultations
-        .filter(c => c.patient_id === selectedPatient.id || c.patient_phone === selectedPatient.phone)
+        .filter(c => {
+          if (c.patient_id === selectedPatient.id) return true;
+          const cNormName = normalizeText(c.patient_name);
+          const patNormName = normalizeText(`${selectedPatient.first_name} ${selectedPatient.last_name}`);
+          const cPhone = normalizePhoneDigits(c.patient_phone);
+          const patPhone = normalizePhoneDigits(selectedPatient.phone);
+          const phonesMatch = Boolean(cPhone && patPhone && cPhone.length >= 7 && (cPhone === patPhone || cPhone.endsWith(patPhone) || patPhone.endsWith(cPhone)));
+          if (phonesMatch) {
+            if (!cNormName || !patNormName || cNormName === patNormName || cNormName.includes(patNormName) || patNormName.includes(cNormName)) {
+              return true;
+            }
+          }
+          return false;
+        })
         .sort((a, b) => new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime())
     : [];
 
@@ -393,23 +428,63 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Column: Patients List */}
         <div className="lg:col-span-4 bg-white rounded-xl border border-neutral-200/75 shadow-2xs overflow-hidden flex flex-col min-w-0">
-          <div className="px-3.5 py-2.5 border-b border-neutral-200/80 bg-neutral-50/50 flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-700 font-display">
-              {clientTermPlural} ({filteredPatients.length})
-            </span>
-            <span className="text-[10px] text-neutral-400 font-medium">
-              Selecciona para ver ficha
-            </span>
+          <div className="px-3.5 py-2.5 border-b border-neutral-200/80 bg-neutral-50/50 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-neutral-700 font-display">
+                {clientTermPlural} ({filteredPatients.length})
+              </span>
+              <span className="text-[10px] text-neutral-400 font-medium">
+                Selecciona para ver ficha
+              </span>
+            </div>
+
+            {/* Status Filter Tabs (Todos, Activos, Futuros Clientes) */}
+            <div className="flex items-center gap-1 p-0.5 bg-neutral-200/60 rounded-lg text-[11px]">
+              <button
+                type="button"
+                onClick={() => setStatusFilter('all')}
+                className={`flex-1 py-1 px-1.5 rounded-md font-semibold text-center transition-all ${
+                  statusFilter === 'all'
+                    ? 'bg-white text-neutral-900 shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+              >
+                Todos ({patients.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('active')}
+                className={`flex-1 py-1 px-1.5 rounded-md font-semibold text-center transition-all ${
+                  statusFilter === 'active'
+                    ? 'bg-white text-emerald-800 shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+              >
+                Activos ({activeCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusFilter('prospect')}
+                className={`flex-1 py-1 px-1.5 rounded-md font-semibold text-center transition-all ${
+                  statusFilter === 'prospect'
+                    ? 'bg-white text-amber-800 shadow-2xs'
+                    : 'text-neutral-600 hover:text-neutral-900'
+                }`}
+              >
+                Futuros ({prospectCount})
+              </button>
+            </div>
           </div>
 
           <div className="divide-y divide-neutral-100 max-h-[360px] lg:max-h-[680px] overflow-y-auto flex-1">
             {filteredPatients.length === 0 ? (
               <div className="p-8 text-center text-xs text-neutral-400">
-                No se encontraron {clientTermPlural.toLowerCase()} con esa búsqueda.
+                No se encontraron {clientTermPlural.toLowerCase()} con ese filtro o búsqueda.
               </div>
             ) : (
               filteredPatients.map(p => {
                 const isSelected = selectedPatient?.id === p.id;
+                const isProspect = p.relationship_status === 'prospect' || (!p.relationship_status && (p.completed_appointments_count || 0) === 0);
                 const initials = `${p.first_name[0] || ''}${p.last_name[0] || ''}`.toUpperCase();
                 const aptsCount = appointments.filter(a => a.patient_id === p.id || a.patient_phone === p.phone).length;
                 const consCount = consultations.filter(c => c.patient_id === p.id || c.patient_phone === p.phone).length;
@@ -438,10 +513,19 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                         {initials}
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                           <span className="text-xs font-semibold text-neutral-900 truncate">
                             {p.first_name} {p.last_name}
                           </span>
+                          {isProspect ? (
+                            <span className="text-[9px] bg-amber-50 text-amber-900 border border-amber-300 font-bold px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 shrink-0" title="Futuro cliente que aún no completó su primera cita">
+                              <Sparkles className="w-2.5 h-2.5 text-amber-600" /> Futuro
+                            </span>
+                          ) : (
+                            <span className="text-[9px] bg-emerald-50 text-emerald-800 border border-emerald-300 font-bold px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5 shrink-0" title="Cliente activo que ya completó consultas">
+                              <UserCheck className="w-2.5 h-2.5 text-emerald-600" /> Activo
+                            </span>
+                          )}
                           {isExampleItem(p) && (
                             <span className="text-[9px] bg-amber-100 text-amber-800 font-semibold px-1 rounded shrink-0">
                               Ejemplo
@@ -504,23 +588,37 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         {/* Right Column: Selected Patient Comprehensive Profile & Clinical History */}
         <div className="lg:col-span-8 bg-white rounded-xl border border-neutral-200/75 shadow-2xs p-4 sm:p-5 flex flex-col justify-between min-w-0 overflow-hidden space-y-4">
           {selectedPatient ? (
-            <div className="space-y-4 min-w-0">
-              {/* 1. Header Profile Banner with Actions */}
-              <div className="flex items-start sm:items-center justify-between gap-3 pb-3.5 border-b border-neutral-200/80 min-w-0">
-                <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-neutral-900 text-white font-bold text-sm sm:text-base flex items-center justify-center shadow-xs shrink-0">
-                    {selectedPatient.first_name[0]}{selectedPatient.last_name[0]}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-base sm:text-lg font-bold text-neutral-900 font-display truncate">
-                        {selectedPatient.first_name} {selectedPatient.last_name}
-                      </h3>
-                      {isExampleItem(selectedPatient) && (
-                        <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 rounded-full border border-amber-300 shrink-0">
-                          Ficha de Ejemplo
-                        </span>
-                      )}
+            (() => {
+              const isProspectSelected = selectedPatient.relationship_status === 'prospect' || (!selectedPatient.relationship_status && (selectedPatient.completed_appointments_count || 0) === 0);
+              return (
+                <div className="space-y-4 min-w-0">
+                  {/* 1. Header Profile Banner with Actions */}
+                  <div className="flex items-start sm:items-center justify-between gap-3 pb-3.5 border-b border-neutral-200/80 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-neutral-900 text-white font-bold text-sm sm:text-base flex items-center justify-center shadow-xs shrink-0">
+                        {selectedPatient.first_name[0]}{selectedPatient.last_name[0]}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base sm:text-lg font-bold text-neutral-900 font-display truncate">
+                            {selectedPatient.first_name} {selectedPatient.last_name}
+                          </h3>
+                          {isProspectSelected ? (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-50 text-amber-900 rounded-full border border-amber-300 inline-flex items-center gap-1 shrink-0">
+                              <Sparkles className="w-3 h-3 text-amber-600" />
+                              <span>Futuro Cliente (Prospecto)</span>
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-50 text-emerald-800 rounded-full border border-emerald-300 inline-flex items-center gap-1 shrink-0">
+                              <UserCheck className="w-3 h-3 text-emerald-600" />
+                              <span>Cliente Activo</span>
+                            </span>
+                          )}
+                          {isExampleItem(selectedPatient) && (
+                            <span className="px-2 py-0.5 text-[10px] font-bold bg-amber-100 text-amber-900 rounded-full border border-amber-300 shrink-0">
+                              Ficha de Ejemplo
+                            </span>
+                          )}
                       {professionInfo.id === 'legal_contable' ? (
                         <>
                           <span className="px-2 py-0.5 text-[10px] font-semibold bg-indigo-50 text-indigo-700 rounded-full border border-indigo-200 shrink-0">
@@ -588,6 +686,39 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Informative Prospect (Futuro Cliente) Card with Promotion Option */}
+              {isProspectSelected && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-xl p-3 sm:p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-start sm:items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                      <Sparkles className="w-4 h-4 text-amber-600" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-amber-950">
+                        Insignia: Futuro {clientTermSingular} (En seguimiento)
+                      </span>
+                      <p className="text-[11px] text-amber-900/90 mt-0.5">
+                        Consultó {selectedPatient.inquiry_channel === 'whatsapp' ? 'por WhatsApp' : selectedPatient.inquiry_channel === 'web' ? 'a través de la web' : 'por tus canales'} {selectedPatient.first_inquiry_at ? `el ${new Date(selectedPatient.first_inquiry_at).toLocaleDateString('es-AR')}` : ''} y aún no ha asistido ni completado su primera cita. Al finalizar su cita, el sistema te solicitará validar el pago y pasará automáticamente a Cliente Activo.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      updatePatient(selectedPatient.id, {
+                        relationship_status: 'active',
+                        completed_appointments_count: Math.max(1, selectedPatient.completed_appointments_count || 1)
+                      });
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-semibold text-white bg-amber-900 hover:bg-amber-800 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 shrink-0 self-end sm:self-auto cursor-pointer"
+                    title="Promover manualmente a Cliente Activo"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Promover a Activo</span>
+                  </button>
+                </div>
+              )}
 
               {/* Primary Action Toolbar: Agendar Turno, Nueva Sesión, Cobrar, Solicitar Pago */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
@@ -1881,7 +2012,9 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   )}
                 </div>
               )}
-            </div>
+                </div>
+              );
+            })()
           ) : (
             <div className="p-12 text-center text-neutral-400">
               Selecciona un paciente para ver su ficha completa.

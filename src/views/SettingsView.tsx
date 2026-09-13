@@ -213,6 +213,7 @@ export const SettingsView: React.FC = () => {
                     placeholder="Ej. Consultorio Médico Integral"
                     required
                   />
+                  <p className="text-[11px] text-neutral-500 mt-1">Nombre del negocio o establecimiento comercial.</p>
                 </div>
 
                 <div>
@@ -227,6 +228,7 @@ export const SettingsView: React.FC = () => {
                     placeholder="Ej. Dr. Alejandro Rossi"
                     required
                   />
+                  <p className="text-[11px] text-emerald-700 mt-1 font-medium">Se utiliza en los mensajes de confirmación de WhatsApp en el renglón 👤 <strong>Profesional</strong>.</p>
                 </div>
 
                 <div>

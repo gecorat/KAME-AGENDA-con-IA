@@ -6,6 +6,9 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+// Ensure Argentina timezone is enforced across the entire Node backend environment
+process.env.TZ = "America/Argentina/Buenos_Aires";
+
 let aiClient: GoogleGenAI | null = null;
 function getAI(): GoogleGenAI | null {
   if (!aiClient) {
@@ -42,6 +45,7 @@ export interface RealWhatsAppConversation {
   patient_avatar?: string;
   remote_jid?: string;
   needs_human?: boolean;
+  bot_paused_until?: number;
   unread_count: number;
   ai_handled: boolean;
   last_message?: string;
@@ -210,6 +214,117 @@ const borrarDocumento = async (coleccion: string, docId: string): Promise<boolea
   }
 };
 
+// Conversion inversa: de campos de Firestore a valores JS.
+const deValorFirestore = (v: any): any => {
+  if (!v || typeof v !== "object") return v;
+  if ("nullValue" in v) return null;
+  if ("booleanValue" in v) return v.booleanValue;
+  if ("integerValue" in v) return Number(v.integerValue);
+  if ("doubleValue" in v) return Number(v.doubleValue);
+  if ("timestampValue" in v) return v.timestampValue;
+  if ("stringValue" in v) return v.stringValue;
+  if ("arrayValue" in v) return (v.arrayValue.values || []).map(deValorFirestore);
+  if ("mapValue" in v) {
+    const o: any = {};
+    const f = v.mapValue.fields || {};
+    for (const k of Object.keys(f)) o[k] = deValorFirestore(f[k]);
+    return o;
+  }
+  return null;
+};
+
+const leerDocumento = async (coleccion: string, docId: string): Promise<any | null> => {
+  const token = await obtenerTokenFirestore();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${baseFirestoreUrl()}/${coleccion}/${encodeURIComponent(docId)}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!res.ok) return null;
+    const data: any = await res.json().catch(() => ({}));
+    const out: any = {};
+    for (const k of Object.keys(data.fields || {})) out[k] = deValorFirestore(data.fields[k]);
+    return out;
+  } catch {
+    return null;
+  }
+};
+
+const listarColeccion = async (coleccion: string, limite = 300): Promise<any[]> => {
+  const token = await obtenerTokenFirestore();
+  if (!token) return [];
+  try {
+    const res = await fetch(`${baseFirestoreUrl()}/${coleccion}?pageSize=${limite}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+    if (!res.ok) return [];
+    const data: any = await res.json().catch(() => ({}));
+    return (data.documents || []).map((d: any) => {
+      const out: any = { id: String(d.name || "").split("/").pop() };
+      for (const k of Object.keys(d.fields || {})) out[k] = deValorFirestore(d.fields[k]);
+      return out;
+    });
+  } catch {
+    return [];
+  }
+};
+
+// ---------------------------------------------------------------------------
+// El servidor ya no depende de que alguien tenga la app abierta: lee la
+// configuracion y la agenda de la base al arrancar y cada pocos minutos.
+// Antes, tras cada reinicio, la configuracion quedaba vacia y el bot no
+// respondia aunque estuviera activo en Ajustes.
+// ---------------------------------------------------------------------------
+const RUNTIME_DOC = "bot_runtime";
+
+const guardarContextoEnBase = async () => {
+  if (!hayPersistencia()) return;
+  await guardarDocumento("settings", RUNTIME_DOC, {
+    services: JSON.stringify(businessContext.services || []),
+    availability: JSON.stringify(businessContext.availability || []),
+    updated_at: new Date().toISOString()
+  });
+};
+
+const cargarConfigDesdeBase = async () => {
+  if (!hayPersistencia()) return;
+  try {
+    const config = await leerDocumento("settings", "practice_config");
+    if (config && Object.keys(config).length > 0) {
+      cachedPracticeSettings = { ...cachedPracticeSettings, ...config };
+    }
+
+    const runtime = await leerDocumento("settings", RUNTIME_DOC);
+    if (runtime) {
+      try {
+        const servicios = JSON.parse(runtime.services || "[]");
+        const horarios = JSON.parse(runtime.availability || "[]");
+        if (Array.isArray(servicios) && servicios.length) businessContext.services = servicios;
+        if (Array.isArray(horarios) && horarios.length) businessContext.availability = horarios;
+      } catch { /* documento viejo o corrupto */ }
+    }
+
+    // Los turnos se leen de la coleccion real, asi el bot nunca ofrece un
+    // horario que se ocupo mientras el servidor estaba apagado.
+    const turnos = await listarColeccion("appointments", 500);
+    if (turnos.length >= 0) {
+      const desde = Date.now() - 60 * 60 * 1000;
+      businessContext.existingAppointments = turnos.filter((t: any) => {
+        const ms = new Date(t.start_datetime || "").getTime();
+        return !isNaN(ms) && ms > desde;
+      });
+    }
+
+    if (businessContext.availability.length > 0) {
+      businessContext.updatedAt = Date.now();
+    }
+
+    console.log(`[Config] Cargada desde la base: bot_enabled=${cachedPracticeSettings.bot_enabled}, ${businessContext.services.length} servicios, ${businessContext.availability.length} franjas, ${businessContext.existingAppointments.length} turnos futuros.`);
+  } catch (err: any) {
+    console.error("[Config] Error leyendo la configuracion:", err?.message || err);
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Conversaciones: se guardan como un unico documento por chat, con el contenido
 // serializado. Solo las usa el servidor para rehidratarse, asi que no necesitan
@@ -238,6 +353,21 @@ const persistirConversacion = (conv: any) => {
   }, 2500);
 };
 
+// Helper to parse dates in Argentina timezone (-03:00)
+const parseArgentinaDate = (dtStr: string): Date => {
+  if (!dtStr) return new Date(NaN);
+  let s = String(dtStr).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return new Date(`${s}T00:00:00-03:00`);
+  }
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    s = s.replace(' ', 'T');
+    if (s.length === 16) s += ':00';
+    return new Date(`${s}-03:00`);
+  }
+  return new Date(s);
+};
+
 // Crea el turno en la coleccion que lee la app. Devuelve null si no se pudo,
 // para que la conversacion quede marcada para revision humana.
 const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string; detalle: string } | null> => {
@@ -252,15 +382,43 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
       servicios.find((s: any) => String(s.name || "").toLowerCase().includes(String(accion.service_name || "").toLowerCase())) ||
       servicios[0];
 
-    const inicio = new Date(accion.datetime);
+    const inicio = parseArgentinaDate(accion.datetime);
     if (isNaN(inicio.getTime())) return null;
     const duracion = Number(servicio?.duration_minutes) > 0 ? Number(servicio.duration_minutes) : 30;
     const fin = new Date(inicio.getTime() + duracion * 60000);
 
+    const autoPhone = (accion.patient_phone || conv.patient_phone || conv.id || "").replace(/@.*$/, "").replace(/\D/g, "");
+    const cleanFormattedPhone = autoPhone ? (autoPhone.startsWith("+") ? autoPhone : `+${autoPhone}`) : (accion.patient_phone || conv.patient_phone || "");
+    const patientName = accion.patient_name || conv.patient_name || "Paciente";
+
+    // 1. Registrar o vincular al paciente primero
+    const nameParts = patientName.trim().split(" ");
+    let patientDocId = "pat-bot";
+    try {
+      const createdPid = await crearDocumento("patients", {
+        first_name: nameParts[0] || "Paciente",
+        last_name: nameParts.slice(1).join(" ") || "Prospecto",
+        phone: cleanFormattedPhone,
+        relationship_status: "prospect",
+        inquiry_channel: "whatsapp",
+        first_inquiry_at: new Date().toISOString(),
+        total_appointments: 1,
+        completed_appointments_count: 0,
+        notes: "Futuro cliente agendado automáticamente por el Bot de WhatsApp.",
+        created_at: new Date().toISOString()
+      });
+      if (createdPid) {
+        patientDocId = createdPid;
+      }
+    } catch (e: any) {
+      console.warn("[Turnos] No se pudo persistir el paciente en Firestore:", e?.message || e);
+    }
+
+    // 2. Registrar el turno con el ID del paciente vinculado
     const id = await crearDocumento("appointments", {
-      patient_id: "pat-bot",
-      patient_name: accion.patient_name || conv.patient_name || "Paciente",
-      patient_phone: accion.patient_phone || conv.patient_phone || "",
+      patient_id: patientDocId,
+      patient_name: patientName,
+      patient_phone: cleanFormattedPhone,
       service_id: servicio?.id || "",
       service_name: servicio?.name || accion.service_name || "Consulta",
       service_price: Number(servicio?.price) || 0,
@@ -282,7 +440,9 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
       { start_datetime: inicio.toISOString(), duration_minutes: duracion, status: "confirmed", service_name: servicio?.name }
     ];
 
-    const detalle = `${servicio?.name || "Consulta"} el ${inicio.toLocaleDateString("es-AR")} a las ${inicio.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" })} hs`;
+    const fechaStr = inicio.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "long", day: "numeric", month: "long" });
+    const horaStr = inicio.toLocaleTimeString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit" });
+    const detalle = `${servicio?.name || "Consulta"} el ${fechaStr} a las ${horaStr} hs`;
     console.log(`[Turnos] Turno creado por el bot: ${id} (${detalle})`);
     return { id, detalle };
   } catch (err: any) {
@@ -421,6 +581,33 @@ const toMinutes = (hhmm: string) => {
   return Number(m[1]) * 60 + Number(m[2]);
 };
 
+const getArgentinaDayOfWeek = (dateInput: Date | string): number => {
+  const d = typeof dateInput === 'string' ? parseArgentinaDate(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return 0;
+  const dateStr = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(d);
+  const [y, m, day] = dateStr.split('-').map(Number);
+  const temp = new Date(Date.UTC(y, m - 1, day, 12, 0, 0));
+  return temp.getUTCDay();
+};
+
+const getArgentinaMinutesFromMidnight = (dateInput: Date | string): number => {
+  const d = typeof dateInput === 'string' ? parseArgentinaDate(dateInput) : dateInput;
+  if (isNaN(d.getTime())) return 0;
+  const timeStr = new Intl.DateTimeFormat('es-AR', {
+    timeZone: 'America/Argentina/Buenos_Aires',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(d);
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+};
+
 const validateSlot = (params: {
   datetime: string;
   durationMinutes: number;
@@ -430,30 +617,39 @@ const validateSlot = (params: {
   const { datetime, durationMinutes, availability, existingAppointments } = params;
   if (!datetime) return { valid: false, reason: "sin fecha" };
 
-  const start = new Date(datetime);
+  const start = parseArgentinaDate(datetime);
   if (isNaN(start.getTime())) return { valid: false, reason: "fecha invalida" };
-  if (start.getTime() < Date.now()) return { valid: false, reason: "fecha en el pasado" };
+  // Tolerancia de 5 min en el pasado por desfases de red
+  if (start.getTime() < Date.now() - 5 * 60 * 1000) return { valid: false, reason: "fecha en el pasado" };
 
   const dur = Number(durationMinutes) > 0 ? Number(durationMinutes) : 30;
   const end = new Date(start.getTime() + dur * 60000);
 
-  // 1) Debe caer dentro de una franja de atencion configurada
-  const dow = start.getDay();
-  const startMin = start.getHours() * 60 + start.getMinutes();
+  // 1) Debe caer dentro de una franja de atencion configurada en hora argentina
+  const dow = getArgentinaDayOfWeek(start);
+  const startMin = getArgentinaMinutesFromMidnight(start);
   const endMin = startMin + dur;
-  const franjas = (availability || []).filter((a: any) => Number(a.day_of_week) === dow);
+  const franjas = (availability || []).filter((a: any) => Number(a.day_of_week) === dow && a.enabled !== false);
   if (franjas.length === 0) return { valid: false, reason: "dia sin atencion" };
 
   const entra = franjas.some((a: any) => {
     const ini = toMinutes(a.start_time);
     const fin = toMinutes(a.end_time);
-    return ini !== null && fin !== null && startMin >= ini && endMin <= fin;
+    if (ini === null || fin === null) return false;
+    if (a.break_start && a.break_end) {
+      const bStart = toMinutes(a.break_start);
+      const bEnd = toMinutes(a.break_end);
+      if (bStart !== null && bEnd !== null && startMin < bEnd && endMin > bStart) {
+        return false;
+      }
+    }
+    return startMin >= ini && endMin <= fin;
   });
   if (!entra) return { valid: false, reason: "fuera del horario de atencion" };
 
   // 2) No debe solaparse con un turno ya tomado
   const choca = (existingAppointments || []).some((ap: any) => {
-    const apStart = new Date(ap.start_datetime || ap.datetime || ap.start);
+    const apStart = parseArgentinaDate(ap.start_datetime || ap.datetime || ap.start);
     if (isNaN(apStart.getTime())) return false;
     const apDur = Number(ap.duration_minutes) > 0 ? Number(ap.duration_minutes) : 30;
     const apEnd = new Date(apStart.getTime() + apDur * 60000);
@@ -473,6 +669,8 @@ async function generateAiBotResponse(params: {
   services?: any[];
   availability?: any[];
   existingAppointments?: any[];
+  senderPhone?: string;
+  patientName?: string;
 }) {
   const {
     message,
@@ -480,7 +678,9 @@ async function generateAiBotResponse(params: {
     practiceSettings = cachedPracticeSettings || {},
     services = [],
     availability = [],
-    existingAppointments = []
+    existingAppointments = [],
+    senderPhone = "",
+    patientName = ""
   } = params;
 
   if (practiceSettings && Object.keys(practiceSettings).length > 0) {
@@ -493,8 +693,7 @@ async function generateAiBotResponse(params: {
   const professionalName = effectiveSettings.professional_name || "el profesional a cargo";
   const professionalTitle = effectiveSettings.professional_title || "Especialista";
   const isProfessionalIdentity = effectiveSettings.bot_identity_mode === 'professional';
-  const assistantName = effectiveSettings.bot_assistant_name || "Sofía (IA)";
-  const botTone = effectiveSettings.bot_tone || "cálido, profesional, empático y conciso";
+  const assistantName = effectiveSettings.bot_assistant_name || "Sofía";
   const customRules = effectiveSettings.bot_custom_instructions ? `\n\nREGLAS Y RESTRICCIONES ESPECÍFICAS DEL CONSULTORIO (OBLIGATORIAS):\n${effectiveSettings.bot_custom_instructions}` : "";
 
   // Features enabled
@@ -515,10 +714,16 @@ async function generateAiBotResponse(params: {
     ? availability.map((a: any) => `- ${days[a.day_of_week] || "Día"}: ${a.start_time} a ${a.end_time}`).join("\n")
     : "(SIN DATOS CARGADOS - no informes ningun horario ni ofrezcas turnos)";
 
-  // Existing booked appointments
+  // Existing booked appointments formatted in Argentina timezone
   const bookedList = existingAppointments.length > 0
-    ? existingAppointments.map((a: any) => `- ${a.start_datetime} (${a.service_name || "Turno"})`).join("\n")
-    : "No hay turnos ocupados registrados para las proximas fechas.";
+    ? existingAppointments.map((a: any) => {
+        const start = parseArgentinaDate(a.start_datetime || a.datetime || a.start);
+        if (isNaN(start.getTime())) return `- ${a.start_datetime || a.datetime} (${a.service_name || "Turno ocupado"})`;
+        const fDate = start.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "short", day: "numeric", month: "short", year: "numeric" });
+        const fTime = start.toLocaleTimeString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit" });
+        return `- ${fDate} a las ${fTime} hs (${a.service_name || "Turno ocupado"})`;
+      }).join("\n")
+    : "No hay turnos ocupados registrados para las próximas fechas.";
 
   const now = new Date();
   const todayString = now.toLocaleString("es-AR", {
@@ -530,6 +735,10 @@ async function generateAiBotResponse(params: {
     minute: "2-digit",
     timeZone: "America/Argentina/Buenos_Aires"
   });
+
+  const cleanPhone = String(senderPhone || "").replace(/\D/g, "");
+  const hasSenderPhone = cleanPhone.length >= 6;
+  const knownPhoneStr = hasSenderPhone ? (cleanPhone.startsWith("+") ? cleanPhone : `+${cleanPhone}`) : "";
 
   const botReq = effectiveSettings.bot_required_fields || {
     full_name: true,
@@ -543,7 +752,8 @@ async function generateAiBotResponse(params: {
 
   const requiredFieldsDescriptions = [
     botReq.full_name ? "- Nombre y Apellido completo" : null,
-    botReq.phone ? "- Número de WhatsApp / Celular" : null,
+    // Si ya tenemos el teléfono de WhatsApp, NO se lo pedimos al paciente
+    (!hasSenderPhone && botReq.phone) ? "- Número de WhatsApp / Celular" : null,
     botReq.dni ? "- DNI o documento de identidad" : null,
     botReq.email ? "- Correo electrónico" : null,
     botReq.insurance ? "- Obra social o Prepaga (o Particular)" : null,
@@ -551,23 +761,40 @@ async function generateAiBotResponse(params: {
     botReq.address ? "- Domicilio o localidad de residencia" : null,
   ].filter(Boolean).join("\n");
 
+  const phoneInstructionText = hasSenderPhone
+    ? `⚠️ TELÉFONO DE WHATSAPP DEL PACIENTE: Ya estás chateando directamente por WhatsApp con el paciente (${knownPhoneStr}). YA TIENES SU NÚMERO DE TELÉFONO. ESTÁ TERMINANTEMENTE PROHIBIDO PEDIRLE SU TELÉFONO O NÚMERO DE WHATSAPP. Úsalo automáticamente en la acción de reserva.`
+    : `Si necesitas el teléfono para agendar, pídeselo cordialmente.`;
+
+  const patientNameNotice = (patientName && !patientName.startsWith("+") && !/^\d+$/.test(patientName))
+    ? `Nombre identificado en el perfil: "${patientName}". Puedes saludarlo/a cordialmente por su nombre si es apropiado.`
+    : "";
+
   let identityPrompt = "";
   if (isProfessionalIdentity) {
     identityPrompt = `Eres ${professionalName} (${professionalTitle}), el profesional a cargo de "${practiceName}".
-Respondes directamente tú en primera persona a tus pacientes con trato cercano, humano y profesional.
-Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp (mensajes no excesivamente largos, directos y fluidos).`;
+Respondes directamente tú en primera persona a tus pacientes con un trato sumamente humano, cercano, cálido, empático y profesional.
+PERSONALIDAD Y TONO:
+- Habla de manera natural y cercana, como una persona real en WhatsApp de Argentina (usando modismos amables y respetuosos como "¡Hola!", "¡Buenas!", "¿Cómo estás?", "¡Dale, perfecto!", "¡Genial!", "Te anoto...", "Te queda cómodo...?").
+- Usa emojis de forma natural y expresiva acorde al contexto del mensaje (por ejemplo: 😊, 👋, 🙌, 📅, 🩺, ✨, 🙏, 👍). ¡Que tus respuestas se sientan vivas, cálidas y humanas, jamás un bot frío o robótico!
+- Mantén las respuestas claras, concisas y fluidas (sin textos interminables ni lenguaje acartonado).`;
   } else {
-    identityPrompt = `Eres ${assistantName}, la asistente virtual inteligente de "${practiceName}" del profesional ${professionalName}.
-Tu tono es ${botTone}. Respondes en español rioplatense o neutro claro, natural, humano y empático, con emojis sutiles, de forma conversacional y concisa como en WhatsApp (mensajes no excesivamente largos, directos y fluidos).`;
+    identityPrompt = `Eres ${assistantName}, la asistente y recepcionista de "${practiceName}" del profesional ${professionalName}.
+PERSONALIDAD Y TONO:
+- Eres una asistente sumamente atenta, empática, simpática y profesional. Hablas como una recepcionista real de consultorio en Argentina, súper amable y predispuesta.
+- Usa lenguaje conversacional natural y cálido ("¡Hola!", "¡Buenas!", "¿Cómo estás?", "¡Dale, genial!", "¡Buenísimo!", "Te cuento...", "¿Te queda bien ese horario?").
+- Incluye emojis de forma simpática y apropiada según la respuesta (por ejemplo: 😊, ✨, 🙌, 📅, 🩺, 👋, 🙏, 👍). Que no se sienta un contestador automático ni un menú numérico.
+- Respuestas directas, ágiles y agradables para leer en WhatsApp.`;
   }
 
   const systemInstruction = `${identityPrompt}
 
-Fecha y hora actual del consultorio: ${todayString}.
+Zona horaria oficial del consultorio: Argentina (GMT-3, America/Argentina/Buenos_Aires).
+Fecha y hora actual en Argentina: ${todayString}.
 Dirección del consultorio: ${effectiveSettings.address || "Consultorio céntrico"}, ${effectiveSettings.city || "Ciudad"}.
-Teléfono de contacto: ${effectiveSettings.phone || effectiveSettings.whatsapp_number || ""}.
+Teléfono / WhatsApp de contacto: ${effectiveSettings.phone || effectiveSettings.whatsapp_number || ""}.
+${patientNameNotice}
 
-INFORMACIÓN DEL CONSULTORIO:
+INFORMACIÓN OFICIAL DEL CONSULTORIO (HORARIOS Y SERVICIOS EN HORA ARGENTINA):
 Servicios y aranceles:
 ${featPricing ? servicesList : "Informar que los aranceles se coordinan en la consulta presencial."}
 
@@ -577,37 +804,37 @@ ${scheduleList}
 Turnos ya ocupados / no disponibles:
 ${bookedList}
 
+${phoneInstructionText}
+
 INSTRUCCIONES CLAVE DE ATENCIÓN Y CONVERSACIÓN:
-1. FLUIDEZ Y CONTEXTO: Mantén una conversación continua, empática y lógica con el paciente. NUNCA repitas el saludo inicial si ya te has presentado en mensajes anteriores. Responde concretamente a la última duda o mensaje del paciente.
-2. REGLA ABSOLUTA - SI NO ESTA EN LA LISTA, NO EXISTE: Si arriba dice "(SIN DATOS CARGADOS)" en servicios o en horarios, tenes PROHIBIDO mencionar precios, duraciones, dias u horarios, y PROHIBIDO ofrecer o confirmar turnos. En ese caso respondes unicamente que en un momento te responde el equipo del consultorio y no agregas nada mas.
-3. NUNCA OFREZCAS UN HORARIO OCUPADO: antes de proponer un dia y hora verifica que este dentro de los horarios de atencion listados y que NO figure en la lista de turnos ocupados. Si el paciente pide un horario ocupado, decilo y ofrece dos alternativas libres reales.
-4. SI NO SABES, NO INVENTES: ante cualquier pregunta que no puedas responder con los datos de arriba (tratamientos, obras sociales, indicaciones medicas, resultados, urgencias), responde que dejas la consulta asentada para que la vea el profesional. Nunca des diagnosticos ni indicaciones clinicas.
-5. RIGOR Y CERO ALUCINACIONES: Basa tus respuestas ÚNICAMENTE en la información explícita de los servicios, aranceles, horarios y dirección listados arriba. NO inventes precios, promociones, diagnósticos, indicaciones médicas ni servicios que no estén configurados. Si el paciente pregunta por un tratamiento o arancel que no figura en la lista, responde amablemente que no dispones de ese dato en el sistema y que dejas asentada la consulta para que el profesional a cargo lo revise.
-6. SERVICIOS Y PRECIOS: Responder preguntas sobre servicios${featPricing ? ", precios" : ""}, duración y ubicación según los datos oficiales del consultorio.
-7. ${featBooking ? "HORARIOS Y TURNOS: Ayudar al paciente a elegir un horario disponible según los huecos libres y días de atención configurados. NUNCA inventes turnos ni confirmes horarios ocupados." : "Informar los horarios de atención y pedirle que aguarde confirmación del equipo."}
+1. FLUIDEZ Y CALIDEZ: Mantén una conversación empática, fluida y lógica. NUNCA repitas el saludo inicial si ya te has presentado o si la conversación ya está en curso. Responde de forma directa al mensaje del paciente con buena onda y calidez.
+2. TELÉFONO AUTOMÁTICO: ${hasSenderPhone ? `EL TELÉFONO YA ES CONOCIDO (${knownPhoneStr}). NO LO SOLICITES. Cuando generes la reserva en json_action, asigna "patient_phone": "${knownPhoneStr}".` : "Pide el teléfono solo si no lo tienes."}
+3. REGLA ABSOLUTA - SI NO ESTÁ EN LA LISTA, NO EXISTE: Si arriba dice "(SIN DATOS CARGADOS)" en servicios o en horarios, tienes PROHIBIDO inventar precios, duraciones, días u horarios, y PROHIBIDO ofrecer o confirmar turnos. En ese caso responde amablemente que en breve le responderá el equipo del consultorio.
+4. NUNCA OFREZCAS UN HORARIO OCUPADO: Antes de proponer un día y hora verifica que esté dentro de los horarios de atención y que NO coincida con turnos ocupados. Si el paciente pide un horario no disponible, explícaselo con amabilidad y ofrécele 2 opciones libres cercanas.
+5. NO INVENTAR NI DIAGNOSTICAR: Basa tus respuestas únicamente en los datos reales del consultorio. Nunca des diagnósticos médicos ni indiques medicamentos. Ante consultas clínicas complejas, indica amablemente que dejas anotada la consulta para el profesional.
+6. SERVICIOS Y PRECIOS: Brinda información clara y cordial sobre los servicios${featPricing ? " y aranceles" : ""}.
+7. ${featBooking ? "RESERVA DE TURNOS: Ayuda al paciente a coordinar su cita en los huecos disponibles (horario Argentina)." : "Informa los horarios y solicita que aguarde respuesta."}
 8. DATOS REQUERIDOS PARA AGENDAR:
-${requiredFieldsDescriptions || "- Nombre y Apellido\n- Teléfono"}
-Pide estos datos de forma natural y progresiva a lo largo del diálogo.
-9. ${featDeposit && effectiveSettings.patient_deposit_alias ? `PAGOS Y SEÑAS: Si el paciente desea señar su turno o pregunta por transferencias, indícale el Alias de seña: ${effectiveSettings.patient_deposit_alias}.` : ""}
-10. ${featHandoff ? "DERIVACIÓN HUMANA: Si el paciente solicita hablar con una persona real o tiene un caso complejo, indícale con calidez que su mensaje queda guardado para contacto por el profesional." : ""}
-11. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos requeridos, resume los datos confirmados y emite el bloque JSON estructurado con tag 'json_action'." : ""}
+${requiredFieldsDescriptions || "- Nombre y Apellido completo"}
+Pide los datos faltantes con naturalidad en el diálogo.
+9. ${featDeposit && effectiveSettings.patient_deposit_alias ? `SEÑA / PAGOS: Si el paciente pregunta por señas o transferencias, infórmale el Alias oficial: ${effectiveSettings.patient_deposit_alias}.` : ""}
+10. ${featHandoff ? "DERIVACIÓN HUMANA: Si el paciente pide hablar con una persona real, confírmale con calidez que un miembro del equipo se pondrá en contacto pronto." : ""}
+11. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma un turno disponible y tienes sus datos (nombre y horario, y el teléfono que ya tienes de WhatsApp), confírmale el turno con entusiasmo y calidez, e incluye el bloque json_action al final." : ""}
 ${customRules}
 
-FORMATO DE RESPUESTA:
-Provee tu mensaje amigable y humano para el paciente.
-${featBooking ? `Si se concreta o confirma una reserva con todos los datos requeridos, agrega al final un bloque de código markdown con tag 'json_action':
-\`\`\`json_action
+FORMATO DE ACCIÓN (solo cuando se confirme un turno con todos los datos):
+${featBooking ? `\`\`\`json_action
 {
   "action": "book_appointment",
-  "service_name": "Nombre del servicio exacto",
-  "datetime": "YYYY-MM-DDTHH:mm:ss",
+  "service_name": "Nombre exacto del servicio",
+  "datetime": "YYYY-MM-DDTHH:mm:00",
   "patient_name": "Nombre del paciente",
-  "patient_phone": "Teléfono si se conoce",
-  "patient_email": "Email si se conoce",
-  "notes": "Notas adicionales"
+  "patient_phone": "${knownPhoneStr || "Teléfono del paciente"}",
+  "patient_email": "Email si fue provisto",
+  "notes": "Notas del turno"
 }
 \`\`\`
-Si aún falta definir algún dato obligatorio o la fecha/hora no está confirmada por el paciente, NO incluyas el bloque 'json_action'.` : ""}`;
+Nota importante sobre datetime: La fecha y hora deben estar en hora local de Argentina (formato ISO YYYY-MM-DDTHH:mm:00).` : ""}`;
 
   if (ai) {
     // El modelo elegido en Ajustes manda; los demas quedan como respaldo si falla.
@@ -753,7 +980,9 @@ async function startServer() {
         practiceSettings = {},
         services = [],
         availability = [],
-        existingAppointments = []
+        existingAppointments = [],
+        senderPhone = "",
+        patientName = ""
       } = req.body;
 
       if (!message) {
@@ -766,7 +995,9 @@ async function startServer() {
         practiceSettings,
         services,
         availability,
-        existingAppointments
+        existingAppointments,
+        senderPhone,
+        patientName
       });
 
       // Bot human-like response delay pacing
@@ -1428,6 +1659,23 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       messages: []
     };
     realWhatsAppConversations.set(convId, newConv);
+
+    // Registrar en Firestore como prospecto / futuro cliente
+    if (hayPersistencia()) {
+      crearDocumento("patients", {
+        first_name: firstName || "Paciente",
+        last_name: displayName.replace(firstName, "").trim() || (formattedPhone ? `(${formattedPhone})` : ""),
+        phone: formattedPhone,
+        relationship_status: "prospect",
+        inquiry_channel: "whatsapp",
+        first_inquiry_at: new Date().toISOString(),
+        total_appointments: 0,
+        completed_appointments_count: 0,
+        notes: "Futuro cliente registrado automáticamente al iniciar consulta por WhatsApp.",
+        created_at: new Date().toISOString()
+      }).catch(() => {});
+    }
+
     return newConv;
   };
 
@@ -1578,6 +1826,11 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         const botEnabled = cachedPracticeSettings.bot_enabled === true;
         const convEnabled = conv.ai_handled === true;
         const contextoOk = isBusinessContextFresh();
+        // Pausa temporal: si acabas de responder a mano, el bot no se mete.
+        const enPausaManual = Boolean(conv.bot_paused_until && conv.bot_paused_until > Date.now());
+        if (enPausaManual) {
+          console.log(`[WhatsApp Bot] En pausa manual hasta ${new Date(conv.bot_paused_until!).toISOString()}.`);
+        }
 
         if (!botEnabled || !convEnabled) {
           console.log(`[WhatsApp Bot] Bot pausado (global:${botEnabled} conversacion:${convEnabled}). Mensaje queda en la bandeja sin responder.`);
@@ -1587,7 +1840,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
           console.warn("[WhatsApp Bot] Sin contexto de agenda fresco. No se responde automaticamente.");
         }
 
-        const isBotActive = botEnabled && convEnabled && contextoOk;
+        const isBotActive = botEnabled && convEnabled && contextoOk && !enPausaManual;
         if (isBotActive) {
           try {
             console.log(`[WhatsApp Bot] Generating auto-reply for incoming live message from ${conv.patient_name} (${senderPhone}): "${text}"`);
@@ -1605,7 +1858,9 @@ Responde ÚNICAMENTE con un JSON con la estructura:
               practiceSettings: cachedPracticeSettings,
               services: options.services?.length ? options.services : businessContext.services,
               availability: options.availability?.length ? options.availability : businessContext.availability,
-              existingAppointments: options.existingAppointments?.length ? options.existingAppointments : businessContext.existingAppointments
+              existingAppointments: options.existingAppointments?.length ? options.existingAppointments : businessContext.existingAppointments,
+              senderPhone: senderPhone,
+              patientName: conv.patient_name
             });
 
             if (botResult && botResult.reply && options.targetUrl && options.targetKey && options.targetInstance) {
@@ -1815,6 +2070,8 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       // Guardamos servicios, horarios y turnos para que el WEBHOOK pueda usarlos.
       // Sin esto el bot respondia el webhook con listas vacias e inventaba datos.
       updateBusinessContext({ services, availability, existingAppointments });
+      // Lo dejamos guardado para que el servidor lo tenga tras un reinicio.
+      guardarContextoEnBase().catch(() => {});
 
       if (!targetUrl || !targetKey) {
         const list = Array.from(realWhatsAppConversations.values()).sort((a, b) => {
@@ -2019,8 +2276,22 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         });
       }
 
+      // Pausa automatica: al responder a mano, el bot se calla un rato en
+      // esta conversacion. Configurable en Ajustes; 30 minutos por defecto.
+      const minutosPausa = Number(cachedPracticeSettings.bot_auto_pause_minutes);
+      const minutos = Number.isFinite(minutosPausa) && minutosPausa >= 0 ? minutosPausa : 30;
+      if (minutos > 0) {
+        conv.bot_paused_until = Date.now() + minutos * 60000;
+      }
+
       persistirConversacion(conv);
-      return res.json({ success: true, message: newMsg, apiResponse });
+      return res.json({
+        success: true,
+        message: newMsg,
+        apiResponse,
+        bot_paused_until: conv.bot_paused_until || null,
+        pausa_minutos: minutos
+      });
     } catch (err: any) {
       console.error("Error in /api/evolution/conversations/:id/send:", err);
       res.status(500).json({ error: err.message });
@@ -2225,6 +2496,64 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   });
 
   // Incoming Webhook from Evolution API
+  // Inicia una conversacion REAL: manda el primer mensaje por WhatsApp y crea
+  // el chat en la bandeja. Antes el boton solo creaba una simulacion local.
+  app.post("/api/evolution/conversations/start", async (req, res) => {
+    try {
+      const { phone, name, text, apiUrl, apiKey, instanceName } = req.body || {};
+      if (!phone || !text) {
+        return res.status(400).json({ success: false, error: "Faltan el telefono o el mensaje." });
+      }
+
+      const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+
+      if (!targetUrl || !targetKey || !targetInstance) {
+        return res.status(400).json({ success: false, error: "Falta la configuracion de Evolution API." });
+      }
+
+      // Normalizamos el numero a digitos y armamos el JID.
+      const soloDigitos = String(phone).replace(/\D/g, "");
+      if (soloDigitos.length < 8) {
+        return res.status(400).json({ success: false, error: "El telefono no parece valido." });
+      }
+      const destino = `${soloDigitos}@s.whatsapp.net`;
+
+      const envio = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: destino, text });
+      if (!envio.ok) {
+        return res.status(502).json({
+          success: false,
+          error: "WhatsApp rechazo el envio. Revisa el numero y que la instancia este conectada.",
+          detail: envio.error
+        });
+      }
+
+      const conv = findOrCreateConversation(soloDigitos, name || soloDigitos, undefined);
+      conv.remote_jid = destino;
+      conv.messages.push({
+        id: `manual-${Date.now()}`,
+        role: "assistant",
+        content: text,
+        timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        status: "sent"
+      });
+      conv.last_message = text;
+      conv.last_timestamp = new Date().toISOString();
+      conv.unread_count = 0;
+
+      const minutosPausa = Number(cachedPracticeSettings.bot_auto_pause_minutes);
+      const minutos = Number.isFinite(minutosPausa) && minutosPausa >= 0 ? minutosPausa : 30;
+      if (minutos > 0) conv.bot_paused_until = Date.now() + minutos * 60000;
+
+      persistirConversacion(conv);
+      return res.json({ success: true, conversation: conv });
+    } catch (err: any) {
+      console.error("Error iniciando conversacion:", err);
+      return res.status(500).json({ success: false, error: err?.message || "error" });
+    }
+  });
+
   // Marca una conversacion como leida: pone el contador en cero y pasa los
   // mensajes del paciente a 'read'. Lo llama el front al abrir el chat.
   app.post("/api/evolution/conversations/:id/read", (req, res) => {
@@ -2249,6 +2578,11 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         instancia: targetInstance || null,
         tieneCredenciales: Boolean(targetUrl && targetKey),
         persistenciaActiva: hayPersistencia(),
+        botActivo: cachedPracticeSettings.bot_enabled === true,
+        contextoFresco: isBusinessContextFresh(),
+        servicios: businessContext.services.length,
+        franjasHorarias: businessContext.availability.length,
+        turnosFuturos: businessContext.existingAppointments.length,
         conversacionesEnMemoria: realWhatsAppConversations.size
       };
 
@@ -2994,10 +3328,13 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     });
   }
 
-  // Restauramos la bandeja guardada antes de empezar a atender pedidos.
+  // Restauramos bandeja y configuracion antes de empezar a atender pedidos.
   cargarConversacionesGuardadas().catch(err =>
     console.error("[Firestore] Fallo la restauracion inicial:", err?.message || err)
   );
+  cargarConfigDesdeBase().catch(() => {});
+  // Refresco periodico: turnos y configuracion cambian mientras el bot atiende.
+  setInterval(() => { cargarConfigDesdeBase().catch(() => {}); }, 5 * 60 * 1000);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Agenfacil Server running on http://0.0.0.0:${PORT}`);

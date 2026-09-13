@@ -197,6 +197,16 @@ export const INITIAL_SERVICES: Service[] = [
     color: "#ec4899",
     active: true,
     category: "Online"
+  },
+  {
+    id: "srv-asesoria",
+    name: "Asesoría Privada",
+    price: 45000,
+    duration_minutes: 30,
+    description: "Sesión de asesoría personalizada y consultoría profesional privada.",
+    color: "#0284c7",
+    active: true,
+    category: "Asesoría"
   }
 ];
 
@@ -211,6 +221,19 @@ export const INITIAL_AVAILABILITY: DayAvailability[] = [
 ];
 
 export const INITIAL_PATIENTS: Patient[] = [
+  {
+    id: "pat-macri",
+    first_name: "Mauricio",
+    last_name: "Macri",
+    phone: "+54 9 11 5500-1122",
+    email: "mauricio.macri@ejemplo.com",
+    dni: "12.345.678",
+    birth_date: "1959-02-08",
+    notes: "Turno de Asesoría Privada agendado y confirmado por WhatsApp.",
+    tags: ["Particular", "Asesoría"],
+    total_appointments: 1,
+    created_at: "2026-09-13T14:00:00Z"
+  },
   {
     id: "pat-1",
     first_name: "Valentina",
@@ -277,6 +300,26 @@ export function getInitialAppointments(): Appointment[] {
   };
 
   return [
+    {
+      id: "apt-macri",
+      patient_id: "pat-macri",
+      patient_name: "Mauricio Macri",
+      patient_phone: "+54 9 11 5500-1122",
+      patient_email: "mauricio.macri@ejemplo.com",
+      service_id: "srv-asesoria",
+      service_name: "Asesoría Privada",
+      service_price: 45000,
+      start_datetime: "2026-09-14T19:00:00.000Z",
+      end_datetime: "2026-09-14T19:30:00.000Z",
+      status: "confirmed",
+      payment_status: "pending",
+      notes: "Asesoría Privada confirmada por WhatsApp.",
+      origin: "bot_whatsapp",
+      reminder_24h_sent: true,
+      reminder_24h_sent_at: "2026-09-13T16:05:00.000Z",
+      patient_confirmed: true,
+      patient_confirmed_at: "2026-09-13T16:05:00.000Z"
+    },
     {
       id: "apt-1",
       patient_id: "pat-1",
@@ -402,6 +445,43 @@ export function getInitialAppointments(): Appointment[] {
 }
 
 export const INITIAL_CONVERSATIONS: Conversation[] = [
+  {
+    id: "conv-macri",
+    patient_name: "Mauricio Macri",
+    patient_phone: "+54 9 11 5500-1122",
+    last_message: "¡Hola Mauricio Macri! 👋. Te escribo para avisarte que tu turno quedó confirmado, te paso los detalles 😊:",
+    last_message_time: "16:05",
+    unread_count: 0,
+    ai_handled: false,
+    messages: [
+      {
+        id: "msg-macri-1",
+        role: "user",
+        content: "Hola! Buenas tardes, quería saber si quedó reservado mi turno de Asesoría Privada para mañana lunes a las 16:00 hs.",
+        timestamp: "16:03"
+      },
+      {
+        id: "msg-macri-2",
+        role: "assistant",
+        content: `¡Hola Mauricio Macri! 👋. Te escribo para avisarte que tu turno quedó confirmado, te paso los detalles 😊:
+
+🗓 **Fecha:** Lunes 14 de septiembre de 2026  
+⏰ **Horario:** 16:00 hs  
+👤 **Profesional:** Dr/a. Gonzalo Odontología  
+💼 **Servicio:** Asesoría Privada (30 min)  
+📍 **Lugar:** Av. Santa Fe 3200, Piso 4 B, Palermo  
+
+¡Te esperamos mañana! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊`,
+        timestamp: "16:05",
+        status: "delivered",
+        actionTaken: {
+          type: "appointment_created",
+          appointmentId: "apt-macri",
+          details: "Asesoría Privada • Lunes 14/09 16:00 hs"
+        }
+      }
+    ]
+  },
   {
     id: "conv-1",
     patient_name: "Camila Benítez",
@@ -539,7 +619,7 @@ export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   require_confirmation: true,
   auto_update_status_on_confirm: true,
   sender_email_alias: "Consultorio Médico - Agenfacil",
-  whatsapp_template_24h: "¡Hola {paciente}! Te recordamos tu turno de *{servicio}* programado para mañana *{fecha}* a las *{hora} hs* con {profesional} en {direccion}.\n\nPara confirmar tu asistencia, responde *1* a este mensaje o haz clic aquí:\n👉 {link_confirmar}\n\nSi necesitas reprogramar, responde *2*.\n¡Muchas gracias!",
+  whatsapp_template_24h: "Te confirmo tu turno, te paso los detalles 😊:\n\n🗓 **Fecha:** {fecha}\n⏰ **Horario:** {hora}\n👤 **Profesional:** {profesional}\n💼 **Servicio:** {servicio}\n📍 **Lugar:** {direccion}, {ciudad}\n\n¡Te esperamos mañana! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊",
   whatsapp_template_2h: "Hola {paciente}, te esperamos hoy a las *{hora} hs* en {direccion} para tu atención de *{servicio}*. Si tienes algún imprevisto, avísanos con antelación.",
   email_subject_24h: "Recordatorio de Turno: {servicio} - Mañana {hora} hs ({consultorio})",
   email_body_24h: "Estimado/a {paciente},\n\nLe recordamos su próximo turno programado en {consultorio} con {profesional}.\n\n📅 Fecha: {fecha}\n⏰ Hora: {hora} hs\n🩺 Tratamiento: {servicio}\n📍 Dirección: {direccion}, {ciudad}\n\nPara confirmar su asistencia y conservar su lugar reservado, por favor haga clic en el botón a continuación:\n\n{boton_confirmar}\n\nAnte cualquier consulta o necesidad de reprogramación, puede responder a este correo o comunicarse a nuestro WhatsApp {whatsapp}.\n\nAtentamente,\nEquipo de {consultorio}",

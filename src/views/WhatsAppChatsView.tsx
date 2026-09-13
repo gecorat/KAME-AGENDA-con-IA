@@ -38,7 +38,8 @@ import {
   ShieldAlert,
   Smartphone,
   ArrowDown,
-  Trash2
+  Trash2,
+  CheckCircle2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
@@ -46,6 +47,7 @@ import { Conversation, ChatMessage } from '../types';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { BotPersonalitySettings } from '../components/settings/BotPersonalitySettings';
 import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
+import { formatAppointmentConfirmationMessage } from '../lib/appointment-messages';
 
 interface WhatsAppChatsViewProps {
   onOpenNewAppointmentWithPatient?: (patientName: string, patientPhone: string) => void;
@@ -67,6 +69,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
     toggleAiHandled,
     addAppointment,
     updatePracticeSettings,
+    confirmAppointmentByPatient,
     clearAllConversations,
     currentUser
   } = useAgendaStore();
@@ -84,6 +87,14 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(false);
   const [filterType, setFilterType] = useState<'all' | 'unread' | 'ai' | 'manual'>('all');
+  // Chat real de WhatsApp (distinto del demo)
+  const [showNewRealModal, setShowNewRealModal] = useState(false);
+  const [nuevoNombre, setNuevoNombre] = useState('');
+  const [nuevoTelefono, setNuevoTelefono] = useState('');
+  const [nuevoMensaje, setNuevoMensaje] = useState('');
+  const [creandoChat, setCreandoChat] = useState(false);
+  const [errorNuevoChat, setErrorNuevoChat] = useState<string | null>(null);
+  const [avisoPausa, setAvisoPausa] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showClearConfirmModal, setShowClearConfirmModal] = useState(false);
   const [isClearingChats, setIsClearingChats] = useState(false);
@@ -428,6 +439,17 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
         // Si Evolution rechazo el envio, marcamos el mensaje como fallido en la
         // burbuja en vez de mostrarlo como enviado.
+        if (sendRes.ok) {
+          const okData = await sendRes.json().catch(() => ({}));
+          if (okData.bot_paused_until) {
+            const hasta = new Date(okData.bot_paused_until);
+            setAvisoPausa(
+              `Respondiste a mano: el bot queda en pausa en este chat hasta las ${hasta.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs.`
+            );
+            setTimeout(() => setAvisoPausa(null), 8000);
+          }
+        }
+
         if (!sendRes.ok) {
           const errData = await sendRes.json().catch(() => ({}));
           console.error('Evolution API rechazo el envio:', errData);
@@ -470,7 +492,9 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
       status: 'read'
     });
 
-    if (activeConv.ai_handled) {
+    // El simulador también respeta la pausa: antes respondía aunque el bot
+    // estuviera pausado en Ajustes.
+    if (activeConv.ai_handled && practiceSettings.bot_enabled === true) {
       setLoading(true);
       try {
         const payload = {
@@ -567,10 +591,124 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
     } else if (type === 'cbu') {
       text = `Datos bancarios para señas o transferencias:\n• CBU/CVU: 0000003100098765432100\n• Alias: ${practiceSettings.handle}.MEDICA\n• Titular: ${practiceSettings.professional_name}\nPor favor envía el comprobante por este medio.`;
     } else if (type === 'reminder') {
-      text = `Hola ${activeConv.patient_name}, te recordamos tu turno en ${practiceSettings.practice_name} con ${practiceSettings.professional_name}. Por favor responde 'CONFIRMO' para asegurar tu espacio o avísanos si necesitas reprogramar.`;
+      const patientApt = appointments.find(a => {
+        const aPhone = (a.patient_phone || '').replace(/\D/g, '');
+        const cPhone = (activeConv.patient_phone || '').replace(/\D/g, '');
+        if (cPhone && aPhone && (cPhone === aPhone || cPhone.endsWith(aPhone) || aPhone.endsWith(cPhone))) return true;
+        const aName = (a.patient_name || '').toLowerCase().trim();
+        const cName = (activeConv.patient_name || '').toLowerCase().trim();
+        return cName && aName && cName === aName;
+      });
+
+      if (patientApt) {
+        text = formatAppointmentConfirmationMessage(patientApt, practiceSettings, {
+          forChat: true,
+          services
+        });
+      } else {
+        text = `Hola ${activeConv.patient_name}, te recordamos tu turno en ${practiceSettings.practice_name} con ${practiceSettings.professional_name}. Por favor responde 'CONFIRMO' para asegurar tu espacio o avísanos si necesitas reprogramar.`;
+      }
     }
 
     handleSendMessage(text);
+  };
+
+  const handleSendConfirmationAction = () => {
+    if (!activeConv) return;
+
+    // Buscar turno asignado a este paciente
+    const cleanActivePhone = activeConv.patient_phone.replace(/\D/g, '');
+    const cleanActiveName = activeConv.patient_name.toLowerCase().trim();
+
+    const patientApt = appointments.find(a => {
+      const aPhone = (a.patient_phone || '').replace(/\D/g, '');
+      if (cleanActivePhone && aPhone && (cleanActivePhone === aPhone || cleanActivePhone.endsWith(aPhone) || aPhone.endsWith(cleanActivePhone))) {
+        return true;
+      }
+      const aName = (a.patient_name || '').toLowerCase().trim();
+      return cleanActiveName && aName && cleanActiveName === aName;
+    });
+
+    const now = new Date();
+    const dummyDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 16, 0, 0);
+
+    const aptData = patientApt || {
+      id: `apt-gen-${Date.now()}`,
+      patient_name: activeConv.patient_name,
+      patient_phone: activeConv.patient_phone,
+      start_datetime: dummyDate.toISOString(),
+      end_datetime: new Date(dummyDate.getTime() + 30 * 60000).toISOString(),
+      service_name: 'Asesoría Privada',
+      service_price: 45000,
+      status: 'confirmed' as const,
+      payment_status: 'pending' as const
+    };
+
+    const formattedChatText = formatAppointmentConfirmationMessage(
+      aptData,
+      practiceSettings,
+      { forChat: true, services }
+    );
+
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const targetDate = aptData.start_datetime ? new Date(aptData.start_datetime) : dummyDate;
+    const actionDetails = `${aptData.service_name || 'Turno'} • ${targetDate.toLocaleDateString('es-AR')} a las ${targetDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs`;
+
+    addChatMessage(activeConv.id, {
+      role: 'assistant',
+      content: formattedChatText,
+      timestamp: nowTime,
+      status: 'delivered',
+      actionTaken: {
+        type: 'appointment_created',
+        appointmentId: aptData.id,
+        details: actionDetails
+      }
+    });
+
+    if (patientApt) {
+      confirmAppointmentByPatient(patientApt.id);
+    }
+  };
+
+  // Abre una conversación real: el primer mensaje sale por WhatsApp.
+  const handleCreateRealChat = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!nuevoTelefono.trim() || !nuevoMensaje.trim()) {
+      setErrorNuevoChat('Completá el teléfono y el mensaje.');
+      return;
+    }
+    setCreandoChat(true);
+    setErrorNuevoChat(null);
+    try {
+      const res = await fetch('/api/evolution/conversations/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: nuevoTelefono.trim(),
+          name: nuevoNombre.trim() || nuevoTelefono.trim(),
+          text: nuevoMensaje.trim(),
+          apiUrl: practiceSettings.evolution_api_url,
+          apiKey: practiceSettings.evolution_api_key,
+          instanceName: practiceSettings.evolution_instance_name
+        })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.success) {
+        setErrorNuevoChat(data.error || 'No se pudo enviar el mensaje.');
+        return;
+      }
+      setShowNewRealModal(false);
+      setNuevoNombre('');
+      setNuevoTelefono('');
+      setNuevoMensaje('');
+      await fetchAndSyncRealChats(true);
+      if (data.conversation?.id) setActiveConvId(data.conversation.id);
+    } catch (err) {
+      setErrorNuevoChat('Error de conexión al enviar el mensaje.');
+    } finally {
+      setCreandoChat(false);
+    }
   };
 
   const handleCreateSimulation = (e: React.FormEvent) => {
@@ -708,9 +846,14 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
   };
 
   // Find appointments for active patient
-  const activePatientAppointments = appointments.filter(
-    a => a.patient_phone.replace(/\D/g, '') === activeConv?.patient_phone.replace(/\D/g, '')
-  );
+  const activePatientAppointments = appointments.filter(a => {
+    const aPhone = (a.patient_phone || '').replace(/\D/g, '');
+    const cPhone = (activeConv?.patient_phone || '').replace(/\D/g, '');
+    if (cPhone && aPhone && (cPhone === aPhone || cPhone.endsWith(aPhone) || aPhone.endsWith(cPhone))) return true;
+    const aName = (a.patient_name || '').toLowerCase().trim();
+    const cName = (activeConv?.patient_name || '').toLowerCase().trim();
+    return Boolean(cName && aName && cName === aName);
+  });
 
   return (
     <div className="space-y-4 w-full max-w-full min-w-0">
@@ -819,7 +962,22 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               setSubTab('chats');
               setShowNewSimModal(true);
             }}
-            className="px-3 py-1.5 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            className="px-3 py-1.5 text-xs font-semibold text-neutral-700 bg-white border border-neutral-300 hover:bg-neutral-50 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Conversación de prueba: no sale a WhatsApp"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Chat Demo</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSubTab('chats');
+              setErrorNuevoChat(null);
+              setShowNewRealModal(true);
+            }}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Envía un mensaje real por WhatsApp"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Nuevo Chat</span>
@@ -1354,6 +1512,16 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 <span className="text-neutral-400 font-medium whitespace-nowrap shrink-0 hidden xs:inline">Respuestas rápidas:</span>
                 <button
                   type="button"
+                  onClick={handleSendConfirmationAction}
+                  className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 text-emerald-800 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors shrink-0 shadow-2xs cursor-pointer"
+                  title="Enviar confirmación oficial de turno con fecha, horario, profesional y lugar"
+                >
+                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                  <span>Confirmar Turno</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => handleSendQuickAction('portal')}
                   className="px-2.5 py-1 bg-white hover:bg-neutral-50 border border-neutral-200/80 rounded text-neutral-700 font-medium whitespace-nowrap flex items-center gap-1 transition-colors shrink-0 shadow-2xs cursor-pointer"
                 >
@@ -1390,6 +1558,38 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   </button>
                 )}
               </div>
+
+              {/* Turno vinculado al paciente en este chat */}
+              {activePatientAppointments.length > 0 && (
+                <div className="px-3 sm:px-4 py-2 bg-emerald-50/90 border-b border-emerald-200/90 flex items-center justify-between gap-2 text-xs flex-wrap">
+                  <div className="flex items-center gap-2 text-emerald-950">
+                    <Calendar className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="font-semibold">{activePatientAppointments[0].service_name}</span>
+                    <span className="text-emerald-800">
+                      • {new Date(activePatientAppointments[0].start_datetime).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })} a las {new Date(activePatientAppointments[0].start_datetime).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
+                    </span>
+                    {activePatientAppointments[0].patient_confirmed ? (
+                      <span className="px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900 text-[10px] font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                        Confirmado
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-200/80 text-amber-900 text-[10px] font-bold">
+                        Pendiente
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendConfirmationAction}
+                    className="px-2 py-1 bg-emerald-700 hover:bg-emerald-800 text-white rounded text-[11px] font-semibold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                    title="Enviar formato oficial de confirmación al paciente y registrar en el chat"
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    Enviar Confirmación
+                  </button>
+                </div>
+              )}
 
               {/* Message Stream */}
               <div
@@ -1486,8 +1686,31 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                               <Calendar className="w-3.5 h-3.5 text-neutral-700 shrink-0" />
                               <span className="font-semibold">{msg.actionTaken.details}</span>
                             </div>
-                            <span className="px-1.5 py-0.2 rounded bg-neutral-200 text-[10px] font-mono shrink-0">
-                              Turno Creado
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-semibold flex items-center gap-1 shrink-0">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              {msg.content.includes('Te confirmo tu turno') || msg.content.includes('confirmado') ? 'Turno Confirmado' : 'Turno Creado'}
+                            </span>
+                          </div>
+                        )}
+
+                        {isAssistant && msg.content.includes('Te confirmo tu turno') && activeConv.patient_phone && (
+                          <div className="mt-2 pt-2 border-t border-emerald-300/40 flex items-center justify-between gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const cleanPhone = activeConv.patient_phone.replace(/\D/g, '');
+                                if (cleanPhone) {
+                                  window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg.content)}`, '_blank', 'noopener,noreferrer');
+                                }
+                              }}
+                              className="text-[10px] font-semibold text-emerald-800 hover:text-emerald-950 flex items-center gap-1 bg-white/90 hover:bg-white px-2 py-0.5 rounded border border-emerald-200 transition-colors cursor-pointer"
+                            >
+                              <ExternalLink className="w-3 h-3 text-emerald-600" />
+                              Reenviar a WhatsApp
+                            </button>
+                            <span className="text-[10px] font-medium text-emerald-700 flex items-center gap-1">
+                              <Check className="w-3 h-3 text-emerald-600" />
+                              Detalles de confirmación
                             </span>
                           </div>
                         )}
@@ -1792,13 +2015,91 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         </div>
       )}
 
+      {/* Modal: chat REAL de WhatsApp */}
+      {showNewRealModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-neutral-200 max-w-sm w-full p-5 space-y-4 shadow-xl animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              <h3 className="text-sm font-bold text-neutral-900 font-display">
+                Nuevo Chat de WhatsApp
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowNewRealModal(false)}
+                className="p-1 rounded text-neutral-400 hover:text-neutral-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-[11px] text-neutral-600 bg-emerald-50 border border-emerald-200 rounded-lg p-2">
+              Este mensaje se envía de verdad por WhatsApp al número que pongas.
+            </p>
+
+            <form onSubmit={handleCreateRealChat} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-medium text-neutral-700 mb-1">Nombre (opcional):</label>
+                <input
+                  type="text"
+                  value={nuevoNombre}
+                  onChange={e => setNuevoNombre(e.target.value)}
+                  placeholder="Ej: María González"
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-neutral-700 mb-1">Teléfono (con código de país):</label>
+                <input
+                  type="tel"
+                  value={nuevoTelefono}
+                  onChange={e => setNuevoTelefono(e.target.value)}
+                  placeholder="Ej: 5493425526816"
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-neutral-700 mb-1">Mensaje:</label>
+                <textarea
+                  value={nuevoMensaje}
+                  onChange={e => setNuevoMensaje(e.target.value)}
+                  rows={3}
+                  placeholder="Hola, te escribimos del consultorio..."
+                  className="w-full px-3 py-2 border border-neutral-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-none"
+                />
+              </div>
+
+              {errorNuevoChat && (
+                <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2">
+                  {errorNuevoChat}
+                </p>
+              )}
+
+              <button
+                type="submit"
+                disabled={creandoChat}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white font-semibold rounded-lg transition-colors cursor-pointer"
+              >
+                {creandoChat ? 'Enviando…' : 'Enviar y abrir chat'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Aviso de pausa automática del bot */}
+      {avisoPausa && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-neutral-900 text-white text-xs px-4 py-2.5 rounded-lg shadow-lg max-w-sm text-center">
+          {avisoPausa}
+        </div>
+      )}
+
       {/* New Simulation Chat Modal */}
       {showNewSimModal && (
         <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-xl border border-neutral-200 max-w-sm w-full p-5 space-y-4 shadow-xl animate-in fade-in">
             <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
               <h3 className="text-sm font-bold text-neutral-900 font-display">
-                Nuevo Chat de Paciente
+                Chat Demo (no sale a WhatsApp)
               </h3>
               <button
                 type="button"

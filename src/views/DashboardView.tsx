@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Calendar,
   Users,
@@ -34,7 +34,7 @@ import {
   CreditCard,
   ShieldCheck
 } from 'lucide-react';
-import { useAgendaStore } from '../lib/store';
+import { useAgendaStore, isAppointmentPastSchedule } from '../lib/store';
 import { Appointment } from '../types';
 
 interface DashboardViewProps {
@@ -59,7 +59,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     payments,
     hasExampleData,
     clearExampleData,
-    isExampleItem
+    isExampleItem,
+    setPostAppointmentCheckoutApt
   } = useAgendaStore();
   const [copiedPortal, setCopiedPortal] = useState(false);
 
@@ -99,8 +100,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const realPayments = payments.filter(p => !isExampleItem(p));
 
   const todayStr = new Date().toISOString().split('T')[0];
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
   const waitingList = waitlist.filter(w => w.status === 'waiting' && !isExampleItem(w));
-  const monthCollected = realPayments.filter(p => p.status === 'completed').reduce((sum, p) => sum + p.amount, 0);
+  const monthCollected = realPayments
+    .filter(p => p.status === 'completed' && p.date.startsWith(currentMonthStr))
+    .reduce((sum, p) => sum + p.amount, 0);
+  const todayCollected = realPayments
+    .filter(p => p.status === 'completed' && p.date.startsWith(todayStr))
+    .reduce((sum, p) => sum + p.amount, 0);
 
   // Appointments today
   const todayAppointments = appointments.filter(a => {
@@ -119,6 +126,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
   }).length;
 
+  const getPaymentMethodLabel = (method?: string): string => {
+    switch (method) {
+      case 'cash': return 'Efectivo';
+      case 'transfer': return 'Transferencia';
+      case 'mercado_pago':
+      case 'mercadopago': return 'Mercado Pago';
+      case 'card_debit': return 'Débito';
+      case 'card_credit': return 'Crédito';
+      case 'insurance': return 'Obra Social';
+      default: return method || 'Registrado';
+    }
+  };
+
   // Pending payment validations & unassigned/unverified transfers
   const pendingDepositVerification = appointments.filter(a =>
     !isExampleItem(a) &&
@@ -127,10 +147,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     a.status !== 'cancelled'
   );
 
+  // Only appointments that have ACTUALLY completed their scheduled time or are marked completed
   const pendingCompletedPayments = appointments.filter(a =>
     !isExampleItem(a) &&
-    (a.status === 'completed' || a.status === 'confirmed') &&
-    a.payment_status === 'pending'
+    a.status !== 'cancelled' &&
+    a.payment_status === 'pending' &&
+    (a.status === 'completed' || isAppointmentPastSchedule(a))
   );
 
   const pendingTransfers = payments.filter(p =>
@@ -339,7 +361,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   <span>{pendingDepositVerification.length} seña(s) con comprobante declarado sin verificar. </span>
                 )}
                 {pendingCompletedPayments.length > 0 && (
-                  <span>{pendingCompletedPayments.length} turno(s) finalizados sin cobro asentado. </span>
+                  <span>{pendingCompletedPayments.length} turno(s) finalizados pendientes de confirmar cobro. </span>
                 )}
                 {pendingTransfers.length > 0 && (
                   <span>{pendingTransfers.length} transferencia(s) bancaria(s) por imputar.</span>
@@ -347,15 +369,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onNavigateToTab('cobros')}
-            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-lg text-xs font-bold transition-colors self-start sm:self-auto shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <CreditCard className="w-3.5 h-3.5" />
-            <span>Validar en Caja</span>
-            <ArrowRight className="w-3 h-3" />
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+            {pendingCompletedPayments.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setPostAppointmentCheckoutApt(pendingCompletedPayments[0])}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                title="Abrir formulario para asentar el cobro del turno"
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>Confirmar Cobro ({pendingCompletedPayments.length})</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('cobros')}
+              className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-400 text-neutral-950 rounded-lg text-xs font-bold transition-colors shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <CreditCard className="w-3.5 h-3.5" />
+              <span>Validar en Caja</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -553,6 +588,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
+      {/* Sección Cobros y Facturación */}
+      <div className="bg-white rounded-xl border border-slate-200/80 p-4 sm:p-5 shadow-2xs">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200/60 flex items-center justify-center shrink-0">
+              <DollarSign className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 tracking-tight font-display">
+                Cobros & Facturación
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Resumen de ingresos del consultorio
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 sm:gap-6">
+            <div className="border-l sm:border-l-0 pl-3 sm:pl-0 border-slate-200">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 block">
+                Facturación del Mes
+              </span>
+              <span className="text-lg sm:text-xl font-bold font-mono text-slate-900">
+                ${monthCollected.toLocaleString('es-AR')}
+              </span>
+            </div>
+
+            <div className="border-l pl-4 sm:pl-6 border-slate-200">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-400 block">
+                Facturación del Día
+              </span>
+              <span className="text-lg sm:text-xl font-bold font-mono text-emerald-700">
+                ${todayCollected.toLocaleString('es-AR')}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => onNavigateToTab('cobros')}
+              className="px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl transition-colors inline-flex items-center gap-1.5 shadow-2xs cursor-pointer ml-auto"
+            >
+              <span>Ver Detalles</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Main Grid: Today's Agenda + AI Assistant Quick Box */}
       <div className="grid lg:grid-cols-3 gap-5">
         {/* Left 2 Cols: Today's Appointments */}
@@ -618,22 +701,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                           <p className="text-xs text-neutral-600">
-                            {apt.service_name} • ${apt.service_price?.toLocaleString()}
+                            {apt.service_name} • ${apt.service_price?.toLocaleString('es-AR')}
                           </p>
                           {apt.payment_status === 'paid' ? (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 font-medium">
-                              • Pagado
+                            <span className="inline-flex items-center gap-1 text-[10px] bg-emerald-50 text-emerald-700 font-semibold px-1.5 py-0.5 rounded border border-emerald-200/60">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                              Cobrado ({getPaymentMethodLabel(apt.confirmed_payment_method)})
                             </span>
-                          ) : (
+                          ) : (apt.status === 'completed' || isAppointmentPastSchedule(apt)) ? (
                             <button
-                              onClick={() => onNavigateToTab('cobros')}
-                              className="inline-flex items-center gap-0.5 text-[10px] text-amber-700 hover:text-amber-800 font-medium transition-colors"
-                              title="Ir a registrar cobro"
+                              onClick={() => setPostAppointmentCheckoutApt(apt)}
+                              className="inline-flex items-center gap-1 text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold px-2 py-0.5 rounded border border-amber-300 transition-colors cursor-pointer shadow-2xs"
+                              title="El turno ya finalizó: Haz clic para confirmar por qué medio pagó el paciente"
                             >
-                              • Sin cobrar
+                              <DollarSign className="w-3 h-3 text-amber-700" />
+                              <span>Confirmar Cobro</span>
                             </button>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] text-neutral-400 font-medium">
+                              • Programado
+                            </span>
                           )}
                         </div>
                         {apt.notes && (
@@ -657,9 +746,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                       {apt.status !== 'completed' && (
                         <button
-                          onClick={() => updateAppointment(apt.id, { status: 'completed' })}
-                          className="px-2.5 py-1 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-md transition-colors"
-                          title="Marcar como atendido"
+                          onClick={() => {
+                            updateAppointment(apt.id, { status: 'completed' });
+                            setPostAppointmentCheckoutApt({ ...apt, status: 'completed' });
+                          }}
+                          className="px-2.5 py-1 text-xs font-medium text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-md transition-colors cursor-pointer"
+                          title="Marcar como atendido y confirmar cobro"
                         >
                           Atender
                         </button>

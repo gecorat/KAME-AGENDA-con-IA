@@ -56,6 +56,7 @@ import {
   DEMO_SAAS_TENANTS,
   DEMO_SAAS_TRANSFERS
 } from './demo-data';
+import { formatAppointmentConfirmationMessage } from './appointment-messages';
 import {
   saveAppointmentToFirestore,
   deleteAppointmentFromFirestore,
@@ -105,6 +106,24 @@ import {
   updateProfile
 } from './firestore-sync';
 
+export const isAppointmentPastSchedule = (apt: Appointment, nowMs: number = Date.now()): boolean => {
+  if (!apt || !apt.start_datetime) return false;
+  try {
+    if (apt.end_datetime) {
+      const endMs = new Date(apt.end_datetime).getTime();
+      if (!isNaN(endMs)) return endMs <= nowMs;
+    }
+    const startMs = new Date(apt.start_datetime).getTime();
+    if (!isNaN(startMs)) {
+      const durationMinutes = (apt as any).duration_minutes || 30;
+      return (startMs + durationMinutes * 60 * 1000) <= nowMs;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+};
+
 interface AgendaStoreContextType {
   appointments: Appointment[];
   patients: Patient[];
@@ -138,6 +157,7 @@ interface AgendaStoreContextType {
   // Conversation actions
   addChatMessage: (convId: string, message: Omit<ChatMessage, 'id'>) => void;
   createConversation: (patientName: string, patientPhone: string, initialMsg?: string) => Conversation;
+  syncAppointmentConfirmationToChat: (apt: Appointment, customMessage?: string) => Conversation;
   toggleAiHandled: (convId: string) => void;
   clearAllConversations: () => void;
 
@@ -250,6 +270,10 @@ interface AgendaStoreContextType {
   updateContactMessageStatus: (id: string, status: ContactMessageStatus, notes?: string) => Promise<void>;
   updateContactMessageNote: (id: string, notes: string) => Promise<void>;
   deleteContactMessage: (id: string) => Promise<void>;
+
+  // Post-appointment completion modal / checkout confirmation
+  postAppointmentCheckoutApt: Appointment | null;
+  setPostAppointmentCheckoutApt: (apt: Appointment | null) => void;
 
   // Utilities
   resetToDemoData: () => void;
@@ -506,6 +530,50 @@ export function normalizeDniString(dni?: string): string {
   return dni.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
 }
 
+export function isSamePatientRecord(p1: Partial<Patient>, p2: Partial<Patient>): boolean {
+  if (p1.id && p2.id && p1.id === p2.id) return true;
+
+  const d1 = normalizeDniString(p1.dni);
+  const d2 = normalizeDniString(p2.dni);
+  // DNI is a national identification number in Argentina: if both have DNI and match, they are definitely the same person
+  if (d1 && d2 && d1.length >= 6 && d1 === d2) return true;
+
+  const n1 = normalizeText(`${p1.first_name || ''} ${p1.last_name || ''}`);
+  const n2 = normalizeText(`${p2.first_name || ''} ${p2.last_name || ''}`);
+
+  const ph1 = normalizePhoneDigits(p1.phone);
+  const ph2 = normalizePhoneDigits(p2.phone);
+  const phonesMatch = Boolean(
+    ph1 && ph2 && ph1.length >= 7 && ph2.length >= 7 &&
+    (ph1 === ph2 || ph1.endsWith(ph2) || ph2.endsWith(ph1))
+  );
+
+  // Exact full name match (at least 4 characters)
+  if (n1 && n2 && n1.length >= 4 && n1 === n2) {
+    // If the full names are identical, and phones match OR at least one has no phone
+    if (phonesMatch || !ph1 || !ph2) {
+      if (!d1 || !d2 || d1 === d2) {
+        return true;
+      }
+    }
+  }
+
+  // If one of the names is completely generic or empty (e.g. "paciente", "prospecto", or empty), and phones match
+  const isGeneric1 = !n1 || n1 === 'paciente' || n1 === 'prospecto' || n1 === 'cliente';
+  const isGeneric2 = !n2 || n2 === 'paciente' || n2 === 'prospecto' || n2 === 'cliente';
+  if (phonesMatch && (isGeneric1 || isGeneric2)) {
+    return true;
+  }
+
+  // If phones match AND both names are provided:
+  // ONLY match if one name contains the other (e.g. "Juan" and "Juan Perez" or "Juan Perez" and "Juan Perez Gomez")
+  if (phonesMatch && n1 && n2 && (n1.includes(n2) || n2.includes(n1))) {
+    return true;
+  }
+
+  return false;
+}
+
 export function deduplicatePatientRecords(patientList: Patient[]): {
   canonicalList: Patient[];
   removedIds: string[];
@@ -516,32 +584,7 @@ export function deduplicatePatientRecords(patientList: Patient[]): {
   const idMap: Record<string, string> = {};
 
   for (const patient of patientList) {
-    const normPh = normalizePhoneDigits(patient.phone);
-    const normD = normalizeDniString(patient.dni);
-    const normNm = normalizeText(`${patient.first_name} ${patient.last_name}`);
-
-    const matchIdx = canonicalList.findIndex(existing => {
-      if (existing.id === patient.id) return true;
-
-      const exPh = normalizePhoneDigits(existing.phone);
-      if (normPh && exPh && normPh.length >= 7 && exPh.length >= 7) {
-        if (normPh === exPh || normPh.endsWith(exPh) || exPh.endsWith(normPh)) {
-          return true;
-        }
-      }
-
-      const exD = normalizeDniString(existing.dni);
-      if (normD && exD && normD.length >= 6 && normD === exD) {
-        return true;
-      }
-
-      const exNm = normalizeText(`${existing.first_name} ${existing.last_name}`);
-      if (normNm && exNm && normNm.length >= 5 && normNm === exNm) {
-        return true;
-      }
-
-      return false;
-    });
+    const matchIdx = canonicalList.findIndex(existing => isSamePatientRecord(existing, patient));
 
     if (matchIdx >= 0) {
       const canonical = canonicalList[matchIdx];
@@ -551,8 +594,14 @@ export function deduplicatePatientRecords(patientList: Patient[]): {
       }
 
       // Merge enriched details
-      canonical.first_name = canonical.first_name || patient.first_name;
-      canonical.last_name = canonical.last_name || patient.last_name;
+      const cNameGeneric = !canonical.first_name || canonical.first_name.toLowerCase() === 'paciente';
+      if (cNameGeneric && patient.first_name) {
+        canonical.first_name = patient.first_name;
+        canonical.last_name = patient.last_name;
+      } else {
+        canonical.first_name = canonical.first_name || patient.first_name;
+        canonical.last_name = canonical.last_name || patient.last_name;
+      }
       canonical.phone = canonical.phone || patient.phone;
       canonical.email = canonical.email || patient.email;
       canonical.dni = canonical.dni || patient.dni;
@@ -677,6 +726,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   });
 
   // Real-time Browser & App Notifications
+  const [postAppointmentCheckoutApt, setPostAppointmentCheckoutApt] = useState<Appointment | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
@@ -1682,7 +1732,66 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         const validList = remoteAppointments.filter(a => !isExampleItem(a));
-        setAppointments(validList);
+
+        // Auto-finalize appointments whose scheduled time has elapsed
+        const nowMs = Date.now();
+        const processedAppointments = validList.map(apt => {
+          if (!isExampleItem(apt) && apt.status !== 'cancelled' && apt.status !== 'completed' && isAppointmentPastSchedule(apt, nowMs)) {
+            const completedApt: Appointment = { ...apt, status: 'completed' };
+            saveAppointmentToFirestore(completedApt);
+            return completedApt;
+          }
+          return apt;
+        });
+
+        setAppointments(processedAppointments);
+
+        // Ensure every real appointment has an associated patient record in patients
+        setPatients(currentPatients => {
+          let updated = false;
+          let list = [...currentPatients];
+
+          validList.forEach(apt => {
+            if (!apt.patient_name || !apt.patient_name.trim() || isExampleItem(apt)) return;
+            const nameParts = apt.patient_name.trim().split(' ');
+            const dummy: Partial<Patient> = {
+              id: apt.patient_id,
+              first_name: nameParts[0] || 'Paciente',
+              last_name: nameParts.slice(1).join(' ') || '',
+              phone: apt.patient_phone || '',
+              dni: apt.patient_dni || ''
+            };
+
+            const exists = list.some(p => isSamePatientRecord(p, dummy));
+            if (!exists) {
+              const newPatId = apt.patient_id && !apt.patient_id.startsWith('pat-web-') && !apt.patient_id.startsWith('pat-bot-')
+                ? apt.patient_id
+                : `pat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+
+              const recoveredPatient: Patient = {
+                id: newPatId,
+                first_name: nameParts[0] || 'Paciente',
+                last_name: nameParts.slice(1).join(' ') || '',
+                phone: apt.patient_phone || '',
+                email: apt.patient_email || undefined,
+                dni: apt.patient_dni || undefined,
+                insurance_provider: apt.patient_insurance || undefined,
+                relationship_status: apt.status === 'completed' ? 'active' : 'prospect',
+                inquiry_channel: apt.origin === 'bot_whatsapp' ? 'whatsapp' : apt.origin === 'public_booking' ? 'web' : 'manual',
+                first_inquiry_at: apt.start_datetime || new Date().toISOString(),
+                total_appointments: 1,
+                completed_appointments_count: apt.status === 'completed' ? 1 : 0,
+                created_at: (apt as any).created_at || new Date().toISOString()
+              };
+
+              savePatientToFirestore(recoveredPatient);
+              list = [recoveredPatient, ...list];
+              updated = true;
+            }
+          });
+
+          return updated ? list : currentPatients;
+        });
       }
     });
 
@@ -1695,12 +1804,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
 
         const filtered = remotePatients.filter(p => !isExampleItem(p));
-        const { canonicalList, removedIds } = deduplicatePatientRecords(filtered);
-        
-        // Delete ghost duplicates from Firestore
-        if (removedIds.length > 0) {
-          removedIds.forEach(id => deletePatientFromFirestore(id));
-        }
+        const { canonicalList } = deduplicatePatientRecords(filtered);
 
         setPatients(canonicalList);
       }
@@ -1748,7 +1852,26 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    // Recurring check every 30 seconds to automatically finalize appointments when their end time passes
+    const autoFinalizeTimer = setInterval(() => {
+      const now = Date.now();
+      setAppointments(prev => {
+        let hasChanges = false;
+        const updated = prev.map(apt => {
+          if (!isExampleItem(apt) && apt.status !== 'cancelled' && apt.status !== 'completed' && isAppointmentPastSchedule(apt, now)) {
+            hasChanges = true;
+            const completedApt: Appointment = { ...apt, status: 'completed' };
+            saveAppointmentToFirestore(completedApt);
+            return completedApt;
+          }
+          return apt;
+        });
+        return hasChanges ? updated : prev;
+      });
+    }, 30000);
+
     return () => {
+      clearInterval(autoFinalizeTimer);
       unsubAppointments();
       unsubPatients();
       unsubSettings();
@@ -1846,61 +1969,74 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       clearExampleData();
     }
 
-    const id = `apt-${Date.now()}`;
-    const newApt: Appointment = { ...data, id };
-    
-    setAppointments(prev => [newApt, ...prev.filter(a => a.id !== id)]);
+    const aptId = `apt-${Date.now()}`;
+    const nameParts = (data.patient_name || 'Paciente').trim().split(' ');
+    const firstName = nameParts[0] || 'Paciente';
+    const lastName = nameParts.slice(1).join(' ') || '';
 
-    // Save to Firestore in background
-    saveAppointmentToFirestore(newApt);
+    const dummyPatient: Partial<Patient> = {
+      id: data.patient_id || '',
+      first_name: firstName,
+      last_name: lastName,
+      phone: data.patient_phone || '',
+      dni: data.patient_dni || ''
+    };
+
+    let targetPatientId = data.patient_id && !data.patient_id.startsWith('pat-web-') && !data.patient_id.startsWith('pat-bot-')
+      ? data.patient_id
+      : `pat-${Date.now()}`;
 
     // Ensure the patient is registered in the patients list and update total appointments without creating duplicates
     setPatients(prev => {
-      const normPhone = normalizePhoneDigits(data.patient_phone);
-      const normName = normalizeText(data.patient_name);
-
-      const existingIdx = prev.findIndex(p => {
-        if (data.patient_id && p.id === data.patient_id) return true;
-        const pNormPhone = normalizePhoneDigits(p.phone);
-        if (normPhone && pNormPhone && normPhone.length >= 7 && (normPhone === pNormPhone || normPhone.endsWith(pNormPhone) || pNormPhone.endsWith(normPhone))) return true;
-        const pNormName = normalizeText(`${p.first_name} ${p.last_name}`);
-        if (normName && pNormName && normName.length >= 5 && normName === pNormName) return true;
-        return false;
-      });
+      const existingIdx = prev.findIndex(p => isSamePatientRecord(p, dummyPatient));
 
       if (existingIdx >= 0) {
         const existing = prev[existingIdx];
+        targetPatientId = existing.id;
         const updatedPatient: Patient = {
           ...existing,
           total_appointments: (existing.total_appointments || 0) + 1,
           phone: existing.phone || data.patient_phone || '',
-          email: existing.email || data.patient_email || undefined
+          email: existing.email || data.patient_email || undefined,
+          dni: existing.dni || data.patient_dni || undefined,
+          insurance_provider: existing.insurance_provider || data.patient_insurance || undefined,
+          relationship_status: data.status === 'completed' ? 'active' : (existing.relationship_status || 'prospect')
         };
         savePatientToFirestore(updatedPatient);
         const next = [...prev];
         next[existingIdx] = updatedPatient;
         return next;
       } else {
-        const nameParts = (data.patient_name || 'Paciente').trim().split(' ');
-        const firstName = nameParts[0] || 'Paciente';
-        const lastName = nameParts.slice(1).join(' ') || '';
-        const newPatientId = data.patient_id && !data.patient_id.startsWith('pat-web-') && !data.patient_id.startsWith('pat-bot-')
-          ? data.patient_id
-          : `pat-${Date.now()}`;
-
         const newPatient: Patient = {
-          id: newPatientId,
+          id: targetPatientId,
           first_name: firstName,
           last_name: lastName,
           phone: data.patient_phone || '',
           email: data.patient_email || undefined,
+          dni: data.patient_dni || undefined,
+          insurance_provider: data.patient_insurance || undefined,
+          relationship_status: data.status === 'completed' ? 'active' : 'prospect',
+          inquiry_channel: data.origin === 'bot_whatsapp' ? 'whatsapp' : data.origin === 'public_booking' ? 'web' : 'manual',
+          first_inquiry_at: new Date().toISOString(),
           total_appointments: 1,
+          completed_appointments_count: data.status === 'completed' ? 1 : 0,
           created_at: new Date().toISOString()
         };
         savePatientToFirestore(newPatient);
         return [newPatient, ...prev];
       }
     });
+
+    const newApt: Appointment = {
+      ...data,
+      id: aptId,
+      patient_id: targetPatientId
+    };
+
+    setAppointments(prev => [newApt, ...prev.filter(a => a.id !== aptId)]);
+
+    // Save to Firestore in background
+    saveAppointmentToFirestore(newApt);
 
     // Trigger browser & app notification on Bot or Public Booking
     if (data.origin === 'bot_whatsapp' && practiceSettings.notify_bot_bookings !== false) {
@@ -1911,7 +2047,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         type: 'bot_booking',
         title: '🤖 ¡Nuevo turno agendado por el Bot!',
         message: `${data.patient_name} agendó "${data.service_name}" para el ${dateStr} a las ${timeStr} hs.`,
-        appointment_id: id,
+        appointment_id: aptId,
         patient_name: data.patient_name,
         service_name: data.service_name,
         datetime: data.start_datetime
@@ -1924,7 +2060,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         type: 'public_booking',
         title: '🌐 Nueva reserva online recibida',
         message: `${data.patient_name} reservó "${data.service_name}" para el ${dateStr} a las ${timeStr} hs desde el portal web.`,
-        appointment_id: id,
+        appointment_id: aptId,
         patient_name: data.patient_name,
         service_name: data.service_name,
         datetime: data.start_datetime
@@ -1935,17 +2071,59 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const updateAppointment = (id: string, updates: Partial<Appointment>) => {
+    let completedApt: Appointment | null = null;
     setAppointments(prev => {
       const next = prev.map(a => {
         if (a.id === id) {
+          const wasNotCompleted = a.status !== 'completed';
+          const isNowCompleted = updates.status === 'completed';
           const updated = { ...a, ...updates };
           saveAppointmentToFirestore(updated);
+          if (wasNotCompleted && isNowCompleted) {
+            completedApt = updated;
+          }
           return updated;
         }
         return a;
       });
       return next;
     });
+
+    if (completedApt) {
+      const targetApt = completedApt as Appointment;
+      // Auto open post-appointment confirmation checkout modal
+      setPostAppointmentCheckoutApt(targetApt);
+
+      // Trigger push and in-app notification to prompt payment validation
+      const price = targetApt.service_price || 0;
+      triggerNotification({
+        type: 'appointment_completed',
+        title: '🏁 Cita Finalizada - Confirmar Pago y Datos',
+        message: `La cita de ${targetApt.patient_name} ha finalizado. Confirma el medio de pago recibido ($${price.toLocaleString('es-AR')}) y valida datos adicionales para tus estadísticas.`,
+        appointment_id: targetApt.id,
+        patient_name: targetApt.patient_name,
+        service_name: targetApt.service_name,
+        datetime: targetApt.start_datetime,
+        force: true
+      });
+
+      // Update patient completed count and promote prospect if applicable
+      setPatients(prev => prev.map(p => {
+        const isTarget = (targetApt.patient_id && p.id === targetApt.patient_id) ||
+          (p.phone && targetApt.patient_phone && normalizePhoneDigits(p.phone) === normalizePhoneDigits(targetApt.patient_phone)) ||
+          normalizeText(`${p.first_name} ${p.last_name}`) === normalizeText(targetApt.patient_name);
+        if (isTarget) {
+          const updatedPatient: Patient = {
+            ...p,
+            relationship_status: 'active',
+            completed_appointments_count: (p.completed_appointments_count || 0) + 1
+          };
+          savePatientToFirestore(updatedPatient);
+          return updatedPatient;
+        }
+        return p;
+      }));
+    }
   };
 
   const deleteAppointment = (id: string) => {
@@ -1965,32 +2143,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       clearExampleData();
     }
 
-    const normPhone = normalizePhoneDigits(data.phone);
-    const normDni = normalizeDniString(data.dni);
-    const normName = normalizeText(`${data.first_name} ${data.last_name}`);
-
     // Check if patient already exists in local state
     let matchedPatient: Patient | null = null;
     let matchedIndex = -1;
 
     for (let i = 0; i < patients.length; i++) {
-      const p = patients[i];
-      const pNormPhone = normalizePhoneDigits(p.phone);
-      const pNormDni = normalizeDniString(p.dni);
-      const pNormName = normalizeText(`${p.first_name} ${p.last_name}`);
-
-      if (normPhone && pNormPhone && normPhone.length >= 7 && (normPhone === pNormPhone || normPhone.endsWith(pNormPhone) || pNormPhone.endsWith(normPhone))) {
-        matchedPatient = p;
-        matchedIndex = i;
-        break;
-      }
-      if (normDni && pNormDni && normDni.length >= 6 && normDni === pNormDni) {
-        matchedPatient = p;
-        matchedIndex = i;
-        break;
-      }
-      if (normName && pNormName && normName.length >= 5 && normName === pNormName) {
-        matchedPatient = p;
+      if (isSamePatientRecord(patients[i], data)) {
+        matchedPatient = patients[i];
         matchedIndex = i;
         break;
       }
@@ -2145,7 +2304,114 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ] : []
     };
     setConversations(prev => [newConv, ...prev]);
+
+    // Registrar automáticamente al consultante como futuro cliente (prospecto) si no existe
+    const cleanPhone = normalizePhoneDigits(patientPhone);
+    const cleanName = normalizeText(patientName);
+    setPatients(prev => {
+      const exists = prev.some(p => {
+        const pNormPhone = normalizePhoneDigits(p.phone);
+        if (cleanPhone && pNormPhone && cleanPhone.length >= 7 && (cleanPhone === pNormPhone || cleanPhone.endsWith(pNormPhone) || pNormPhone.endsWith(cleanPhone))) return true;
+        const pNormName = normalizeText(`${p.first_name} ${p.last_name}`);
+        if (cleanName && pNormName && cleanName.length >= 5 && cleanName === pNormName) return true;
+        return false;
+      });
+
+      if (!exists && patientName.trim()) {
+        const parts = patientName.trim().split(' ');
+        const firstName = parts[0] || 'Interesado';
+        const lastName = parts.slice(1).join(' ') || (patientPhone ? `(${patientPhone})` : '');
+        const newPatient: Patient = {
+          id: `pat-prospect-${Date.now()}`,
+          first_name: firstName,
+          last_name: lastName,
+          phone: patientPhone,
+          relationship_status: 'prospect',
+          inquiry_channel: 'whatsapp',
+          first_inquiry_at: new Date().toISOString(),
+          total_appointments: 0,
+          completed_appointments_count: 0,
+          notes: 'Futuro cliente registrado automáticamente al consultar por WhatsApp.',
+          created_at: new Date().toISOString()
+        };
+        savePatientToFirestore(newPatient);
+        return [newPatient, ...prev];
+      }
+      return prev;
+    });
+
     return newConv;
+  };
+
+  const syncAppointmentConfirmationToChat = (apt: Appointment, customMessage?: string): Conversation => {
+    const finalMessage = customMessage || formatAppointmentConfirmationMessage(apt, practiceSettings, {
+      forChat: true,
+      services
+    });
+
+    const nowTime = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+    const cleanPhone = normalizePhoneDigits(apt.patient_phone);
+    const cleanName = normalizeText(apt.patient_name);
+
+    let existingIndex = -1;
+    for (let i = 0; i < conversations.length; i++) {
+      const c = conversations[i];
+      const cPhone = normalizePhoneDigits(c.patient_phone);
+      if (cleanPhone && cPhone && cleanPhone.length >= 7 && (cleanPhone === cPhone || cleanPhone.endsWith(cPhone) || cPhone.endsWith(cleanPhone))) {
+        existingIndex = i;
+        break;
+      }
+      const cName = normalizeText(c.patient_name);
+      if (cleanName && cName && cleanName.length >= 4 && cleanName === cName) {
+        existingIndex = i;
+        break;
+      }
+    }
+
+    const aptDate = apt.start_datetime ? new Date(apt.start_datetime) : new Date();
+    const actionTakenDetails = `${apt.service_name || 'Turno'} • ${aptDate.toLocaleDateString('es-AR')} a las ${aptDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs`;
+
+    const newChatMsg: ChatMessage = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      role: 'assistant',
+      content: finalMessage,
+      timestamp: nowTime,
+      status: 'delivered',
+      actionTaken: {
+        type: 'appointment_created',
+        appointmentId: apt.id,
+        details: actionTakenDetails
+      }
+    };
+
+    if (existingIndex >= 0) {
+      const targetConv = conversations[existingIndex];
+      const updatedConv: Conversation = {
+        ...targetConv,
+        last_message: finalMessage,
+        last_message_time: nowTime,
+        messages: [...targetConv.messages, newChatMsg]
+      };
+      setConversations(prev => {
+        const copy = [...prev];
+        copy.splice(existingIndex, 1);
+        return [updatedConv, ...copy];
+      });
+      return updatedConv;
+    } else {
+      const newConv: Conversation = {
+        id: `conv-wa-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        patient_name: apt.patient_name,
+        patient_phone: apt.patient_phone,
+        last_message: finalMessage,
+        last_message_time: nowTime,
+        unread_count: 0,
+        ai_handled: false,
+        messages: [newChatMsg]
+      };
+      setConversations(prev => [newConv, ...prev]);
+      return newConv;
+    }
   };
 
   const toggleAiHandled = (convId: string) => {
@@ -2188,6 +2454,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Reminders Handlers
   const formatReminderText = (template: string, apt: Appointment): string => {
+    // If the template is the new confirmation template structure or asks for confirmation details
+    if (template.includes('Te confirmo tu turno') || template.includes('te paso los detalles')) {
+      return formatAppointmentConfirmationMessage(apt, practiceSettings, {
+        forChat: false,
+        services
+      });
+    }
+
     const aptDate = new Date(apt.start_datetime);
     const dateFormatted = aptDate.toLocaleDateString('es-AR', {
       weekday: 'long',
@@ -2201,9 +2475,31 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     });
     const confirmLink = `${window.location.origin}/?confirmar=${apt.id}`;
 
+    // Duration calculation
+    let durationMin = 30;
+    if (apt.start_datetime && apt.end_datetime) {
+      const diff = Math.round((new Date(apt.end_datetime).getTime() - new Date(apt.start_datetime).getTime()) / 60000);
+      if (diff > 0 && diff <= 480) durationMin = diff;
+    }
+
+    // Location calculation (address + city)
+    const addr = (practiceSettings.address || '').trim();
+    const city = (practiceSettings.city || '').trim();
+    const lugar = addr && city ? (addr.toLowerCase().includes(city.toLowerCase()) ? addr : `${addr}, ${city}`) : (addr || city || 'Consultorio Principal');
+
+    // Expected day notice
+    const now = new Date();
+    const d1 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const d2 = new Date(aptDate.getFullYear(), aptDate.getMonth(), aptDate.getDate());
+    const diffDays = Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+    const esperamos = diffDays === 0 ? '¡Te esperamos hoy!' : diffDays === 1 ? '¡Te esperamos mañana!' : '¡Te esperamos!';
+
     return template
       .replace(/{paciente}/g, apt.patient_name)
       .replace(/{servicio}/g, apt.service_name)
+      .replace(/{duracion}/g, String(durationMin))
+      .replace(/{lugar}/g, lugar)
+      .replace(/{esperamos}/g, esperamos)
       .replace(/{fecha}/g, dateFormatted)
       .replace(/{hora}/g, timeFormatted)
       .replace(/{profesional}/g, practiceSettings.professional_name)
@@ -2227,15 +2523,33 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       ? reminderConfig.whatsapp_template_2h
       : reminderConfig.whatsapp_template_24h;
 
-    const message = formatReminderText(template, apt);
+    let message = '';
+    if (timing === 'manual' || template.includes('Te confirmo tu turno') || template.includes('te paso los detalles')) {
+      message = formatAppointmentConfirmationMessage(apt, practiceSettings, {
+        forChat: false,
+        services
+      });
+    } else {
+      message = formatReminderText(template, apt);
+    }
+
     const cleanPhone = apt.patient_phone.replace(/\D/g, '');
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+
+    // Sync formatted confirmation to patient's WhatsApp chat history
+    const chatMessage = formatAppointmentConfirmationMessage(apt, practiceSettings, {
+      forChat: true,
+      services
+    });
+    syncAppointmentConfirmationToChat(apt, chatMessage);
 
     const nowIso = new Date().toISOString();
     setAppointments(prev => prev.map(a => {
       if (a.id === appointmentId) {
         return {
           ...a,
+          patient_confirmed: true,
+          patient_confirmed_at: a.patient_confirmed_at || nowIso,
           ...(timing === '2h'
             ? { reminder_2h_sent: true, reminder_2h_sent_at: nowIso }
             : { reminder_24h_sent: true, reminder_24h_sent_at: nowIso })
@@ -2438,7 +2752,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (data.appointment_id) {
       setAppointments(prev => prev.map(a => {
         if (a.id === data.appointment_id) {
-          return { ...a, payment_status: 'paid' };
+          const updatedApt: Appointment = {
+            ...a,
+            payment_status: 'paid',
+            confirmed_payment_method: data.method,
+            post_completion_confirmed: true
+          };
+          saveAppointmentToFirestore(updatedApt);
+          return updatedApt;
         }
         return a;
       }));
@@ -2694,6 +3015,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       updatePracticeSettings,
       addChatMessage,
       createConversation,
+      syncAppointmentConfirmationToChat,
       toggleAiHandled,
       clearAllConversations,
       addWaitlistEntry,
@@ -2752,6 +3074,9 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       updateContactMessageStatus,
       updateContactMessageNote,
       deleteContactMessage,
+      // Post-appointment completion modal / checkout confirmation
+      postAppointmentCheckoutApt,
+      setPostAppointmentCheckoutApt,
       // Notifications
       notifications,
       unreadNotificationsCount: notifications.filter(n => !n.read).length,

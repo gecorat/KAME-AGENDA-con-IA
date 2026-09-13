@@ -47,8 +47,13 @@ export interface Patient {
     relation: string;
   };
   total_appointments?: number;
+  completed_appointments_count?: number;
   is_example?: boolean;
   created_at: string;
+  // Status: 'prospect' = Futuro Cliente (ha consultado o tiene cita pendiente sin haber asistido aún), 'active' = Cliente Activo (ha asistido y completado al menos 1 cita)
+  relationship_status?: 'prospect' | 'active';
+  first_inquiry_at?: string;
+  inquiry_channel?: 'whatsapp' | 'web' | 'manual';
 }
 
 export interface BookingRequiredFields {
@@ -114,6 +119,11 @@ export interface Appointment {
   deposit_verified?: boolean;
   deposit_method?: 'alias_cbu' | 'mercadopago_connect' | 'mercadopago_link' | 'cash' | 'transfer';
   deposit_notes?: string;
+  // Post-completion confirmation tracking
+  post_completion_confirmed?: boolean;
+  post_completion_confirmed_at?: string;
+  confirmed_payment_method?: string;
+  post_completion_notes?: string;
 }
 
 export interface DayAvailability {
@@ -284,13 +294,15 @@ export interface PracticeSettings {
 
 export interface AppNotification {
   id: string;
-  type: 'bot_booking' | 'patient_confirm' | 'public_booking' | 'payment' | 'subscription' | 'test';
+  type: 'bot_booking' | 'patient_confirm' | 'public_booking' | 'payment' | 'subscription' | 'test' | 'appointment_completed';
   title: string;
   message: string;
   appointment_id?: string;
+  patient_id?: string;
   patient_name?: string;
   doctor_name?: string;
   service_name?: string;
+  price?: number;
   datetime?: string;
   action_url?: string;
   created_at: string;

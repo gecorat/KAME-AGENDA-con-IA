@@ -26,9 +26,12 @@ import {
   Trash2,
   Info,
   FileText,
-  Send
+  Send,
+  ChevronDown,
+  ChevronUp,
+  X
 } from 'lucide-react';
-import { useAgendaStore } from '../lib/store';
+import { useAgendaStore, isAppointmentPastSchedule } from '../lib/store';
 import { PaymentRecord, PaymentMethod, Appointment, CashMovement } from '../types';
 import { ReceiptModal } from '../components/ReceiptModal';
 import { NewPaymentModal } from '../components/NewPaymentModal';
@@ -38,6 +41,13 @@ import { CashMovementModal } from '../components/CashMovementModal';
 import { CashRegisterModal } from '../components/CashRegisterModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { getClientTerm } from '../lib/terminology';
+
+interface MethodSummaryItem {
+  total: number;
+  count: number;
+  label: string;
+  icon: string;
+}
 
 export const BillingView: React.FC = () => {
   const {
@@ -54,13 +64,19 @@ export const BillingView: React.FC = () => {
     clearAllPendingAppointments,
     hasExampleData,
     clearExampleData,
-    isExampleItem
+    isExampleItem,
+    setPostAppointmentCheckoutApt
   } = useAgendaStore();
 
-  const [activeTab, setActiveTab] = useState<'payments' | 'cash_box' | 'pending' | 'insurance'>('payments');
+  const [activeTab, setActiveTab] = useState<'pending' | 'payments' | 'cash_box' | 'insurance'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [methodFilter, setMethodFilter] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'today' | 'week' | 'month' | 'all'>('month');
+
+  // Interactive Breakdown Panel State (Desplegable de cobros por medio de pago)
+  const [isBreakdownOpen, setIsBreakdownOpen] = useState(false);
+  const [breakdownRange, setBreakdownRange] = useState<'day' | 'week' | 'month' | 'custom'>('month');
+  const [breakdownCustomDate, setBreakdownCustomDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   // Modals state
   const [selectedPaymentForReceipt, setSelectedPaymentForReceipt] = useState<PaymentRecord | null>(null);
@@ -256,6 +272,55 @@ export const BillingView: React.FC = () => {
     return map;
   }, [validPayments, todayStr]);
 
+  const oneWeekAgoIso = useMemo(() => {
+    return new Date(Date.now() - 7 * 86400000).toISOString();
+  }, []);
+
+  // Filter payments for the expandable breakdown drawer based on selected timeframe
+  const breakdownPayments = useMemo(() => {
+    return validPayments.filter(p => {
+      if (breakdownRange === 'day') {
+        const targetDay = breakdownCustomDate || todayStr;
+        return p.date.startsWith(targetDay);
+      }
+      if (breakdownRange === 'week') {
+        return p.date >= oneWeekAgoIso;
+      }
+      if (breakdownRange === 'month') {
+        return p.date >= startOfMonthStr;
+      }
+      if (breakdownRange === 'custom') {
+        return p.date.startsWith(breakdownCustomDate);
+      }
+      return true;
+    });
+  }, [validPayments, breakdownRange, breakdownCustomDate, todayStr, oneWeekAgoIso, startOfMonthStr]);
+
+  const breakdownTotal = useMemo(() => {
+    return breakdownPayments.reduce((sum, p) => sum + p.amount, 0);
+  }, [breakdownPayments]);
+
+  const breakdownByMethod = useMemo(() => {
+    const map: Record<string, { key: string; label: string; icon: string; total: number; count: number; badgeColor: string; barColor: string }> = {
+      cash: { key: 'cash', label: 'Efectivo', icon: '💵', total: 0, count: 0, badgeColor: 'bg-emerald-50 text-emerald-800 border-emerald-200', barColor: 'bg-emerald-500' },
+      mercado_pago: { key: 'mercado_pago', label: 'Mercado Pago', icon: '📱', total: 0, count: 0, badgeColor: 'bg-sky-50 text-sky-800 border-sky-200', barColor: 'bg-sky-500' },
+      transfer: { key: 'transfer', label: 'Transferencia', icon: '🏦', total: 0, count: 0, badgeColor: 'bg-indigo-50 text-indigo-800 border-indigo-200', barColor: 'bg-indigo-500' },
+      card_debit: { key: 'card_debit', label: 'Débito', icon: '💳', total: 0, count: 0, badgeColor: 'bg-purple-50 text-purple-800 border-purple-200', barColor: 'bg-purple-500' },
+      card_credit: { key: 'card_credit', label: 'Crédito', icon: '💳', total: 0, count: 0, badgeColor: 'bg-amber-50 text-amber-800 border-amber-200', barColor: 'bg-amber-500' },
+      insurance: { key: 'insurance', label: 'Obra Social', icon: '🏥', total: 0, count: 0, badgeColor: 'bg-teal-50 text-teal-800 border-teal-200', barColor: 'bg-teal-500' },
+    };
+
+    breakdownPayments.forEach(p => {
+      const k = p.method === 'mercadopago' ? 'mercado_pago' : p.method;
+      if (map[k]) {
+        map[k].total += p.amount;
+        map[k].count += 1;
+      }
+    });
+
+    return Object.values(map);
+  }, [breakdownPayments]);
+
   const getMethodBadge = (m: PaymentMethod) => {
     switch (m) {
       case 'cash':
@@ -365,13 +430,30 @@ export const BillingView: React.FC = () => {
         </div>
       )}
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* KPI Cards / Action Buttons */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         
-        {/* Total Mes */}
-        <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+        {/* Botón / Tarjeta 1: Facturación Mes Actual (Desplegable) */}
+        <div
+          onClick={() => {
+            if (isBreakdownOpen && breakdownRange === 'month') {
+              setIsBreakdownOpen(false);
+            } else {
+              setBreakdownRange('month');
+              setIsBreakdownOpen(true);
+            }
+          }}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer select-none group shadow-2xs ${
+            isBreakdownOpen && breakdownRange === 'month'
+              ? 'bg-emerald-50/70 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
+              : 'bg-white border-neutral-200 hover:border-emerald-300 hover:shadow-xs'
+          }`}
+          title="Toca para desplegar los detalles de cobro por medio de pago y filtros de fecha"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Facturado Mes Actual</span>
+            <span className="text-xs font-semibold text-neutral-600 uppercase tracking-wider">
+              Facturación Mes Actual
+            </span>
             <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold">
               $
             </div>
@@ -380,16 +462,41 @@ export const BillingView: React.FC = () => {
             <span className="text-2xl font-bold font-mono text-neutral-900">
               ${monthCollected.toLocaleString('es-AR')}
             </span>
-            <span className="text-[11px] text-emerald-700 font-medium block mt-1 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" /> Cobros totales confirmados
-            </span>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-emerald-800 font-semibold">
+              <span className="flex items-center gap-1">
+                {isBreakdownOpen && breakdownRange === 'month' ? 'Ocultar desglose' : 'Ver desglose por medios'}
+              </span>
+              {isBreakdownOpen && breakdownRange === 'month' ? (
+                <ChevronUp className="w-3.5 h-3.5 text-emerald-700" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-emerald-700 group-hover:translate-y-0.5 transition-transform" />
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Cobrado Hoy */}
-        <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+        {/* Botón / Tarjeta 2: Ingresos de Hoy */}
+        <div
+          onClick={() => {
+            if (isBreakdownOpen && breakdownRange === 'day') {
+              setIsBreakdownOpen(false);
+            } else {
+              setBreakdownRange('day');
+              setBreakdownCustomDate(todayStr);
+              setIsBreakdownOpen(true);
+            }
+          }}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer select-none group shadow-2xs ${
+            isBreakdownOpen && breakdownRange === 'day'
+              ? 'bg-sky-50/70 border-sky-300 ring-2 ring-sky-500/20 shadow-xs'
+              : 'bg-white border-neutral-200 hover:border-sky-300 hover:shadow-xs'
+          }`}
+          title="Toca para desplegar los detalles de los cobros registrados hoy"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Ingresos de Hoy</span>
+            <span className="text-xs font-semibold text-neutral-600 uppercase tracking-wider">
+              Ingresos de Hoy
+            </span>
             <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-700 flex items-center justify-center">
               <Calendar className="w-4 h-4" />
             </div>
@@ -398,37 +505,31 @@ export const BillingView: React.FC = () => {
             <span className="text-2xl font-bold font-mono text-neutral-900">
               ${todayCollected.toLocaleString('es-AR')}
             </span>
-            <span className="text-[11px] text-neutral-500 block mt-1">
-              {validPayments.filter(p => p.date.startsWith(todayStr)).length} transacciones registradas hoy
-            </span>
-          </div>
-        </div>
-
-        {/* Efectivo en Gaveta */}
-        <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Caja Chica (Efectivo)</span>
-            <div className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
-              cashRegister.status === 'open' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-            }`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${cashRegister.status === 'open' ? 'bg-emerald-600 animate-pulse' : 'bg-red-600'}`} />
-              {cashRegister.status === 'open' ? 'Abierta' : 'Cerrada'}
+            <div className="mt-2 flex items-center justify-between text-[11px] text-sky-800 font-semibold">
+              <span>{validPayments.filter(p => p.date.startsWith(todayStr)).length} cobros de hoy</span>
+              {isBreakdownOpen && breakdownRange === 'day' ? (
+                <ChevronUp className="w-3.5 h-3.5 text-sky-700" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5 text-sky-700 group-hover:translate-y-0.5 transition-transform" />
+              )}
             </div>
           </div>
-          <div className="mt-3">
-            <span className="text-2xl font-bold font-mono text-neutral-900">
-              ${currentCashInBox.toLocaleString('es-AR')}
-            </span>
-            <span className="text-[11px] text-neutral-500 block mt-1">
-              Fondo base: ${cashRegister.opening_cash.toLocaleString('es-AR')}
-            </span>
-          </div>
         </div>
 
-        {/* Pendiente de Cobro */}
-        <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-2xs">
+        {/* Botón / Tarjeta 3: Por Cobrar en Espera */}
+        <div
+          onClick={() => setActiveTab('pending')}
+          className={`p-5 rounded-2xl border transition-all cursor-pointer select-none group shadow-2xs ${
+            activeTab === 'pending'
+              ? 'bg-amber-50/70 border-amber-300 ring-2 ring-amber-500/20 shadow-xs'
+              : 'bg-white border-neutral-200 hover:border-amber-300 hover:shadow-xs'
+          }`}
+          title="Ir a la lista de turnos con pago pendiente"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Por Cobrar en Espera</span>
+            <span className="text-xs font-semibold text-neutral-600 uppercase tracking-wider">
+              Por Cobrar en Espera
+            </span>
             <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
               <Clock className="w-4 h-4" />
             </div>
@@ -437,13 +538,178 @@ export const BillingView: React.FC = () => {
             <span className="text-2xl font-bold font-mono text-amber-900">
               ${totalPendingAmount.toLocaleString('es-AR')}
             </span>
-            <span className="text-[11px] text-amber-700 font-medium block mt-1">
-              {pendingAppointments.length} turnos con pago pendiente
-            </span>
+            <div className="mt-2 flex items-center justify-between text-[11px] text-amber-800 font-semibold">
+              <span>{pendingAppointments.length} turnos con pago pendiente</span>
+              <span className="font-bold underline decoration-amber-400">Ver turnos →</span>
+            </div>
           </div>
         </div>
 
       </div>
+
+      {/* Desplegable interactivo: Detalles de facturación por medio de pago y lapso temporal */}
+      {isBreakdownOpen && (
+        <div className="bg-white rounded-2xl border border-emerald-200/90 shadow-sm p-4 sm:p-5 space-y-4 transition-all">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-neutral-100">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-base">💳</span>
+                <h3 className="text-xs font-bold text-neutral-900 tracking-wide uppercase font-display">
+                  Detalles de Facturación por Medio de Pago
+                </h3>
+              </div>
+              <p className="text-[11px] text-neutral-500 mt-0.5">
+                Selecciona el lapso temporal para auditar el acumulado y los canales utilizados
+              </p>
+            </div>
+
+            {/* Selectores de lapso: Día, Semana, Mes, Fecha específica */}
+            <div className="flex flex-wrap items-center gap-1.5 self-start md:self-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setBreakdownRange('day');
+                  setBreakdownCustomDate(todayStr);
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  breakdownRange === 'day' && breakdownCustomDate === todayStr
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                }`}
+              >
+                Día (Hoy)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBreakdownRange('week')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  breakdownRange === 'week'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                }`}
+              >
+                Semana (7 días)
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBreakdownRange('month')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  breakdownRange === 'month'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                }`}
+              >
+                Mes Actual
+              </button>
+
+              {/* Selector de fecha puntual */}
+              <div className="flex items-center gap-1 pl-1">
+                <span className="text-[11px] text-neutral-400 font-medium">Fecha:</span>
+                <input
+                  type="date"
+                  value={breakdownCustomDate}
+                  onChange={(e) => {
+                    setBreakdownCustomDate(e.target.value);
+                    setBreakdownRange('custom');
+                  }}
+                  className={`px-2 py-1 text-xs rounded-lg border transition-colors cursor-pointer ${
+                    breakdownRange === 'custom' || (breakdownRange === 'day' && breakdownCustomDate !== todayStr)
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-900 font-bold'
+                      : 'border-neutral-200 bg-white text-neutral-700'
+                  }`}
+                  title="Elegir fecha específica"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsBreakdownOpen(false)}
+                className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors ml-1 cursor-pointer"
+                title="Cerrar panel de desglose"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Acumulado en el lapso elegido */}
+          <div className="bg-neutral-50/90 rounded-xl p-3 sm:p-4 border border-neutral-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-neutral-500 block">
+                Total Acumulado ({breakdownRange === 'day' ? (breakdownCustomDate === todayStr ? 'Día de hoy' : `Día ${breakdownCustomDate}`) : breakdownRange === 'week' ? 'Últimos 7 días' : breakdownRange === 'month' ? 'Mes actual' : `Fecha ${breakdownCustomDate}`})
+              </span>
+              <div className="text-2xl font-bold font-mono text-neutral-900 mt-0.5">
+                ${breakdownTotal.toLocaleString('es-AR')}
+              </div>
+            </div>
+            <div className="text-xs text-neutral-600 font-medium sm:text-right">
+              <span className="font-semibold text-neutral-800">
+                {breakdownPayments.length} {breakdownPayments.length === 1 ? 'cobro asentado' : 'cobros asentados'}
+              </span>
+              <span className="block text-[11px] text-neutral-500 mt-0.5">
+                Ticket promedio: ${breakdownPayments.length > 0 ? Math.round(breakdownTotal / breakdownPayments.length).toLocaleString('es-AR') : '0'}
+              </span>
+            </div>
+          </div>
+
+          {/* Barra proporcional de distribución */}
+          {breakdownTotal > 0 && (
+            <div className="w-full h-2 bg-neutral-200 rounded-full overflow-hidden flex">
+              {breakdownByMethod.map((item) => {
+                if (item.total <= 0) return null;
+                const pct = (item.total / breakdownTotal) * 100;
+                return (
+                  <div
+                    key={item.key}
+                    className={`${item.barColor} transition-all`}
+                    style={{ width: `${pct}%` }}
+                    title={`${item.label}: $${item.total.toLocaleString('es-AR')} (${pct.toFixed(1)}%)`}
+                  />
+                );
+              })}
+            </div>
+          )}
+
+          {/* Tarjetas de detalle por medio de pago */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {breakdownByMethod.map((item) => {
+              const pct = breakdownTotal > 0 ? ((item.total / breakdownTotal) * 100).toFixed(0) : '0';
+              return (
+                <div
+                  key={item.key}
+                  onClick={() => {
+                    setActiveTab('payments');
+                    setMethodFilter(item.key);
+                  }}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer hover:shadow-2xs ${
+                    item.total > 0 ? item.badgeColor : 'bg-neutral-50/70 border-neutral-200/80 text-neutral-400'
+                  }`}
+                  title="Toca para filtrar estos comprobantes en la tabla inferior"
+                >
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-semibold flex items-center gap-1 truncate">
+                      <span>{item.icon}</span>
+                      <span className="truncate">{item.label}</span>
+                    </span>
+                    {item.total > 0 && (
+                      <span className="text-[10px] font-bold opacity-85 shrink-0 ml-1">{pct}%</span>
+                    )}
+                  </div>
+                  <div className="text-sm font-bold font-mono tracking-tight text-neutral-900 mt-0.5">
+                    ${item.total.toLocaleString('es-AR')}
+                  </div>
+                  <div className="text-[10px] text-neutral-500 mt-0.5 flex items-center justify-between">
+                    <span>{item.count} {item.count === 1 ? 'cobro' : 'cobros'}</span>
+                    <span className="opacity-0 group-hover:opacity-100 text-emerald-700">Ver</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-hidden">
@@ -457,6 +723,18 @@ export const BillingView: React.FC = () => {
           }}
           className="flex items-center border-b border-neutral-200 px-4 bg-neutral-50/70 overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0"
         >
+          <button
+            onClick={() => setActiveTab('pending')}
+            className={`py-3.5 px-4 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-2 ${
+              activeTab === 'pending'
+                ? 'border-emerald-600 text-emerald-800 bg-white'
+                : 'border-transparent text-neutral-600 hover:text-neutral-900'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            Turnos Sin Cobrar ({pendingAppointments.length})
+          </button>
+
           <button
             onClick={() => setActiveTab('payments')}
             className={`py-3.5 px-4 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-2 ${
@@ -482,18 +760,6 @@ export const BillingView: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setActiveTab('pending')}
-            className={`py-3.5 px-4 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-2 ${
-              activeTab === 'pending'
-                ? 'border-emerald-600 text-emerald-800 bg-white'
-                : 'border-transparent text-neutral-600 hover:text-neutral-900'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            Turnos Sin Cobrar ({pendingAppointments.length})
-          </button>
-
-          <button
             onClick={() => setActiveTab('insurance')}
             className={`py-3.5 px-4 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors flex items-center gap-2 ${
               activeTab === 'insurance'
@@ -509,7 +775,7 @@ export const BillingView: React.FC = () => {
         {/* TAB 1: PAYMENTS LIST */}
         {activeTab === 'payments' && (
           <div className="p-4 md:p-6 space-y-4">
-            
+
             {/* Filter controls */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="relative flex-1 max-w-sm">
@@ -912,6 +1178,7 @@ export const BillingView: React.FC = () => {
                   <tr>
                     <th className="py-3 px-4">Fecha & Hora</th>
                     <th className="py-3 px-4">Paciente</th>
+                    <th className="py-3 px-4">Estado del Turno</th>
                     <th className="py-3 px-4">Teléfono</th>
                     <th className="py-3 px-4">Servicio / Tratamiento</th>
                     <th className="py-3 px-4 text-right">Arancel ($)</th>
@@ -921,62 +1188,88 @@ export const BillingView: React.FC = () => {
                 <tbody className="divide-y divide-neutral-100">
                   {pendingAppointments.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-neutral-400">
+                      <td colSpan={7} className="py-8 text-center text-neutral-400">
                         ¡Excelente! No hay turnos pendientes de cobro en este momento.
                       </td>
                     </tr>
                   ) : (
-                    pendingAppointments.map(apt => (
-                      <tr key={apt.id} className="hover:bg-neutral-50 transition-colors">
-                        <td className="py-3 px-4 font-mono">
-                          <span className="font-semibold text-neutral-900 block">
-                            {new Date(apt.start_datetime).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}
-                          </span>
-                          <span className="text-[10px] text-neutral-500">
-                            {new Date(apt.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-semibold text-neutral-900">
-                          {apt.patient_name}
-                        </td>
-                        <td className="py-3 px-4 text-neutral-600 font-mono">
-                          {apt.patient_phone}
-                        </td>
-                        <td className="py-3 px-4 text-neutral-800">
-                          {apt.service_name}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-bold text-sm text-neutral-900">
-                          ${apt.service_price?.toLocaleString('es-AR')}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5 ml-auto">
-                            <button
-                              onClick={() => handleCollectAppointment(apt)}
-                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1"
-                              title="Registrar cobro confirmado en caja"
-                            >
-                              <DollarSign className="w-3.5 h-3.5" />
-                              Registrar Cobro
-                            </button>
-                            <button
-                              onClick={() => setSelectedAptForRequest(apt)}
-                              className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1"
-                              title="Solicitar datos de pago por WhatsApp (Alias, MP o QR)"
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                              Solicitar Pago
-                            </button>
-                            <button
-                              onClick={() => setAppointmentToDelete(apt)}
-                              className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                              title="Eliminar este turno"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                    pendingAppointments.map(apt => {
+                      const isEnded = apt.status === 'completed' || isAppointmentPastSchedule(apt);
+                      return (
+                        <tr key={apt.id} className="hover:bg-neutral-50 transition-colors">
+                          <td className="py-3 px-4 font-mono">
+                            <span className="font-semibold text-neutral-900 block">
+                              {new Date(apt.start_datetime).toLocaleDateString([], { day: '2-digit', month: '2-digit' })}
+                            </span>
+                            <span className="text-[10px] text-neutral-500">
+                              {new Date(apt.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-neutral-900">
+                            {apt.patient_name}
+                          </td>
+                          <td className="py-3 px-4">
+                            {isEnded ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-600 animate-pulse" />
+                                Finalizado / Atendido
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-100 text-neutral-600">
+                                🕒 Programado (Próximo)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-neutral-600 font-mono">
+                            {apt.patient_phone}
+                          </td>
+                          <td className="py-3 px-4 text-neutral-800">
+                            {apt.service_name}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-bold text-sm text-neutral-900">
+                            ${apt.service_price?.toLocaleString('es-AR')}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5 ml-auto">
+                              {isEnded ? (
+                                <button
+                                  onClick={() => setPostAppointmentCheckoutApt(apt)}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="Confirmar por qué medio pagó el paciente y emitir recibo"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  Confirmar Cobro
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleCollectAppointment(apt)}
+                                  className="px-2.5 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-neutral-800 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="Registrar cobro anticipado en caja"
+                                >
+                                  <DollarSign className="w-3.5 h-3.5" />
+                                  Cobro Anticipado
+                                </button>
+                              )}
+                              <button
+                                onClick={() => setSelectedAptForRequest(apt)}
+                                className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Solicitar datos de pago por WhatsApp (Alias, MP o QR)"
+                              >
+                                <Send className="w-3.5 h-3.5" />
+                                Solicitar Pago
+                              </button>
+                              <button
+                                onClick={() => setAppointmentToDelete(apt)}
+                                className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                title="Eliminar este turno"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

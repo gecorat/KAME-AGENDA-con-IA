@@ -20,6 +20,11 @@ import {
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
 import { Conversation, ChatMessage } from '../types';
+import {
+  getArgentinaTimeString,
+  parseArgentinaDate,
+  formatArgentinaDisplayDate
+} from '../lib/timezone';
 
 export const AssistantBotView: React.FC = () => {
   const {
@@ -62,7 +67,7 @@ export const AssistantBotView: React.FC = () => {
       setInputText('');
     }
 
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const nowTime = getArgentinaTimeString();
 
     // 1. Add user message to conversation
     addChatMessage(activeConv.id, {
@@ -85,7 +90,9 @@ export const AssistantBotView: React.FC = () => {
           existingAppointments: appointments.slice(0, 10).map(a => ({
             start_datetime: a.start_datetime,
             service_name: a.service_name
-          }))
+          })),
+          senderPhone: activeConv.patient_phone || '',
+          patientName: activeConv.patient_name || ''
         };
 
         const res = await fetch('/api/assistant/chat', {
@@ -96,7 +103,7 @@ export const AssistantBotView: React.FC = () => {
 
         const data = await res.json();
 
-        const replyTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const replyTime = getArgentinaTimeString();
 
         if (data.reply) {
           // If the AI decided to book an appointment
@@ -116,7 +123,7 @@ export const AssistantBotView: React.FC = () => {
                 s.name.toLowerCase().includes((data.action.service_name || '').toLowerCase())
               ) || services[0];
 
-              const aptDate = data.action.datetime ? new Date(data.action.datetime) : new Date();
+              const aptDate = data.action.datetime ? parseArgentinaDate(data.action.datetime) : new Date();
               const endDate = new Date(aptDate.getTime() + (matchedService?.duration_minutes || 30) * 60000);
 
               const created = addAppointment({
@@ -137,7 +144,7 @@ export const AssistantBotView: React.FC = () => {
               actionTaken = {
                 type: 'appointment_created',
                 appointmentId: created.id,
-                details: `${matchedService.name} el ${aptDate.toLocaleDateString()} a las ${aptDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} hs`
+                details: `${matchedService.name} el ${formatArgentinaDisplayDate(aptDate, { day: 'numeric', month: 'numeric', year: 'numeric' })} a las ${getArgentinaTimeString(aptDate)} hs`
               };
 
               setLastBookedAction(actionTaken);
@@ -159,7 +166,7 @@ export const AssistantBotView: React.FC = () => {
         addChatMessage(activeConv.id, {
           role: 'assistant',
           content: 'Disculpa, tuve un inconveniente técnico momentáneo. ¿Podrías reiterar tu consulta?',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          timestamp: getArgentinaTimeString()
         });
       } finally {
         setLoading(false);

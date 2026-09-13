@@ -217,6 +217,8 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
       patient_name: patientName.trim(),
       patient_phone: patientPhone.trim(),
       patient_email: patientEmail.trim() || undefined,
+      patient_dni: patientDni.trim() || undefined,
+      patient_insurance: patientInsurance.trim() || undefined,
       service_id: selectedService.id,
       service_name: selectedService.name,
       service_price: selectedService.price,

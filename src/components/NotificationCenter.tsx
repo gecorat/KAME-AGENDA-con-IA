@@ -46,7 +46,8 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     activeToastNotification,
     dismissToastNotification,
     practiceSettings,
-    updatePracticeSettings
+    updatePracticeSettings,
+    setPostAppointmentCheckoutApt
   } = useAgendaStore();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -71,6 +72,15 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const handleNotificationClick = (notif: AppNotification) => {
     markNotificationAsRead(notif.id);
     setIsOpen(false);
+
+    if (notif.type === 'appointment_completed' && notif.appointment_id) {
+      const targetApt = appointments.find(a => a.id === notif.appointment_id);
+      if (targetApt) {
+        setPostAppointmentCheckoutApt(targetApt);
+        return;
+      }
+    }
+
     onSelectTab('agenda');
     if (notif.appointment_id && onOpenAppointment) {
       onOpenAppointment(notif.appointment_id);
@@ -134,12 +144,16 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                       ? 'bg-sky-950 text-sky-300 border border-sky-800'
                       : activeToastNotification.type === 'patient_confirm'
                       ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
+                      : activeToastNotification.type === 'appointment_completed'
+                      ? 'bg-emerald-950 text-emerald-300 border border-emerald-800'
                       : 'bg-amber-950 text-amber-300 border border-amber-800'
                   }`}>
                     {activeToastNotification.type === 'bot_booking'
                       ? 'Bot de WhatsApp'
                       : activeToastNotification.type === 'patient_confirm'
                       ? 'Paciente Confirmó'
+                      : activeToastNotification.type === 'appointment_completed'
+                      ? 'Cita Finalizada'
                       : 'Notificación'}
                   </span>
                   <span className="text-[11px] text-neutral-400">Ahora</span>
@@ -154,17 +168,36 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                 </p>
 
                 <div className="mt-3 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      dismissToastNotification();
-                      onSelectTab('agenda');
-                    }}
-                    className="px-3 py-1.5 bg-white hover:bg-neutral-100 text-neutral-900 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
-                  >
-                    <Calendar className="w-3.5 h-3.5" />
-                    <span>Ver en Agenda</span>
-                  </button>
+                  {activeToastNotification.type === 'appointment_completed' && activeToastNotification.appointment_id ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetApt = appointments.find(a => a.id === activeToastNotification.appointment_id);
+                        dismissToastNotification();
+                        if (targetApt) {
+                          setPostAppointmentCheckoutApt(targetApt);
+                        } else {
+                          onSelectTab('agenda');
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-neutral-950 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Validar Pago y Datos</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        dismissToastNotification();
+                        onSelectTab('agenda');
+                      }}
+                      className="px-3 py-1.5 bg-white hover:bg-neutral-100 text-neutral-900 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-2xs"
+                    >
+                      <Calendar className="w-3.5 h-3.5" />
+                      <span>Ver en Agenda</span>
+                    </button>
+                  )}
 
                   <button
                     type="button"

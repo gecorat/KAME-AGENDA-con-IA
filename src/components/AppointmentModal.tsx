@@ -7,6 +7,14 @@ import { NewPaymentModal } from './NewPaymentModal';
 import { PhoneInputWithCountry } from './PhoneInputWithCountry';
 import { ConfirmModal } from './ConfirmModal';
 import { getClientTerm } from '../lib/terminology';
+import { formatAppointmentConfirmationMessage } from '../lib/appointment-messages';
+import {
+  getArgentinaDateString,
+  getArgentinaTimeString,
+  parseArgentinaDate,
+  createArgentinaIsoString,
+  getTodayArgentinaDateStr
+} from '../lib/timezone';
 
 interface AppointmentModalProps {
   isOpen: boolean;
@@ -40,6 +48,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     sendWhatsAppReminder,
     sendEmailReminder,
     confirmAppointmentByPatient,
+    syncAppointmentConfirmationToChat,
     deleteAppointment
   } = useAgendaStore();
 
@@ -62,6 +71,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [isTelemedicine, setIsTelemedicine] = useState<boolean>(false);
   const [patientConfirmed, setPatientConfirmed] = useState<boolean>(false);
+  const [sendWhatsAppOnSave, setSendWhatsAppOnSave] = useState<boolean>(true);
   const [sentNotice, setSentNotice] = useState<string | null>(null);
 
   // Deposit verification states
@@ -103,9 +113,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         setPatientSearchQuery(appointmentToEdit.patient_name || '');
       }
 
-      const d = new Date(appointmentToEdit.start_datetime);
-      setDate(d.toISOString().split('T')[0]);
-      setTime(d.toTimeString().slice(0, 5));
+      const d = parseArgentinaDate(appointmentToEdit.start_datetime);
+      setDate(getArgentinaDateString(d));
+      setTime(getArgentinaTimeString(d));
       
       setStatus(appointmentToEdit.status);
       setPaymentStatus(appointmentToEdit.payment_status);
@@ -139,7 +149,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       }
       setSelectedServiceId(services[0]?.id || '');
       
-      const today = defaultDate || new Date().toISOString().split('T')[0];
+      const today = defaultDate || getTodayArgentinaDateStr();
       setDate(today);
       setTime(defaultTime || '10:00');
       
@@ -233,14 +243,15 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
     const service = services.find(s => s.id === selectedServiceId) || services[0];
     const duration = service?.duration_minutes || 30;
 
-    const [hours, minutes] = time.split(':').map(Number);
-    const startObj = new Date(date);
-    startObj.setHours(hours, minutes, 0, 0);
-
+    const startIso = createArgentinaIsoString(date, time);
+    const startObj = new Date(startIso);
     const endObj = new Date(startObj.getTime() + duration * 60000);
 
+    let savedApt: Appointment;
+
     if (appointmentToEdit) {
-      updateAppointment(appointmentToEdit.id, {
+      savedApt = {
+        ...appointmentToEdit,
         patient_id: targetPatientId,
         patient_name: targetPatientName,
         patient_phone: targetPatientPhone,
@@ -252,7 +263,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         status,
         payment_status: paymentStatus,
         notes,
-        patient_confirmed: patientConfirmed,
+        patient_confirmed: patientConfirmed || sendWhatsAppOnSave,
         origin: isTelemedicine ? 'telemedicine' : (appointmentToEdit.origin || 'manual'),
         meet_url: isTelemedicine ? 'https://meet.google.com/agd-pro-meet' : undefined,
         deposit_declared: depositDeclared,
@@ -260,9 +271,10 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         deposit_verified: depositVerified,
         deposit_method: depositMethod as any,
         deposit_notes: depositNotes
-      });
+      };
+      updateAppointment(appointmentToEdit.id, savedApt);
     } else {
-      addAppointment({
+      savedApt = addAppointment({
         patient_id: targetPatientId,
         patient_name: targetPatientName,
         patient_phone: targetPatientPhone,
@@ -274,7 +286,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         status,
         payment_status: paymentStatus,
         notes,
-        patient_confirmed: patientConfirmed,
+        patient_confirmed: patientConfirmed || sendWhatsAppOnSave,
         origin: isTelemedicine ? 'telemedicine' : 'manual',
         meet_url: isTelemedicine ? 'https://meet.google.com/agd-pro-meet' : undefined,
         deposit_declared: depositDeclared,
@@ -285,7 +297,93 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       });
     }
 
+    // Si está tildado enviar confirmación por WhatsApp y el paciente tiene teléfono
+    if (sendWhatsAppOnSave && targetPatientPhone) {
+      const confirmationText = formatAppointmentConfirmationMessage(
+        savedApt,
+        practiceSettings,
+        { forChat: false, services }
+      );
+      const chatText = formatAppointmentConfirmationMessage(
+        savedApt,
+        practiceSettings,
+        { forChat: true, services }
+      );
+      syncAppointmentConfirmationToChat(savedApt, chatText);
+
+      const cleanPhone = targetPatientPhone.replace(/\D/g, '');
+      if (cleanPhone) {
+        const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(confirmationText)}`;
+        window.open(waUrl, '_blank', 'noopener,noreferrer');
+      }
+    }
+
     onClose();
+  };
+
+  const handleSendWhatsAppConfirmationNow = () => {
+    let targetPatientId = selectedPatientId || appointmentToEdit?.patient_id || 'pat-manual';
+    let targetPatientName = '';
+    let targetPatientPhone = '';
+
+    if (newPatientMode) {
+      targetPatientName = newPatientName.trim();
+      targetPatientPhone = newPatientPhone.trim();
+    } else {
+      const patient = patients.find(p => p.id === selectedPatientId);
+      targetPatientId = patient ? patient.id : targetPatientId;
+      targetPatientName = patient ? `${patient.first_name} ${patient.last_name}` : patientSearchQuery.trim();
+      targetPatientPhone = patient?.phone || '';
+    }
+
+    if (!targetPatientPhone) {
+      setSentNotice('Ingresá el teléfono del paciente para enviar');
+      setTimeout(() => setSentNotice(null), 3000);
+      return;
+    }
+
+    const service = services.find(s => s.id === selectedServiceId) || services[0];
+    const duration = service?.duration_minutes || 30;
+    const startIso = createArgentinaIsoString(date, time);
+    const startObj = new Date(startIso);
+    const endObj = new Date(startObj.getTime() + duration * 60000);
+
+    const tempApt: Appointment = {
+      id: appointmentToEdit ? appointmentToEdit.id : `apt-temp-${Date.now()}`,
+      patient_id: targetPatientId || 'pat-temp',
+      patient_name: targetPatientName || 'Paciente',
+      patient_phone: targetPatientPhone,
+      service_id: service.id,
+      service_name: service.name,
+      service_price: service.price,
+      start_datetime: startObj.toISOString(),
+      end_datetime: endObj.toISOString(),
+      status: 'confirmed',
+      payment_status: paymentStatus,
+      origin: isTelemedicine ? 'telemedicine' : 'manual',
+      patient_confirmed: true
+    };
+
+    const directMessage = formatAppointmentConfirmationMessage(
+      tempApt,
+      practiceSettings,
+      { forChat: false, services }
+    );
+    const chatMessage = formatAppointmentConfirmationMessage(
+      tempApt,
+      practiceSettings,
+      { forChat: true, services }
+    );
+
+    syncAppointmentConfirmationToChat(tempApt, chatMessage);
+    setPatientConfirmed(true);
+
+    const cleanPhone = targetPatientPhone.replace(/\D/g, '');
+    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(directMessage)}`;
+    window.open(waUrl, '_blank', 'noopener,noreferrer');
+
+    setSentNotice('Confirmación enviada y registrada en el chat');
+    setTimeout(() => setSentNotice(null), 3500);
   };
 
   return (
@@ -797,7 +895,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           </div>
 
           {/* Recordatorios Automatizados & Confirmación */}
-          <div className="p-3.5 bg-emerald-50/40 rounded-xl border border-emerald-200/80 space-y-3">
+          <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200/90 space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bell className="w-4 h-4 text-emerald-700" />
@@ -814,24 +912,28 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
               </label>
             </div>
 
-            {appointmentToEdit && (
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const res = sendWhatsAppReminder(appointmentToEdit.id, 'manual');
-                    if (res.success && res.waUrl) {
-                      window.open(res.waUrl, '_blank', 'noopener,noreferrer');
-                      setSentNotice('WhatsApp enviado');
-                      setTimeout(() => setSentNotice(null), 2500);
-                    }
-                  }}
-                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors"
-                >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  Enviar WhatsApp Ahora
-                </button>
+            <label className="flex items-center gap-2 text-xs font-medium text-emerald-950 cursor-pointer bg-white/70 p-2 rounded-lg border border-emerald-200/60">
+              <input
+                type="checkbox"
+                checked={sendWhatsAppOnSave}
+                onChange={e => setSendWhatsAppOnSave(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+              />
+              <span>Enviar confirmación por WhatsApp y registrar en el Chat al guardar</span>
+            </label>
 
+            <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                onClick={handleSendWhatsAppConfirmationNow}
+                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Enviar mensaje de confirmación por WhatsApp Web y reflejarlo en el chat del paciente"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Enviar WhatsApp de Confirmación
+              </button>
+
+              {appointmentToEdit && (
                 <button
                   type="button"
                   onClick={() => {
@@ -839,19 +941,19 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                     setSentNotice('Correo enviado');
                     setTimeout(() => setSentNotice(null), 2500);
                   }}
-                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors"
+                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Mail className="w-3.5 h-3.5" />
                   Enviar Correo Ahora
                 </button>
+              )}
 
-                {sentNotice && (
-                  <span className="text-xs font-bold text-emerald-700 flex items-center gap-1 ml-auto">
-                    <Check className="w-3.5 h-3.5" /> {sentNotice}
-                  </span>
-                )}
-              </div>
-            )}
+              {sentNotice && (
+                <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 ml-auto bg-emerald-100/90 px-2 py-1 rounded">
+                  <Check className="w-3.5 h-3.5 text-emerald-600" /> {sentNotice}
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Notes */}

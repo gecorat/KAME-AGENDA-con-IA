@@ -35,6 +35,7 @@ import { ServiceModal } from './components/ServiceModal';
 import { WaitlistModal } from './components/WaitlistModal';
 import { ConsultationModal } from './components/ConsultationModal';
 import { DoctorCopilot } from './components/DoctorCopilot';
+import { PostAppointmentConfirmationModal } from './components/PostAppointmentConfirmationModal';
 import { Appointment, Patient, Service, WaitlistEntry, ConsultationRecord } from './types';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
@@ -50,7 +51,9 @@ function MainApp() {
     currentUser,
     practiceSettings,
     updatePracticeSettings,
-    triggerNotification
+    triggerNotification,
+    postAppointmentCheckoutApt,
+    setPostAppointmentCheckoutApt
   } = useAgendaStore();
 
   const VALID_TABS = [
@@ -878,6 +881,14 @@ function MainApp() {
         isOpen={waitlistModalOpen}
         onClose={() => setWaitlistModalOpen(false)}
         entryToEdit={waitlistToEdit}
+      />
+
+      {/* Post-Appointment Confirmation & Payment Validation Modal */}
+      <PostAppointmentConfirmationModal
+        isOpen={!!postAppointmentCheckoutApt}
+        appointment={postAppointmentCheckoutApt}
+        onClose={() => setPostAppointmentCheckoutApt(null)}
+        onSuccess={() => setPostAppointmentCheckoutApt(null)}
       />
 
       {/* Floating AI Copilot for Doctors / Practice Professionals */}

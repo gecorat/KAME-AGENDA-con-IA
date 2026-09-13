@@ -23,10 +23,18 @@ import {
   AlertCircle,
   Edit3,
   Trash2,
-  Info
+  Info,
+  DollarSign
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { Appointment, AppointmentStatus } from '../types';
+import {
+  getArgentinaDateString,
+  getArgentinaTimeString,
+  parseArgentinaDate,
+  formatArgentinaDisplayDate,
+  getTodayArgentinaDateStr
+} from '../lib/timezone';
 
 interface AgendaViewProps {
   onOpenNewAppointment: (date?: string, time?: string) => void;
@@ -49,7 +57,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
     deleteAppointment,
     hasExampleData,
     clearExampleData,
-    isExampleItem
+    isExampleItem,
+    setPostAppointmentCheckoutApt
   } = useAgendaStore();
 
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
@@ -83,15 +92,15 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
   };
 
   const handleToday = () => {
-    const now = new Date();
-    setCurrentDate(now);
+    const today = getTodayArgentinaDateStr();
+    setCurrentDate(parseArgentinaDate(today));
     if (viewMode === 'month') {
-      setSelectedDayForDrawer(now.toISOString().split('T')[0]);
+      setSelectedDayForDrawer(today);
     }
   };
 
-  const currentDateStr = currentDate.toISOString().split('T')[0];
-  const todayStr = new Date().toISOString().split('T')[0];
+  const currentDateStr = getArgentinaDateString(currentDate);
+  const todayStr = getTodayArgentinaDateStr();
 
   // Week calculation (Monday to Saturday)
   const getWeekDays = (baseDate: Date) => {
@@ -127,7 +136,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       const d = new Date(year, month - 1, prevMonthLastDay - i);
       days.push({
         date: d,
-        dateStr: d.toISOString().split('T')[0],
+        dateStr: getArgentinaDateString(d),
         isCurrentMonth: false
       });
     }
@@ -137,7 +146,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       const d = new Date(year, month, day);
       days.push({
         date: d,
-        dateStr: d.toISOString().split('T')[0],
+        dateStr: getArgentinaDateString(d),
         isCurrentMonth: true
       });
     }
@@ -148,7 +157,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
       const d = new Date(year, month + 1, day);
       days.push({
         date: d,
-        dateStr: d.toISOString().split('T')[0],
+        dateStr: getArgentinaDateString(d),
         isCurrentMonth: false
       });
     }
@@ -177,13 +186,13 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
 
   // Day view appointments
   const dayAppointments = filteredAppointments.filter(a =>
-    a.start_datetime.startsWith(currentDateStr)
+    getArgentinaDateString(a.start_datetime) === currentDateStr
   );
 
   // Appointments for the day selected in the right sidebar
   const drawerDayAppointments = selectedDayForDrawer
     ? filteredAppointments
-        .filter(a => a.start_datetime.startsWith(selectedDayForDrawer))
+        .filter(a => getArgentinaDateString(a.start_datetime) === selectedDayForDrawer)
         .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime())
     : [];
 
@@ -482,10 +491,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   {/* Appointments Preview inside Month Cell */}
                   <div className="space-y-1 my-1.5 flex-1 overflow-hidden">
                     {dayAppts.slice(0, 3).map(apt => {
-                      const timeStr = new Date(apt.start_datetime).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      });
+                      const timeStr = getArgentinaTimeString(apt.start_datetime);
 
                       let dotColor = 'bg-neutral-400';
                       if (apt.status === 'confirmed') dotColor = 'bg-emerald-500';
@@ -530,9 +536,9 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
         <div className="bg-white rounded-2xl border border-neutral-200 shadow-xs overflow-x-auto scroll-touch-x subtle-scrollbar w-full max-w-full min-w-0">
           <div className="min-w-[700px] grid grid-cols-6 divide-x divide-neutral-200">
             {weekDays.map(day => {
-              const dayStr = day.toISOString().split('T')[0];
+              const dayStr = getArgentinaDateString(day);
               const isToday = dayStr === todayStr;
-              const dayAppts = filteredAppointments.filter(a => a.start_datetime.startsWith(dayStr));
+              const dayAppts = filteredAppointments.filter(a => getArgentinaDateString(a.start_datetime) === dayStr);
 
               return (
                 <div
@@ -580,7 +586,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                         >
                           <div className="font-semibold truncate">{apt.patient_name}</div>
                           <div className="text-[10px] opacity-80 flex items-center justify-between mt-0.5">
-                            <span>{new Date(apt.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>{getArgentinaTimeString(apt.start_datetime)}</span>
                             <span className="truncate ml-1">{apt.service_name}</span>
                           </div>
                         </div>
@@ -602,7 +608,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
               const hourStr = `${hour.toString().padStart(2, '0')}:00`;
 
               const slotAppointments = dayAppointments.filter(a => {
-                const aptHour = new Date(a.start_datetime).getHours();
+                const timePart = getArgentinaTimeString(a.start_datetime);
+                const aptHour = parseInt(timePart.split(':')[0], 10);
                 return aptHour === hour;
               });
 
@@ -631,7 +638,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                                 )}
                               </span>
                               <span className="text-[11px] font-mono">
-                                {new Date(apt.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                {getArgentinaTimeString(apt.start_datetime)}
                               </span>
                             </div>
                             <div className="text-[11px] opacity-90 mt-0.5 flex items-center justify-between">
@@ -685,10 +692,10 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                     <div className="flex items-center gap-3">
                       <div className="w-12 text-center shrink-0">
                         <span className="block text-xs font-bold text-neutral-900">
-                          {new Date(apt.start_datetime).toLocaleDateString([], { day: 'numeric', month: 'short' })}
+                          {formatArgentinaDisplayDate(apt.start_datetime, { day: 'numeric', month: 'short' })}
                         </span>
                         <span className="block text-[11px] text-neutral-500 font-mono">
-                          {new Date(apt.start_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          {getArgentinaTimeString(apt.start_datetime)}
                         </span>
                       </div>
                       <div>
@@ -759,12 +766,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-neutral-900 capitalize font-display">
-                      {new Date(selectedDayForDrawer + 'T00:00:00').toLocaleDateString('es-AR', {
-                        weekday: 'long',
-                        day: 'numeric',
-                        month: 'long',
-                        year: 'numeric'
-                      })}
+                      {formatArgentinaDisplayDate(selectedDayForDrawer)}
                     </h3>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-xs text-neutral-500 font-medium">
@@ -805,7 +807,7 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    setCurrentDate(new Date(selectedDayForDrawer + 'T00:00:00'));
+                    setCurrentDate(parseArgentinaDate(selectedDayForDrawer));
                     setViewMode('day');
                     setSelectedDayForDrawer(null);
                   }}
@@ -840,14 +842,8 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                   </div>
                 ) : (
                   drawerDayAppointments.map(apt => {
-                    const timeStr = new Date(apt.start_datetime).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    });
-                    const endTimeStr = new Date(apt.end_datetime).toLocaleTimeString([], {
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    });
+                    const timeStr = getArgentinaTimeString(apt.start_datetime);
+                    const endTimeStr = getArgentinaTimeString(apt.end_datetime);
 
                     return (
                       <div
@@ -920,11 +916,26 @@ export const AgendaView: React.FC<AgendaViewProps> = ({
                             {apt.status !== 'completed' && (
                               <button
                                 type="button"
-                                onClick={() => updateAppointment(apt.id, { status: 'completed' })}
-                                className="px-2 py-1 rounded-lg text-[11px] font-medium bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors"
-                                title="Marcar como atendido"
+                                onClick={() => {
+                                  updateAppointment(apt.id, { status: 'completed' });
+                                  setPostAppointmentCheckoutApt({ ...apt, status: 'completed' });
+                                }}
+                                className="px-2 py-1 rounded-lg text-[11px] font-medium bg-sky-50 text-sky-700 hover:bg-sky-100 transition-colors cursor-pointer"
+                                title="Marcar como atendido y confirmar cobro"
                               >
                                 Atendido
+                              </button>
+                            )}
+
+                            {apt.status === 'completed' && apt.payment_status === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => setPostAppointmentCheckoutApt(apt)}
+                                className="px-2 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-900 hover:bg-amber-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Confirmar por qué medio pagó el paciente"
+                              >
+                                <DollarSign className="w-3 h-3 text-amber-700" />
+                                Cobrar
                               </button>
                             )}
 
