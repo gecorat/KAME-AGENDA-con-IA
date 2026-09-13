@@ -30,7 +30,7 @@ export interface RealWhatsAppMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
-  status: 'sent' | 'delivered' | 'read';
+  status: 'sent' | 'delivered' | 'read' | 'failed';
   actionTaken?: any;
 }
 
@@ -40,6 +40,8 @@ export interface RealWhatsAppConversation {
   patient_first_name?: string;
   patient_phone: string;
   patient_avatar?: string;
+  remote_jid?: string;
+  needs_human?: boolean;
   unread_count: number;
   ai_handled: boolean;
   last_message?: string;
@@ -55,6 +57,153 @@ let lastKnownEvolutionConfig = {
   instanceName: process.env.EVOLUTION_INSTANCE_NAME || "consultorio"
 };
 let cachedPracticeSettings: any = {};
+
+// ============================================================================
+// CONTEXTO REAL DEL NEGOCIO (servicios, horarios y turnos ya tomados).
+// El front lo envia en cada /api/evolution/sync-chats. El bot SOLO responde si
+// este contexto existe y esta fresco: sin agenda real preferimos no contestar
+// antes que inventar precios u horarios.
+// ============================================================================
+let businessContext: {
+  services: any[];
+  availability: any[];
+  existingAppointments: any[];
+  updatedAt: number;
+} = { services: [], availability: [], existingAppointments: [], updatedAt: 0 };
+
+const BUSINESS_CONTEXT_MAX_AGE_MS = 20 * 60 * 1000; // 20 minutos
+
+const updateBusinessContext = (data: { services?: any[]; availability?: any[]; existingAppointments?: any[] }) => {
+  if (!data) return;
+  if (Array.isArray(data.services)) businessContext.services = data.services;
+  if (Array.isArray(data.availability)) businessContext.availability = data.availability;
+  if (Array.isArray(data.existingAppointments)) businessContext.existingAppointments = data.existingAppointments;
+  businessContext.updatedAt = Date.now();
+};
+
+const isBusinessContextFresh = () =>
+  businessContext.updatedAt > 0 &&
+  (Date.now() - businessContext.updatedAt) < BUSINESS_CONTEXT_MAX_AGE_MS &&
+  businessContext.availability.length > 0;
+
+// Idempotencia: Evolution reintenta el webhook si tarda en responder.
+// Sin esto, el mismo mensaje genera dos respuestas encimadas.
+const processedMessageIds = new Set<string>();
+const alreadyProcessed = (id: string) => {
+  if (!id) return false;
+  if (processedMessageIds.has(id)) return true;
+  processedMessageIds.add(id);
+  if (processedMessageIds.size > 5000) {
+    const arr = Array.from(processedMessageIds);
+    processedMessageIds.clear();
+    arr.slice(-2000).forEach(x => processedMessageIds.add(x));
+  }
+  return false;
+};
+
+// ---------------------------------------------------------------------------
+// Envio a Evolution API. v2 espera { number, text }; v1 { number, textMessage }.
+// Mandabamos los dos campos juntos y v2 rechazaba el body con 400.
+// Probamos v2 y solo si falla por validacion reintentamos con v1.
+// ---------------------------------------------------------------------------
+const sendEvolutionText = async (params: {
+  targetUrl: string;
+  targetKey: string;
+  targetInstance: string;
+  to: string;          // remoteJid tal cual vino, o numero en digitos
+  text: string;
+}): Promise<{ ok: boolean; status?: number; error?: string }> => {
+  const { targetUrl, targetKey, targetInstance, to, text } = params;
+  if (!targetUrl || !targetKey || !targetInstance || !to || !text) {
+    return { ok: false, error: "Faltan datos para enviar el mensaje" };
+  }
+  const url = `${targetUrl.replace(/\/$/, "")}/message/sendText/${targetInstance}`;
+  const headers = { "apikey": targetKey, "Content-Type": "application/json" };
+
+  try {
+    const v2 = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ number: to, text, delay: 1200 })
+    });
+    if (v2.ok) return { ok: true, status: v2.status };
+
+    const bodyTxt = await v2.text().catch(() => "");
+    console.warn(`[Evolution API] sendText v2 fallo (${v2.status}): ${bodyTxt.slice(0, 300)}`);
+
+    if (v2.status === 400 || v2.status === 404 || v2.status === 422) {
+      const v1 = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ number: to, textMessage: { text }, options: { delay: 1200, presence: "composing" } })
+      });
+      if (v1.ok) return { ok: true, status: v1.status };
+      const b1 = await v1.text().catch(() => "");
+      console.error(`[Evolution API] sendText v1 tambien fallo (${v1.status}): ${b1.slice(0, 300)}`);
+      return { ok: false, status: v1.status, error: b1.slice(0, 300) };
+    }
+    return { ok: false, status: v2.status, error: bodyTxt.slice(0, 300) };
+  } catch (err: any) {
+    console.error("[Evolution API] Error de red enviando mensaje:", err?.message || err);
+    return { ok: false, error: err?.message || "network error" };
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Validacion del turno CONTRA LA AGENDA REAL antes de aceptar una reserva.
+// El modelo puede proponer un horario ocupado o fuera de atencion; si no pasa
+// por aca, la reserva no se confirma.
+// ---------------------------------------------------------------------------
+const toMinutes = (hhmm: string) => {
+  const m = String(hhmm || "").match(/^(\d{1,2}):(\d{2})/);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
+
+const validateSlot = (params: {
+  datetime: string;
+  durationMinutes: number;
+  availability: any[];
+  existingAppointments: any[];
+}): { valid: boolean; reason?: string } => {
+  const { datetime, durationMinutes, availability, existingAppointments } = params;
+  if (!datetime) return { valid: false, reason: "sin fecha" };
+
+  const start = new Date(datetime);
+  if (isNaN(start.getTime())) return { valid: false, reason: "fecha invalida" };
+  if (start.getTime() < Date.now()) return { valid: false, reason: "fecha en el pasado" };
+
+  const dur = Number(durationMinutes) > 0 ? Number(durationMinutes) : 30;
+  const end = new Date(start.getTime() + dur * 60000);
+
+  // 1) Debe caer dentro de una franja de atencion configurada
+  const dow = start.getDay();
+  const startMin = start.getHours() * 60 + start.getMinutes();
+  const endMin = startMin + dur;
+  const franjas = (availability || []).filter((a: any) => Number(a.day_of_week) === dow);
+  if (franjas.length === 0) return { valid: false, reason: "dia sin atencion" };
+
+  const entra = franjas.some((a: any) => {
+    const ini = toMinutes(a.start_time);
+    const fin = toMinutes(a.end_time);
+    return ini !== null && fin !== null && startMin >= ini && endMin <= fin;
+  });
+  if (!entra) return { valid: false, reason: "fuera del horario de atencion" };
+
+  // 2) No debe solaparse con un turno ya tomado
+  const choca = (existingAppointments || []).some((ap: any) => {
+    const apStart = new Date(ap.start_datetime || ap.datetime || ap.start);
+    if (isNaN(apStart.getTime())) return false;
+    const apDur = Number(ap.duration_minutes) > 0 ? Number(ap.duration_minutes) : 30;
+    const apEnd = new Date(apStart.getTime() + apDur * 60000);
+    const cancelado = String(ap.status || "").toLowerCase().includes("cancel");
+    if (cancelado) return false;
+    return start < apEnd && apStart < end;
+  });
+  if (choca) return { valid: false, reason: "horario ya ocupado" };
+
+  return { valid: true };
+};
 
 async function generateAiBotResponse(params: {
   message: string;
@@ -97,18 +246,18 @@ async function generateAiBotResponse(params: {
   // Services context
   const servicesList = services.length > 0
     ? services.map((s: any) => `- ${s.name}: $${s.price?.toLocaleString()} (${s.duration_minutes} min)${s.description ? ` - ${s.description}` : ""}`).join("\n")
-    : "- Consulta Médica General / Evaluación: $15.000 (30 min)\n- Control / Seguimiento: $10.000 (20 min)";
+    : "(SIN DATOS CARGADOS - no informes ningun servicio ni arancel)";
 
   // Availability context
   const days = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
   const scheduleList = availability.length > 0
     ? availability.map((a: any) => `- ${days[a.day_of_week] || "Día"}: ${a.start_time} a ${a.end_time}`).join("\n")
-    : "- Lunes a Viernes: 09:00 a 18:00";
+    : "(SIN DATOS CARGADOS - no informes ningun horario ni ofrezcas turnos)";
 
   // Existing booked appointments
   const bookedList = existingAppointments.length > 0
     ? existingAppointments.map((a: any) => `- ${a.start_datetime} (${a.service_name || "Turno"})`).join("\n")
-    : "No hay turnos registrados en este momento.";
+    : "No hay turnos ocupados registrados para las proximas fechas.";
 
   const now = new Date();
   const todayString = now.toLocaleString("es-AR", {
@@ -169,15 +318,18 @@ ${bookedList}
 
 INSTRUCCIONES CLAVE DE ATENCIÓN Y CONVERSACIÓN:
 1. FLUIDEZ Y CONTEXTO: Mantén una conversación continua, empática y lógica con el paciente. NUNCA repitas el saludo inicial si ya te has presentado en mensajes anteriores. Responde concretamente a la última duda o mensaje del paciente.
-2. RIGOR Y CERO ALUCINACIONES: Basa tus respuestas ÚNICAMENTE en la información explícita de los servicios, aranceles, horarios y dirección listados arriba. NO inventes precios, promociones, diagnósticos, indicaciones médicas ni servicios que no estén configurados. Si el paciente pregunta por un tratamiento o arancel que no figura en la lista, responde amablemente que no dispones de ese dato en el sistema y que dejas asentada la consulta para que el profesional a cargo lo revise.
-3. SERVICIOS Y PRECIOS: Responder preguntas sobre servicios${featPricing ? ", precios" : ""}, duración y ubicación según los datos oficiales del consultorio.
-4. ${featBooking ? "HORARIOS Y TURNOS: Ayudar al paciente a elegir un horario disponible según los huecos libres y días de atención configurados. NUNCA inventes turnos ni confirmes horarios ocupados." : "Informar los horarios de atención y pedirle que aguarde confirmación del equipo."}
-5. DATOS REQUERIDOS PARA AGENDAR:
+2. REGLA ABSOLUTA - SI NO ESTA EN LA LISTA, NO EXISTE: Si arriba dice "(SIN DATOS CARGADOS)" en servicios o en horarios, tenes PROHIBIDO mencionar precios, duraciones, dias u horarios, y PROHIBIDO ofrecer o confirmar turnos. En ese caso respondes unicamente que en un momento te responde el equipo del consultorio y no agregas nada mas.
+3. NUNCA OFREZCAS UN HORARIO OCUPADO: antes de proponer un dia y hora verifica que este dentro de los horarios de atencion listados y que NO figure en la lista de turnos ocupados. Si el paciente pide un horario ocupado, decilo y ofrece dos alternativas libres reales.
+4. SI NO SABES, NO INVENTES: ante cualquier pregunta que no puedas responder con los datos de arriba (tratamientos, obras sociales, indicaciones medicas, resultados, urgencias), responde que dejas la consulta asentada para que la vea el profesional. Nunca des diagnosticos ni indicaciones clinicas.
+5. RIGOR Y CERO ALUCINACIONES: Basa tus respuestas ÚNICAMENTE en la información explícita de los servicios, aranceles, horarios y dirección listados arriba. NO inventes precios, promociones, diagnósticos, indicaciones médicas ni servicios que no estén configurados. Si el paciente pregunta por un tratamiento o arancel que no figura en la lista, responde amablemente que no dispones de ese dato en el sistema y que dejas asentada la consulta para que el profesional a cargo lo revise.
+6. SERVICIOS Y PRECIOS: Responder preguntas sobre servicios${featPricing ? ", precios" : ""}, duración y ubicación según los datos oficiales del consultorio.
+7. ${featBooking ? "HORARIOS Y TURNOS: Ayudar al paciente a elegir un horario disponible según los huecos libres y días de atención configurados. NUNCA inventes turnos ni confirmes horarios ocupados." : "Informar los horarios de atención y pedirle que aguarde confirmación del equipo."}
+8. DATOS REQUERIDOS PARA AGENDAR:
 ${requiredFieldsDescriptions || "- Nombre y Apellido\n- Teléfono"}
 Pide estos datos de forma natural y progresiva a lo largo del diálogo.
-6. ${featDeposit && effectiveSettings.patient_deposit_alias ? `PAGOS Y SEÑAS: Si el paciente desea señar su turno o pregunta por transferencias, indícale el Alias de seña: ${effectiveSettings.patient_deposit_alias}.` : ""}
-7. ${featHandoff ? "DERIVACIÓN HUMANA: Si el paciente solicita hablar con una persona real o tiene un caso complejo, indícale con calidez que su mensaje queda guardado para contacto por el profesional." : ""}
-8. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos requeridos, resume los datos confirmados y emite el bloque JSON estructurado con tag 'json_action'." : ""}
+9. ${featDeposit && effectiveSettings.patient_deposit_alias ? `PAGOS Y SEÑAS: Si el paciente desea señar su turno o pregunta por transferencias, indícale el Alias de seña: ${effectiveSettings.patient_deposit_alias}.` : ""}
+10. ${featHandoff ? "DERIVACIÓN HUMANA: Si el paciente solicita hablar con una persona real o tiene un caso complejo, indícale con calidez que su mensaje queda guardado para contacto por el profesional." : ""}
+11. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma explícitamente un día, hora y servicio disponible, y ya te proporcionó los datos requeridos, resume los datos confirmados y emite el bloque JSON estructurado con tag 'json_action'." : ""}
 ${customRules}
 
 FORMATO DE RESPUESTA:
@@ -227,6 +379,23 @@ Si aún falta definir algún dato obligatorio o la fecha/hora no está confirmad
             }
           }
 
+          // El modelo puede proponer un horario ocupado o fuera de atencion.
+          // Validamos SIEMPRE contra la agenda real antes de dar la reserva por buena.
+          if (actionData && actionData.action === "book_appointment") {
+            const svc = services.find((x: any) => x.name === actionData.service_name);
+            const check = validateSlot({
+              datetime: actionData.datetime,
+              durationMinutes: svc?.duration_minutes || 30,
+              availability,
+              existingAppointments
+            });
+            if (!check.valid) {
+              console.warn(`[WhatsApp Bot] Reserva rechazada por la agenda (${check.reason}):`, actionData.datetime);
+              actionData = null;
+              cleanReply = "Perdon, ese horario no me figura disponible en la agenda. ¿Te paso las opciones libres mas cercanas para que elijas? 🙏";
+            }
+          }
+
           return {
             reply: cleanReply,
             action: actionData,
@@ -239,18 +408,33 @@ Si aún falta definir algún dato obligatorio o la fecha/hora no está confirmad
     }
   }
 
-  // Dynamic context-aware heuristic fallback if Gemini is offline or quota limited
+  // Fallback si Gemini esta caido o sin cuota.
+  // Solo usa datos REALES: si no hay servicios u horarios cargados, no informa
+  // nada y deriva al equipo. Nunca inventa precios ni ofrece turnos.
   const lower = message.toLowerCase().trim();
   const hasHistory = history.length > 0;
   let reply = "";
   let actionData: any = null;
 
+  const tieneServicios = services.length > 0;
+  const tieneHorarios = availability.length > 0;
+
+  if (!tieneServicios && !tieneHorarios) {
+    return {
+      reply: `¡Hola! Gracias por escribir a *${practiceName}*. Tomamos tu mensaje y en un momento te responde el equipo del consultorio. 🙌`,
+      action: null,
+      aiPowered: false
+    };
+  }
+
   if (lower.includes("precio") || lower.includes("cuanto") || lower.includes("arancel") || lower.includes("costo") || lower.includes("valor")) {
-    reply = `Con gusto te paso la información de nuestros servicios y aranceles:\n\n${services.length > 0 ? services.map((s: any) => `• *${s.name}*: $${s.price?.toLocaleString()} (${s.duration_minutes} min)`).join("\n") : "• Consulta General: $15.000"}\n\n¿Te gustaría que te reservemos un turno para alguno de ellos? 😊`;
+    reply = `Con gusto te paso la información de nuestros servicios y aranceles:\n\n${services.map((s: any) => `• *${s.name}*: $${s.price?.toLocaleString()} (${s.duration_minutes} min)`).join("\n")}\n\n¿Te gustaría que te reservemos un turno para alguno de ellos? 😊`;
   } else if (lower.includes("horario") || lower.includes("atienden") || lower.includes("dias") || lower.includes("días") || lower.includes("abierto")) {
     reply = `Nuestros horarios de atención son:\n${scheduleList}\n\n¿Qué día y franja horaria (mañana o tarde) te quedaría más cómodo?`;
+  } else if (!tieneServicios && (lower.includes("precio") || lower.includes("cuanto") || lower.includes("arancel"))) {
+    reply = `Los aranceles te los confirma el equipo del consultorio. Ya dejo asentada tu consulta para que te respondan a la brevedad. 🙌`;
   } else if (lower.includes("turno") || lower.includes("agendar") || lower.includes("reservar") || lower.includes("cita") || lower.includes("consulta")) {
-    const firstService = services[0]?.name || "Consulta Médica";
+    const firstService = services[0]?.name || "una consulta";
     reply = `¡Claro que sí! Con mucho gusto te ayudo a coordinar tu turno para *${firstService}*. ¿Prefieres venir por la mañana o por la tarde? Y por favor indícame tu nombre completo para la ficha.`;
   } else if (lower.includes("donde") || lower.includes("dirección") || lower.includes("direccion") || lower.includes("ubicacion") || lower.includes("ubicación")) {
     reply = `Estamos ubicados en *${effectiveSettings.address || "nuestro consultorio central"}*, ${effectiveSettings.city || ""}. ¿Necesitas indicaciones para llegar o te ayudo a agendar un turno?`;
@@ -1039,6 +1223,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     availability?: any[];
     existingAppointments?: any[];
     autoReplyIfPatient?: boolean;
+    isLive?: boolean;
   }) => {
     if (!item) return null;
 
@@ -1060,7 +1245,10 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     const msgTimeMs = timestampSec * 1000;
 
     // Filter out messages that are older than instanceConnectedAt ONLY if instanceConnectedAt is set and msgTimeMs is clearly before it (allow up to 60s tolerance)
-    if (instanceConnectedAt && msgTimeMs > 0 && msgTimeMs < (instanceConnectedAt - 60000)) {
+    // Solo filtramos historico en el sync. Un mensaje en vivo siempre entra:
+    // al reiniciarse el proceso, instanceConnectedAt vuelve a "ahora" y este
+    // filtro descartaba mensajes nuevos legitimos.
+    if (!options?.isLive && instanceConnectedAt && msgTimeMs > 0 && msgTimeMs < (instanceConnectedAt - 60000)) {
       return null;
     }
 
@@ -1070,6 +1258,8 @@ Responde ÚNICAMENTE con un JSON con la estructura:
 
     const msgId = item.key?.id || item.id || `msg-${Date.now()}-${Math.random()}`;
     const conv = findOrCreateConversation(senderPhone, pushName, avatarUrl);
+    // Guardamos el JID exacto: responder a este valor evita el lio del 9 argentino.
+    if (remoteJid) conv.remote_jid = remoteJid;
 
     // Asynchronously fetch profile picture from Evolution API if not cached yet
     if (!conv.patient_avatar && options?.targetUrl && options?.targetKey && options?.targetInstance) {
@@ -1092,7 +1282,9 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     }
 
     // Check if message already exists
-    const exists = conv.messages.some(m => m.id === msgId || (m.content === text && m.role === (fromMe ? 'assistant' : 'user')));
+    // Dedupe SOLO por id de mensaje. Antes tambien se comparaba por contenido,
+    // y eso hacia desaparecer mensajes legitimos repetidos ("hola" dos veces).
+    const exists = conv.messages.some(m => m.id === msgId);
     if (!exists) {
       const newMsg: RealWhatsAppMessage = {
         id: msgId,
@@ -1106,49 +1298,66 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       conv.last_message = text;
       conv.last_timestamp = new Date(timestampSec * 1000).toISOString();
 
-      // STRICT SAFETY: ONLY auto-reply if explicitly allowed (live webhook ONLY, NEVER during sync/polling)
-      // AND message is fresh (less than 90 seconds old)
+      // SEGURIDAD: solo auto-responde desde el webhook en vivo, nunca en el sync.
+      // Ventana de 10 min (antes 90 s: si el webhook demoraba, no contestaba nunca).
       const nowSec = Math.floor(Date.now() / 1000);
-      const isFreshMessage = Math.abs(nowSec - timestampSec) < 90;
+      const isFreshMessage = Math.abs(nowSec - timestampSec) < 600;
 
       if (!fromMe && options?.autoReplyIfPatient && isFreshMessage) {
-        const isBotActive = cachedPracticeSettings.bot_enabled !== false && conv.ai_handled !== false;
+        // FAIL-CLOSED: si no hay configuracion cargada, el bot NO responde.
+        // Antes era `!== false`, y con settings vacios (undefined) daba true:
+        // el bot contestaba aunque estuviera pausado.
+        const botEnabled = cachedPracticeSettings.bot_enabled === true;
+        const convEnabled = conv.ai_handled === true;
+        const contextoOk = isBusinessContextFresh();
+
+        if (!botEnabled || !convEnabled) {
+          console.log(`[WhatsApp Bot] Bot pausado (global:${botEnabled} conversacion:${convEnabled}). Mensaje queda en la bandeja sin responder.`);
+        } else if (!contextoOk) {
+          // Sin agenda real cargada preferimos el silencio a inventar horarios.
+          conv.needs_human = true;
+          console.warn("[WhatsApp Bot] Sin contexto de agenda fresco. No se responde automaticamente.");
+        }
+
+        const isBotActive = botEnabled && convEnabled && contextoOk;
         if (isBotActive) {
           try {
             console.log(`[WhatsApp Bot] Generating auto-reply for incoming live message from ${conv.patient_name} (${senderPhone}): "${text}"`);
+            // Siempre la agenda REAL: el webhook no recibia estos datos y el bot
+            // terminaba contestando con los valores por defecto del prompt.
             const botResult = await generateAiBotResponse({
               message: text,
               history: conv.messages.slice(-10),
               practiceSettings: cachedPracticeSettings,
-              services: options.services || [],
-              availability: options.availability || [],
-              existingAppointments: options.existingAppointments || []
+              services: options.services?.length ? options.services : businessContext.services,
+              availability: options.availability?.length ? options.availability : businessContext.availability,
+              existingAppointments: options.existingAppointments?.length ? options.existingAppointments : businessContext.existingAppointments
             });
 
             if (botResult && botResult.reply && options.targetUrl && options.targetKey && options.targetInstance) {
-              const cleanSendPhone = senderPhone.startsWith("54") ? senderPhone : (senderPhone.length === 10 ? `549${senderPhone}` : senderPhone);
+              // Respondemos al JID exacto que mando el mensaje.
+              const destino = conv.remote_jid || remoteJid || senderPhone;
 
-              await fetch(`${options.targetUrl}/message/sendText/${options.targetInstance}`, {
-                method: "POST",
-                headers: {
-                  "apikey": options.targetKey,
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                  number: cleanSendPhone,
-                  text: botResult.reply,
-                  textMessage: { text: botResult.reply },
-                  options: { delay: 1000, presence: "composing" },
-                  delay: 1000
-                })
-              }).catch(err => console.error("Error sending auto-reply:", err));
+              const sendResult = await sendEvolutionText({
+                targetUrl: options.targetUrl,
+                targetKey: options.targetKey,
+                targetInstance: options.targetInstance,
+                to: destino,
+                text: botResult.reply
+              });
+
+              if (!sendResult.ok) {
+                // Antes el error se tragaba en un .catch() y parecia enviado.
+                conv.needs_human = true;
+                console.error(`[WhatsApp Bot] No se pudo entregar la respuesta a ${destino}:`, sendResult.error);
+              }
 
               const assistantMsg: RealWhatsAppMessage = {
                 id: `bot-msg-${Date.now()}`,
                 role: 'assistant',
                 content: botResult.reply,
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                status: 'sent',
+                status: sendResult.ok ? 'sent' : 'failed',
                 actionTaken: botResult.action
               };
 
@@ -1269,6 +1478,10 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       if (practiceSettings) {
         cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
       }
+
+      // Guardamos servicios, horarios y turnos para que el WEBHOOK pueda usarlos.
+      // Sin esto el bot respondia el webhook con listas vacias e inventaba datos.
+      updateBusinessContext({ services, availability, existingAppointments });
 
       if (!targetUrl || !targetKey) {
         const list = Array.from(realWhatsAppConversations.values()).sort((a, b) => {
@@ -1415,52 +1628,45 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       conv.last_message = text;
       conv.last_timestamp = new Date().toISOString();
 
-      let apiResponse = null;
+      let apiResponse: any = null;
+      let delivered = false;
+
       if (targetUrl && targetKey) {
-        try {
-          console.log(`[Evolution API] Dispatching manual message to ${cleanPhone} on instance ${targetInstance}: "${text}"`);
-          const evoRes = await fetch(`${targetUrl}/message/sendText/${targetInstance}`, {
-            method: "POST",
-            headers: {
-              "apikey": targetKey,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              number: cleanPhone,
-              text: text,
-              textMessage: { text: text },
-              options: { delay: 500, presence: "composing" },
-              delay: 500
-            })
-          });
-          
-          apiResponse = await evoRes.json().catch(() => ({}));
-          console.log(`[Evolution API] Send message result status: ${evoRes.status}`, apiResponse);
-          
-          if (!evoRes.ok) {
-            // Fallback attempt without the 9 prefix (e.g., 543425526816 instead of 5493425526816) if Baileys expects standard international format
-            if (cleanPhone.startsWith("549")) {
-              const fallbackPhone = `54${cleanPhone.slice(3)}`;
-              console.log(`[Evolution API] Retrying send to fallback number ${fallbackPhone}`);
-              await fetch(`${targetUrl}/message/sendText/${targetInstance}`, {
-                method: "POST",
-                headers: {
-                  "apikey": targetKey,
-                  "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                  number: fallbackPhone,
-                  text: text,
-                  textMessage: { text: text },
-                  options: { delay: 500, presence: "composing" },
-                  delay: 500
-                })
-              }).catch(() => {});
-            }
-          }
-        } catch (fetchErr) {
-          console.error("Error dispatching manual message to Evolution API:", fetchErr);
+        // Preferimos el JID exacto de la conversacion; recien si no lo tenemos
+        // armamos el numero a mano (ahi si aplica el fallback del 9).
+        const destino = conv.remote_jid || cleanPhone;
+        console.log(`[Evolution API] Enviando mensaje manual a ${destino} en la instancia ${targetInstance}`);
+
+        let result = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: destino, text });
+
+        if (!result.ok && !conv.remote_jid && cleanPhone.startsWith("549")) {
+          const fallbackPhone = `54${cleanPhone.slice(3)}`;
+          console.log(`[Evolution API] Reintentando sin el 9: ${fallbackPhone}`);
+          result = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: fallbackPhone, text });
         }
+
+        delivered = result.ok;
+        apiResponse = result;
+
+        if (!delivered) {
+          // Antes se marcaba como enviado igual y el error quedaba invisible.
+          newMsg.status = 'failed';
+          conv.needs_human = true;
+          console.error(`[Evolution API] El mensaje manual NO se entrego:`, result.error);
+          return res.status(502).json({
+            success: false,
+            error: "No se pudo entregar el mensaje por WhatsApp. Revisa que la instancia este conectada.",
+            detail: result.error,
+            message: newMsg
+          });
+        }
+      } else {
+        newMsg.status = 'failed';
+        return res.status(400).json({
+          success: false,
+          error: "Faltan las credenciales de Evolution API (URL o apikey).",
+          message: newMsg
+        });
       }
 
       return res.json({ success: true, message: newMsg, apiResponse });
@@ -1669,10 +1875,22 @@ Responde ÚNICAMENTE con un JSON con la estructura:
 
   // Incoming Webhook from Evolution API
   app.post("/api/evolution/webhook", async (req, res) => {
+    // Respondemos 200 ANTES de procesar. Evolution corta a los pocos segundos y
+    // reintenta: esperar al modelo aca era lo que generaba respuestas duplicadas.
+    res.status(200).json({ received: true });
+
     try {
       const eventData = req.body;
-      const eventType = (eventData?.event || eventData?.type || "").toLowerCase();
+      const eventType = (eventData?.event || eventData?.type || "").toLowerCase().replace(/_/g, ".");
       console.log(`[Evolution Webhook] Received event: "${eventType}"`);
+
+      // Solo mensajes entrantes nuevos. Antes entraba CUALQUIER evento
+      // (messages.update, send.message, connection.update) por el mismo embudo,
+      // y los ecos de nuestros propios envios disparaban respuestas.
+      if (eventType && !eventType.includes("messages.upsert")) {
+        console.log(`[Evolution Webhook] Evento ignorado: "${eventType}"`);
+        return;
+      }
 
       // Extract all potential message items from event payload
       const msgList: any[] = [];
@@ -1691,20 +1909,27 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       }
 
       const syncOptions = {
-        targetUrl: lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "",
+        targetUrl: (lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, ""),
         targetKey: lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "",
         targetInstance: (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim(),
-        autoReplyIfPatient: true
+        services: businessContext.services,
+        availability: businessContext.availability,
+        existingAppointments: businessContext.existingAppointments,
+        autoReplyIfPatient: true,
+        isLive: true
       };
 
       for (const msgObj of msgList) {
+        // Idempotencia por id: si Evolution reintenta, no procesamos dos veces.
+        const mid = msgObj?.key?.id || msgObj?.id;
+        if (mid && alreadyProcessed(String(mid))) {
+          console.log(`[Evolution Webhook] Mensaje duplicado ignorado: ${mid}`);
+          continue;
+        }
         await processIncomingOrSyncedMessage(msgObj, syncOptions);
       }
-
-      return res.status(200).json({ received: true });
     } catch (err: any) {
       console.error("[Evolution Webhook] Handler error:", err);
-      return res.status(200).json({ received: false, error: err.message });
     }
   });
 

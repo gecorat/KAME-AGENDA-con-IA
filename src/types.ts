@@ -386,7 +386,7 @@ export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: string;
-  status?: 'sent' | 'delivered' | 'read';
+  status?: 'sent' | 'delivered' | 'read' | 'failed';
   actionTaken?: {
     type: 'appointment_created';
     appointmentId: string;

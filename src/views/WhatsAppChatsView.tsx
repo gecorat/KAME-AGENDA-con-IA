@@ -175,10 +175,20 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           practiceSettings,
           services: services.filter(s => s.active),
           availability,
-          existingAppointments: appointments.slice(0, 10).map(a => ({
-            start_datetime: a.start_datetime,
-            service_name: a.service_name
-          })),
+          // El bot chequea disponibilidad contra esta lista: mandamos TODOS los
+          // turnos futuros (no los primeros 10) con duracion y estado, para que
+          // no ofrezca un horario que ya esta tomado.
+          existingAppointments: appointments
+            .filter(a => {
+              const t = new Date(a.start_datetime).getTime();
+              return !isNaN(t) && t > Date.now() - 60 * 60 * 1000;
+            })
+            .map(a => ({
+              start_datetime: a.start_datetime,
+              service_name: a.service_name,
+              duration_minutes: (a as any).duration_minutes,
+              status: a.status
+            })),
           appUrl: typeof window !== 'undefined' ? window.location.origin : undefined
         })
       });
@@ -386,7 +396,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
       );
 
       try {
-        await fetch(`/api/evolution/conversations/${activeConv.id}/send`, {
+        const sendRes = await fetch(`/api/evolution/conversations/${activeConv.id}/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -396,8 +406,39 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
             instanceName: practiceSettings.evolution_instance_name
           })
         });
+
+        // Si Evolution rechazo el envio, marcamos el mensaje como fallido en la
+        // burbuja en vez de mostrarlo como enviado.
+        if (!sendRes.ok) {
+          const errData = await sendRes.json().catch(() => ({}));
+          console.error('Evolution API rechazo el envio:', errData);
+          setRealConversations(prev =>
+            prev.map(c =>
+              c.id === activeConv.id
+                ? {
+                    ...c,
+                    messages: c.messages.map(m =>
+                      m.id === newMsg.id ? { ...m, status: 'failed' as const } : m
+                    )
+                  }
+                : c
+            )
+          );
+        }
       } catch (err) {
         console.error('Error sending message to Evolution API:', err);
+        setRealConversations(prev =>
+          prev.map(c =>
+            c.id === activeConv.id
+              ? {
+                  ...c,
+                  messages: c.messages.map(m =>
+                    m.id === newMsg.id ? { ...m, status: 'failed' as const } : m
+                  )
+                }
+              : c
+          )
+        );
       }
       return;
     }
@@ -695,16 +736,16 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
               {/* Bot Global Switch Badge */}
               <button
                 type="button"
-                onClick={() => updatePracticeSettings({ bot_enabled: practiceSettings.bot_enabled === false ? true : false })}
+                onClick={() => updatePracticeSettings({ bot_enabled: practiceSettings.bot_enabled === true ? false : true })}
                 className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold transition-all border shadow-2xs cursor-pointer ${
-                  practiceSettings.bot_enabled !== false
+                  practiceSettings.bot_enabled === true
                     ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                     : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
                 }`}
                 title="Haga clic para pausar o activar la respuesta automática del bot en todos los chats"
               >
-                <span className={`w-1.5 h-1.5 rounded-full ${practiceSettings.bot_enabled !== false ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                <span>{practiceSettings.bot_enabled !== false ? 'Bot General Activo' : 'Bot General Pausado'}</span>
+                <span className={`w-1.5 h-1.5 rounded-full ${practiceSettings.bot_enabled === true ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+                <span>{practiceSettings.bot_enabled === true ? 'Bot General Activo' : 'Bot General Pausado'}</span>
               </button>
             </div>
             <p className="text-[11px] text-neutral-500 mt-0.5 max-w-2xl">
@@ -1337,7 +1378,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 className="flex-1 min-h-0 p-3 sm:p-4 overflow-y-auto space-y-3 bg-[#f0f2f5] bg-[radial-gradient(#00000008_1px,transparent_1px)] [background-size:16px_16px] w-full min-w-0 relative"
               >
                 {/* Global Paused Banner if bot_enabled is false */}
-                {practiceSettings.bot_enabled === false && (
+                {practiceSettings.bot_enabled !== true && (
                   <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-amber-900 shadow-2xs">
                     <div className="flex items-center gap-2">
                       <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -1354,7 +1395,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 )}
 
                 {/* Per-chat Paused Notice */}
-                {!activeConv.ai_handled && practiceSettings.bot_enabled !== false && (
+                {!activeConv.ai_handled && practiceSettings.bot_enabled === true && (
                   <div className="p-2 bg-neutral-100/90 border border-neutral-200 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 text-[11px] text-neutral-600">
                     <div className="flex items-center gap-1.5">
                       <PauseCircle className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
@@ -1382,21 +1423,21 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex gap-2 ${isAssistant ? 'items-start justify-start' : 'items-end justify-end'}`}
+                      className={`flex gap-2 ${isAssistant ? 'items-end justify-end' : 'items-start justify-start'}`}
                     >
-                      {/* Synchronized Bot Profile Photo */}
-                      {isAssistant && (
+                      {/* Foto del paciente, a la izquierda como en WhatsApp */}
+                      {!isAssistant && (
                         <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-neutral-200 shadow-2xs mt-0.5 bg-neutral-100 flex items-center justify-center">
-                          {practiceSettings.bot_avatar_url ? (
+                          {activeConv.patient_avatar ? (
                             <img
-                              src={practiceSettings.bot_avatar_url}
-                              alt={practiceSettings.bot_assistant_name}
+                              src={activeConv.patient_avatar}
+                              alt={activeConv.patient_name}
                               className="w-full h-full object-cover"
                               referrerPolicy="no-referrer"
                             />
                           ) : (
-                            <div className="w-full h-full bg-emerald-700 text-white flex items-center justify-center text-[10px] font-bold">
-                              {practiceSettings.bot_assistant_name.slice(0, 1)}
+                            <div className="w-full h-full bg-neutral-700 text-white flex items-center justify-center text-[10px] font-bold">
+                              {(activeConv.patient_name || '?').slice(0, 1)}
                             </div>
                           )}
                         </div>
@@ -1405,8 +1446,8 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                       <div
                         className={`max-w-[88%] sm:max-w-[75%] rounded-xl p-3 text-xs leading-relaxed shadow-2xs break-words [overflow-wrap:anywhere] ${
                           isAssistant
-                            ? 'bg-white text-neutral-800 border border-neutral-200/80 rounded-tl-xs'
-                            : 'bg-[#d9fdd3] text-neutral-900 border border-emerald-200/60 rounded-tr-xs'
+                            ? 'bg-[#d9fdd3] text-neutral-900 border border-emerald-200/60 rounded-tr-xs'
+                            : 'bg-white text-neutral-800 border border-neutral-200/80 rounded-tl-xs'
                         }`}
                       >
                         {isAssistant && (

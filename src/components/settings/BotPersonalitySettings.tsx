@@ -185,7 +185,7 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
   const [isDragging, setIsDragging] = useState(false);
 
   const [formData, setFormData] = useState<Partial<PracticeSettings>>({
-    bot_enabled: practiceSettings.bot_enabled ?? true,
+    bot_enabled: practiceSettings.bot_enabled === true, // por defecto pausado: se activa a mano
     bot_identity_mode: practiceSettings.bot_identity_mode || 'assistant',
     bot_assistant_name: practiceSettings.bot_assistant_name || 'Sofía (IA)',
     bot_avatar_url: practiceSettings.bot_avatar_url || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
