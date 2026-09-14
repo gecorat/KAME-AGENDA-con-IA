@@ -71,7 +71,9 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [notes, setNotes] = useState<string>('');
   const [isTelemedicine, setIsTelemedicine] = useState<boolean>(false);
   const [patientConfirmed, setPatientConfirmed] = useState<boolean>(false);
-  const [sendWhatsAppOnSave, setSendWhatsAppOnSave] = useState<boolean>(true);
+  // Solo viene tildado para turnos NUEVOS. Al editar uno existente, "Guardar
+  // Cambios" guarda y nada mas: antes abria WhatsApp siempre.
+  const [sendWhatsAppOnSave, setSendWhatsAppOnSave] = useState<boolean>(!appointmentToEdit);
   const [sentNotice, setSentNotice] = useState<string | null>(null);
 
   // Deposit verification states

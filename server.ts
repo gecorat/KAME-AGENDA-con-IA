@@ -819,7 +819,7 @@ ${requiredFieldsDescriptions || "- Nombre y Apellido completo"}
 Pide los datos faltantes con naturalidad en el diálogo.
 9. ${featDeposit && effectiveSettings.patient_deposit_alias ? `SEÑA / PAGOS: Si el paciente pregunta por señas o transferencias, infórmale el Alias oficial: ${effectiveSettings.patient_deposit_alias}.` : ""}
 10. ${featHandoff ? "DERIVACIÓN HUMANA: Si el paciente pide hablar con una persona real, confírmale con calidez que un miembro del equipo se pondrá en contacto pronto." : ""}
-11. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma un turno disponible y tienes sus datos (nombre y horario, y el teléfono que ya tienes de WhatsApp), confírmale el turno con entusiasmo y calidez, e incluye el bloque json_action al final." : ""}
+11. ${featBooking ? "CONFIRMACIÓN DE RESERVA: Si el paciente confirma un turno disponible y tienes sus datos (nombre y horario, y el teléfono que ya tienes de WhatsApp), confírmale el turno con entusiasmo y calidez, e incluye el bloque json_action al final. En el resumen del turno NO pongas una línea de Paciente (el paciente ya sabe quién es): en su lugar pon Profesional: ${professionalName}. El resumen lleva Profesional, Servicio, Fecha y Hora, en ese orden." : ""}
 ${customRules}
 
 FORMATO DE ACCIÓN (solo cuando se confirme un turno con todos los datos):
@@ -1940,7 +1940,12 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     const { targetUrl, targetKey, targetInstance, appUrl } = params;
     if (!targetUrl || !targetKey || !targetInstance) return { success: false, error: "Missing parameters" };
 
-    const webhookUrl = `${(appUrl || "").replace(/\/$/, "")}/api/evolution/webhook`;
+    // La URL publicada manda siempre: si el pedido viene del preview de
+    // desarrollo (ais-dev...), el webhook igual queda apuntando a produccion.
+    const urlPublica = (process.env.PUBLIC_APP_URL || "https://agenfacil.ai.studio").replace(/\/$/, "");
+    const esDesarrollo = (u: string) => /ais-dev|localhost|127\.0\.0\.1/.test(u || "");
+    const baseWebhook = (appUrl && !esDesarrollo(appUrl)) ? appUrl.replace(/\/$/, "") : urlPublica;
+    const webhookUrl = `${baseWebhook}/api/evolution/webhook`;
     if (!webhookUrl || webhookUrl.startsWith("/api")) {
       return { success: false, error: "Invalid public app URL" };
     }
