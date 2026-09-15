@@ -177,6 +177,34 @@ const guardarDocumento = async (coleccion: string, docId: string, datos: any): P
   }
 };
 
+// PATCH con updateMask: toca SOLO los campos indicados. Sin la mascara,
+// Firestore borra todo lo que no se envie.
+const actualizarCampos = async (coleccion: string, docId: string, campos: any): Promise<boolean> => {
+  const token = await obtenerTokenFirestore();
+  if (!token) return false;
+  try {
+    const claves = Object.keys(campos);
+    if (claves.length === 0) return true;
+    const mask = claves.map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+    const fields: any = {};
+    for (const k of claves) fields[k] = aValorFirestore(campos[k]);
+    const res = await fetch(`${baseFirestoreUrl()}/${coleccion}/${encodeURIComponent(docId)}?${mask}`, {
+      method: "PATCH",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields })
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error(`[Firestore] Error actualizando ${coleccion}/${docId}: ${res.status} ${t.slice(0, 200)}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error("[Firestore] Error de red actualizando campos:", err?.message || err);
+    return false;
+  }
+};
+
 const crearDocumento = async (coleccion: string, datos: any): Promise<string | null> => {
   const token = await obtenerTokenFirestore();
   if (!token) return null;
@@ -286,12 +314,193 @@ const guardarContextoEnBase = async () => {
   });
 };
 
+// ============================================================================
+// RECORDATORIOS AUTOMATICOS (24 h y 2 h antes del turno)
+// Reglas:
+//  - Si el turno se reservo con menos anticipacion que el recordatorio, ese
+//    recordatorio no se manda (reservar 3 h antes no dispara el de 24 h).
+//  - Cada recordatorio se manda una sola vez: queda marcado en el turno.
+//  - Si el servidor estuvo caido, se recupera mientras la ventana siga vigente.
+// ============================================================================
+const REMINDER_DOC = "reminder_config";
+const HORA_MS = 60 * 60 * 1000;
+const MARGEN_MS = 15 * 60 * 1000; // no mandamos un aviso que llega casi encima
+
+let reminderConfig: any = null;
+
+const guardarReminderConfig = async (cfg: any) => {
+  if (!hayPersistencia() || !cfg) return;
+  await guardarDocumento("settings", REMINDER_DOC, {
+    config: JSON.stringify(cfg),
+    updated_at: new Date().toISOString()
+  });
+};
+
+const aplicarPlantilla = (texto: string, datos: Record<string, string>) =>
+  String(texto || "").replace(/\{(\w+)\}/g, (_, clave) => datos[clave] ?? "");
+
+const datosDelTurno = (turno: any) => {
+  const inicio = new Date(turno.start_datetime);
+  const fecha = inicio.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
+  const hora = inicio.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  return {
+    paciente: turno.patient_name || "",
+    profesional: cachedPracticeSettings.professional_name || cachedPracticeSettings.practice_name || "",
+    consultorio: cachedPracticeSettings.practice_name || "",
+    servicio: turno.service_name || "",
+    fecha,
+    hora,
+    direccion: cachedPracticeSettings.address || "",
+    ciudad: cachedPracticeSettings.city || "",
+    whatsapp: cachedPracticeSettings.whatsapp_number || ""
+  };
+};
+
+const enviarEmailRecordatorio = async (para: string, asunto: string, cuerpo: string): Promise<boolean> => {
+  const key = cachedPracticeSettings.resend_api_key || process.env.RESEND_API_KEY;
+  const remitente = cachedPracticeSettings.sender_email || process.env.EMAIL_FROM;
+  if (!key || !para || !remitente) return false;
+  try {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        from: remitente,
+        to: [para],
+        subject: asunto,
+        html: `<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;line-height:1.6;color:#171717;white-space:pre-wrap;">${cuerpo}</div>`
+      })
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      console.error(`[Recordatorios] Resend rechazo el envio (${res.status}): ${t.slice(0, 200)}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error("[Recordatorios] Error enviando email:", err?.message || err);
+    return false;
+  }
+};
+
+const registrarEnvioRecordatorio = async (turno: any, canal: string, momento: string, estado: string, vistaPrevia: string) => {
+  await crearDocumento("reminder_logs", {
+    appointment_id: turno.id || "",
+    patient_name: turno.patient_name || "",
+    patient_phone: turno.patient_phone || "",
+    patient_email: turno.patient_email || "",
+    channel: canal,
+    timing: momento,
+    status: estado,
+    sent_at: new Date().toISOString(),
+    appointment_datetime: turno.start_datetime || "",
+    service_name: turno.service_name || "",
+    message_preview: String(vistaPrevia || "").slice(0, 160)
+  });
+};
+
+const enviarRecordatorio = async (turno: any, momento: "24h" | "2h") => {
+  const cfg = reminderConfig || {};
+  const datos = datosDelTurno(turno);
+  const marca = momento === "24h" ? "reminder_24h_sent_at" : "reminder_2h_sent_at";
+  let algunoSalio = false;
+
+  // WhatsApp
+  if (cfg.whatsapp_enabled !== false && turno.patient_phone) {
+    const plantilla = momento === "24h" ? cfg.whatsapp_template_24h : cfg.whatsapp_template_2h;
+    const texto = aplicarPlantilla(plantilla || "", datos);
+    if (texto.trim()) {
+      const targetUrl = (lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+      const destino = `${String(turno.patient_phone).replace(/\D/g, "")}@s.whatsapp.net`;
+      const r = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: destino, text: texto });
+      algunoSalio = algunoSalio || r.ok;
+      await registrarEnvioRecordatorio(turno, "whatsapp", momento, r.ok ? "sent" : "failed", texto);
+      console.log(`[Recordatorios] ${momento} WhatsApp a ${turno.patient_name}: ${r.ok ? "enviado" : "fallo"}`);
+    }
+  }
+
+  // Email
+  if (cfg.email_enabled !== false && turno.patient_email) {
+    const asunto = aplicarPlantilla(momento === "24h" ? cfg.email_subject_24h : cfg.email_subject_2h, datos);
+    const cuerpo = aplicarPlantilla(momento === "24h" ? cfg.email_body_24h : cfg.email_body_2h, datos);
+    if (cuerpo.trim()) {
+      const ok = await enviarEmailRecordatorio(turno.patient_email, asunto || "Recordatorio de turno", cuerpo);
+      algunoSalio = algunoSalio || ok;
+      await registrarEnvioRecordatorio(turno, "email", momento, ok ? "sent" : "failed", cuerpo);
+      console.log(`[Recordatorios] ${momento} email a ${turno.patient_email}: ${ok ? "enviado" : "fallo"}`);
+    }
+  }
+
+  // Marcamos aunque haya fallado: evita reintentos infinitos cada 5 minutos.
+  // El fallo queda registrado en reminder_logs para que puedas verlo.
+  await actualizarCampos("appointments", turno.id, { [marca]: new Date().toISOString() });
+  return algunoSalio;
+};
+
+const procesarRecordatorios = async () => {
+  if (!hayPersistencia()) return;
+  const cfg = reminderConfig;
+  if (!cfg) return;
+  if (cfg.whatsapp_enabled === false && cfg.email_enabled === false) return;
+
+  try {
+    const turnos = await listarColeccion("appointments", 500);
+    const ahora = Date.now();
+
+    for (const t of turnos) {
+      if (!t.id || !t.start_datetime) continue;
+      const inicio = new Date(t.start_datetime).getTime();
+      if (isNaN(inicio) || inicio <= ahora) continue;
+
+      const estado = String(t.status || "").toLowerCase();
+      if (estado.includes("cancel")) continue;
+
+      const restante = inicio - ahora;
+      const creado = new Date(t.created_at || 0).getTime();
+      // Sin fecha de alta asumimos que se reservo con mucha anticipacion.
+      const anticipacion = (!creado || isNaN(creado)) ? Infinity : inicio - creado;
+
+      // 24 h: solo si se reservo con mas de 24 h (+ margen) de anticipacion.
+      if (
+        cfg.send_24h_before !== false &&
+        !t.reminder_24h_sent_at &&
+        restante <= 24 * HORA_MS &&
+        restante > 2 * HORA_MS &&
+        anticipacion > 24 * HORA_MS + MARGEN_MS
+      ) {
+        await enviarRecordatorio(t, "24h");
+        continue; // no mandamos los dos juntos en la misma pasada
+      }
+
+      // 2 h: solo si se reservo con mas de 2 h (+ margen) de anticipacion.
+      if (
+        cfg.send_2h_before !== false &&
+        !t.reminder_2h_sent_at &&
+        restante <= 2 * HORA_MS &&
+        restante > 0 &&
+        anticipacion > 2 * HORA_MS + MARGEN_MS
+      ) {
+        await enviarRecordatorio(t, "2h");
+      }
+    }
+  } catch (err: any) {
+    console.error("[Recordatorios] Error procesando:", err?.message || err);
+  }
+};
+
 const cargarConfigDesdeBase = async () => {
   if (!hayPersistencia()) return;
   try {
     const config = await leerDocumento("settings", "practice_config");
     if (config && Object.keys(config).length > 0) {
       cachedPracticeSettings = { ...cachedPracticeSettings, ...config };
+    }
+
+    const rc = await leerDocumento("settings", REMINDER_DOC);
+    if (rc?.config) {
+      try { reminderConfig = JSON.parse(rc.config); } catch { /* documento corrupto */ }
     }
 
     const runtime = await leerDocumento("settings", RUNTIME_DOC);
@@ -958,7 +1167,9 @@ Nota importante sobre datetime: La fecha y hora deben estar en hora local de Arg
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Cloud Run asigna el puerto por variable de entorno; sin esto el contenedor
+  // no pasa el chequeo de salud y el despliegue falla.
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: "25mb" }));
 
@@ -2075,6 +2286,12 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       // Guardamos servicios, horarios y turnos para que el WEBHOOK pueda usarlos.
       // Sin esto el bot respondia el webhook con listas vacias e inventaba datos.
       updateBusinessContext({ services, availability, existingAppointments });
+      // La configuracion de recordatorios vive en el navegador: la guardamos en
+      // la base para que el motor automatico pueda usarla sin la app abierta.
+      if (req.body?.reminderConfig) {
+        reminderConfig = req.body.reminderConfig;
+        guardarReminderConfig(reminderConfig).catch(() => {});
+      }
       // Lo dejamos guardado para que el servidor lo tenga tras un reinicio.
       guardarContextoEnBase().catch(() => {});
 
@@ -2588,6 +2805,12 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         servicios: businessContext.services.length,
         franjasHorarias: businessContext.availability.length,
         turnosFuturos: businessContext.existingAppointments.length,
+        recordatorios: reminderConfig ? {
+          whatsapp: reminderConfig.whatsapp_enabled !== false,
+          email: reminderConfig.email_enabled !== false,
+          antes24h: reminderConfig.send_24h_before !== false,
+          antes2h: reminderConfig.send_2h_before !== false
+        } : "sin configuracion cargada",
         conversacionesEnMemoria: realWhatsAppConversations.size
       };
 
@@ -3340,6 +3563,11 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   cargarConfigDesdeBase().catch(() => {});
   // Refresco periodico: turnos y configuracion cambian mientras el bot atiende.
   setInterval(() => { cargarConfigDesdeBase().catch(() => {}); }, 5 * 60 * 1000);
+
+  // Recordatorios: revisamos cada 5 minutos. La primera pasada espera un minuto
+  // para que la configuracion ya este cargada.
+  setTimeout(() => { procesarRecordatorios().catch(() => {}); }, 60 * 1000);
+  setInterval(() => { procesarRecordatorios().catch(() => {}); }, 5 * 60 * 1000);
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Agenfacil Server running on http://0.0.0.0:${PORT}`);

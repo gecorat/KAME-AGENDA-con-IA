@@ -64,6 +64,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
     services,
     availability,
     appointments,
+    reminderConfig,
     addChatMessage,
     createConversation,
     toggleAiHandled,
@@ -185,6 +186,9 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           apiKey: practiceSettings.evolution_api_key,
           instanceName: practiceSettings.evolution_instance_name,
           practiceSettings,
+          // El motor de recordatorios corre en el servidor: necesita esta config
+          // para poder enviar aunque nadie tenga la app abierta.
+          reminderConfig,
           services: services.filter(s => s.active),
           availability,
           // El bot chequea disponibilidad contra esta lista: mandamos TODOS los
