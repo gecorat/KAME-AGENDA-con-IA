@@ -35,6 +35,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     services,
     availability,
     appointments,
+    reminderConfig,
     updatePracticeSettings
   } = useAgendaStore();
 
@@ -53,12 +54,19 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
   const isHoursComplete = availability.some(d => d.enabled);
   const isBotTested = completedSteps.includes('whatsapp') || appointments.some(a => a.origin === 'bot_whatsapp');
   const isPortalTested = completedSteps.includes('share') || appointments.some(a => (a.origin as string) === 'patient_portal' || a.origin === 'public_booking');
+  // Pasos nuevos: sin el numero conectado el bot no atiende, y sin recordatorios
+  // activos los pacientes no reciben los avisos de 24 h y 2 h.
+  const isWhatsAppConnected = Boolean(practiceSettings.whatsapp_connected);
+  const isRemindersReady = Boolean(
+    reminderConfig && (reminderConfig.whatsapp_enabled || reminderConfig.email_enabled) &&
+    (reminderConfig.send_24h_before || reminderConfig.send_2h_before)
+  );
 
   const guideSteps = [
     {
       id: 'profile',
       number: '01',
-      title: 'Datos del Consultorio & Profesional',
+      title: 'Tus datos',
       description: 'Configura el nombre de tu centro médico, especialidad, matrícula y teléfono de contacto que verán los pacientes.',
       tab: 'configuracion',
       actionLabel: 'Completar datos',
@@ -70,7 +78,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     {
       id: 'services',
       number: '02',
-      title: 'Definir Aranceles & Tratamientos',
+      title: 'Tus servicios y precios',
       description: 'Carga al menos una consulta o tratamiento con su precio y duración en minutos para habilitar el agendamiento.',
       tab: 'servicios',
       actionLabel: 'Gestionar aranceles',
@@ -82,7 +90,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     {
       id: 'hours',
       number: '03',
-      title: 'Configurar Horarios de Atención',
+      title: 'Tus horarios',
       description: 'Establece los días de la semana y las franjas horarias en las que atiendes para que el sistema calcule los turnos disponibles.',
       tab: 'horarios',
       actionLabel: 'Configurar franjas',
@@ -94,7 +102,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     {
       id: 'whatsapp',
       number: '04',
-      title: 'Probar el Bot IA de Turnos (Simulador)',
+      title: 'Probar el bot',
       description: 'Interactúa con el asistente virtual inteligente entrenado con tu agenda real. Coordina turnos y resuelve dudas como lo haría un paciente.',
       tab: 'chats',
       actionLabel: 'Abrir Simulador Bot IA',
@@ -106,7 +114,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     {
       id: 'share',
       number: '05',
-      title: 'Probar Portal Online de Pacientes',
+      title: 'Probar tu página pública',
       description: 'Verifica tu página pública agenfacil.com/u/... y realiza un agendamiento de prueba para comprobar el flujo.',
       tab: 'portal',
       actionLabel: 'Ver Portal de Turnos',
@@ -114,6 +122,30 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
       completed: isPortalTested,
       essential: false,
       hint: isPortalTested ? 'Portal verificado y funcional' : 'Prueba el link público para pacientes'
+    },
+    {
+      id: 'whatsapp_connect',
+      number: '06',
+      title: 'Conectar tu WhatsApp',
+      description: 'Escaneá el QR para vincular tu número. Sin esto el bot no puede recibir ni responder mensajes reales.',
+      tab: 'chats',
+      actionLabel: 'Conectar WhatsApp',
+      icon: Bot,
+      completed: isWhatsAppConnected,
+      essential: true,
+      hint: isWhatsAppConnected ? 'Número vinculado' : 'Falta vincular el número: el bot no atiende'
+    },
+    {
+      id: 'reminders',
+      number: '07',
+      title: 'Activar recordatorios',
+      description: 'Avisos automáticos 24 horas y 2 horas antes de cada turno, por WhatsApp y por correo.',
+      tab: 'recordatorios',
+      actionLabel: 'Configurar recordatorios',
+      icon: Globe,
+      completed: isRemindersReady,
+      essential: true,
+      hint: isRemindersReady ? 'Recordatorios activos' : 'Sin esto tus pacientes no reciben avisos'
     }
   ];
 

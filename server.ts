@@ -324,7 +324,20 @@ const guardarContextoEnBase = async () => {
 // ============================================================================
 const REMINDER_DOC = "reminder_config";
 const HORA_MS = 60 * 60 * 1000;
-const MARGEN_MS = 15 * 60 * 1000; // no mandamos un aviso que llega casi encima
+
+// Anticipacion minima con la que tiene que estar reservado el turno para que
+// cada aviso tenga sentido. Si alguien reserva 3 h antes ya recibio el mensaje
+// de confirmacion: mandarle un "recordatorio" al rato es spam.
+const MINIMO_PARA_24H = 30 * HORA_MS;
+const MINIMO_PARA_2H = 6 * HORA_MS;
+
+// Canales habilitados segun el plan contratado. Se valida en el servidor: si
+// solo se ocultara el boton en la interfaz, cualquiera lo saltea.
+const canalesDelPlan = (): { whatsapp: boolean; email: boolean } => {
+  const plan = String(cachedPracticeSettings.subscription_plan || "trial").toLowerCase();
+  if (plan === "pro") return { whatsapp: true, email: true };
+  return { whatsapp: false, email: true }; // trial y basic: solo correo
+};
 
 let reminderConfig: any = null;
 
@@ -405,8 +418,10 @@ const enviarRecordatorio = async (turno: any, momento: "24h" | "2h") => {
   const marca = momento === "24h" ? "reminder_24h_sent_at" : "reminder_2h_sent_at";
   let algunoSalio = false;
 
-  // WhatsApp
-  if (cfg.whatsapp_enabled !== false && turno.patient_phone) {
+  const plan = canalesDelPlan();
+
+  // WhatsApp (solo plan pro)
+  if (plan.whatsapp && cfg.whatsapp_enabled !== false && turno.patient_phone) {
     const plantilla = momento === "24h" ? cfg.whatsapp_template_24h : cfg.whatsapp_template_2h;
     const texto = aplicarPlantilla(plantilla || "", datos);
     if (texto.trim()) {
@@ -421,8 +436,8 @@ const enviarRecordatorio = async (turno: any, momento: "24h" | "2h") => {
     }
   }
 
-  // Email
-  if (cfg.email_enabled !== false && turno.patient_email) {
+  // Email (todos los planes)
+  if (plan.email && cfg.email_enabled !== false && turno.patient_email) {
     const asunto = aplicarPlantilla(momento === "24h" ? cfg.email_subject_24h : cfg.email_subject_2h, datos);
     const cuerpo = aplicarPlantilla(momento === "24h" ? cfg.email_body_24h : cfg.email_body_2h, datos);
     if (cuerpo.trim()) {
@@ -468,7 +483,7 @@ const procesarRecordatorios = async () => {
         !t.reminder_24h_sent_at &&
         restante <= 24 * HORA_MS &&
         restante > 2 * HORA_MS &&
-        anticipacion > 24 * HORA_MS + MARGEN_MS
+        anticipacion >= MINIMO_PARA_24H
       ) {
         await enviarRecordatorio(t, "24h");
         continue; // no mandamos los dos juntos en la misma pasada
@@ -480,7 +495,7 @@ const procesarRecordatorios = async () => {
         !t.reminder_2h_sent_at &&
         restante <= 2 * HORA_MS &&
         restante > 0 &&
-        anticipacion > 2 * HORA_MS + MARGEN_MS
+        anticipacion >= MINIMO_PARA_2H
       ) {
         await enviarRecordatorio(t, "2h");
       }
@@ -577,6 +592,29 @@ const parseArgentinaDate = (dtStr: string): Date => {
   return new Date(s);
 };
 
+// ---------------------------------------------------------------------------
+// Ficha del paciente: buscamos por telefono para no duplicar. Comparamos los
+// ultimos 8 digitos, asi no falla por el 0, el 15 o el +54.
+// ---------------------------------------------------------------------------
+const soloDigitos = (v: any) => String(v || "").replace(/\D/g, "");
+
+const mismoTelefono = (a: any, b: any) => {
+  const x = soloDigitos(a), y = soloDigitos(b);
+  if (x.length < 8 || y.length < 8) return false;
+  return x.slice(-8) === y.slice(-8);
+};
+
+const buscarPacientePorTelefono = async (telefono: string): Promise<any | null> => {
+  if (!hayPersistencia() || soloDigitos(telefono).length < 8) return null;
+  try {
+    const pacientes = await listarColeccion("patients", 500);
+    return pacientes.find((pa: any) => mismoTelefono(pa.phone, telefono)) || null;
+  } catch (err: any) {
+    console.error("[Pacientes] Error buscando la ficha:", err?.message || err);
+    return null;
+  }
+};
+
 // Crea el turno en la coleccion que lee la app. Devuelve null si no se pudo,
 // para que la conversacion quede marcada para revision humana.
 const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string; detalle: string } | null> => {
@@ -603,7 +641,19 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
     // 1. Registrar o vincular al paciente primero
     const nameParts = patientName.trim().split(" ");
     let patientDocId = "pat-bot";
+    let fichaPaciente: any = null;
     try {
+      // Si ya existe la ficha, la reutilizamos: antes se creaba una nueva en
+      // cada reserva y el mismo paciente quedaba duplicado, sin su correo.
+      fichaPaciente = await buscarPacientePorTelefono(cleanFormattedPhone);
+      if (fichaPaciente?.id) {
+        patientDocId = fichaPaciente.id;
+        console.log(`[Turnos] Vinculado a la ficha existente de ${fichaPaciente.first_name || ""} ${fichaPaciente.last_name || ""}`.trim());
+        await actualizarCampos("patients", fichaPaciente.id, {
+          total_appointments: Number(fichaPaciente.total_appointments || 0) + 1,
+          last_appointment_at: new Date().toISOString()
+        });
+      } else {
       const createdPid = await crearDocumento("patients", {
         first_name: nameParts[0] || "Paciente",
         last_name: nameParts.slice(1).join(" ") || "Prospecto",
@@ -618,6 +668,8 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
       });
       if (createdPid) {
         patientDocId = createdPid;
+        console.log(`[Turnos] Ficha nueva creada para ${patientName}`);
+      }
       }
     } catch (e: any) {
       console.warn("[Turnos] No se pudo persistir el paciente en Firestore:", e?.message || e);
@@ -628,6 +680,8 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
       patient_id: patientDocId,
       patient_name: patientName,
       patient_phone: cleanFormattedPhone,
+      // Si la ficha ya tenia correo, el recordatorio por mail sale solo.
+      patient_email: fichaPaciente?.email || "",
       service_id: servicio?.id || "",
       service_name: servicio?.name || accion.service_name || "Consulta",
       service_price: Number(servicio?.price) || 0,
@@ -1871,21 +1925,8 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     };
     realWhatsAppConversations.set(convId, newConv);
 
-    // Registrar en Firestore como prospecto / futuro cliente
-    if (hayPersistencia()) {
-      crearDocumento("patients", {
-        first_name: firstName || "Paciente",
-        last_name: displayName.replace(firstName, "").trim() || (formattedPhone ? `(${formattedPhone})` : ""),
-        phone: formattedPhone,
-        relationship_status: "prospect",
-        inquiry_channel: "whatsapp",
-        first_inquiry_at: new Date().toISOString(),
-        total_appointments: 0,
-        completed_appointments_count: 0,
-        notes: "Futuro cliente registrado automáticamente al iniciar consulta por WhatsApp.",
-        created_at: new Date().toISOString()
-      }).catch(() => {});
-    }
+    // NO creamos ficha de cliente por escribir un mensaje: puede ser un curioso.
+    // La ficha se crea recien cuando el turno queda agendado (crearTurnoDesdeBot).
 
     return newConv;
   };
@@ -2787,6 +2828,28 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     return res.json({ success: true, id: conv.id });
   });
 
+  // Cloud Run apaga el contenedor cuando no hay trafico y con el se van los
+  // temporizadores. Este endpoint lo despierta: Cloud Scheduler lo llama cada
+  // 5 minutos y ahi si los recordatorios salen aunque nadie use la app.
+  app.post("/api/cron/reminders", async (req, res) => {
+    const esperado = process.env.CRON_SECRET || "";
+    const recibido = String(req.headers["x-cron-secret"] || req.query.secret || "");
+    if (esperado && recibido !== esperado) {
+      return res.status(401).json({ ok: false, error: "No autorizado" });
+    }
+    try {
+      // Si el contenedor acaba de arrancar todavia no tiene la configuracion.
+      if (!reminderConfig || businessContext.updatedAt === 0) {
+        await cargarConfigDesdeBase();
+      }
+      await procesarRecordatorios();
+      return res.json({ ok: true, at: new Date().toISOString() });
+    } catch (err: any) {
+      console.error("[Cron] Error procesando recordatorios:", err?.message || err);
+      return res.status(500).json({ ok: false, error: err?.message || "error" });
+    }
+  });
+
   // Diagnostico: que webhook tiene registrado Evolution para la instancia y
   // como salio el ultimo intento de registro desde esta app.
   app.get("/api/evolution/webhook-status", async (req, res) => {
@@ -2805,6 +2868,8 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         servicios: businessContext.services.length,
         franjasHorarias: businessContext.availability.length,
         turnosFuturos: businessContext.existingAppointments.length,
+        plan: cachedPracticeSettings.subscription_plan || "trial",
+        canalesPorPlan: canalesDelPlan(),
         recordatorios: reminderConfig ? {
           whatsapp: reminderConfig.whatsapp_enabled !== false,
           email: reminderConfig.email_enabled !== false,

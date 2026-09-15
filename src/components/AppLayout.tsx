@@ -112,13 +112,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   const NAV_SECTIONS = [
     {
-      title: 'Atención Diaria',
+      title: 'Día a día',
       items: [
-        { id: 'dashboard', label: 'Panel General', icon: LayoutDashboard },
-        { id: 'agenda', label: 'Agenda de Turnos', icon: Calendar },
+        { id: 'dashboard', label: 'Inicio', icon: LayoutDashboard },
+        { id: 'agenda', label: 'Agenda', icon: Calendar },
         {
           id: 'chats',
-          label: isPro ? 'WhatsApp & Chats' : 'WhatsApp & Bot IA',
+          label: 'WhatsApp',
           icon: MessageSquare,
           badge: isPro ? (practiceSettings.whatsapp_connected ? 'En línea' : 'Configurar') : 'IA Activa',
           badgeColor: isPro ? (practiceSettings.whatsapp_connected ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/60' : 'bg-amber-100 text-amber-800') : 'bg-teal-50 text-teal-800 border border-teal-200/60'
@@ -126,7 +126,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         { id: 'pacientes', label: clientTermPlural, icon: professionInfo.id === 'legal_contable' ? Scale : Users },
         {
           id: 'cobros',
-          label: professionInfo.id === 'legal_contable' ? 'Honorarios & Caja' : 'Cobros & Caja',
+          label: 'Cobros',
           icon: Receipt,
           badge: pendingPaymentsCount > 0 ? `${pendingPaymentsCount}` : undefined,
           badgeColor: 'bg-amber-100 text-amber-900 border border-amber-200/70'
@@ -134,7 +134,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       ]
     },
     {
-      title: 'Gestión Clínica',
+      title: 'Gestión',
       items: [
         {
           id: 'consultas',
@@ -145,7 +145,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         },
         {
           id: 'espera',
-          label: 'Lista de Espera',
+          label: 'Espera',
           icon: ListOrdered,
           badge: waitingCount > 0 ? `${waitingCount}` : undefined,
           badgeColor: 'bg-slate-200 text-slate-700'
@@ -157,24 +157,24 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           badge: 'Auto',
           badgeColor: 'bg-slate-100 text-slate-700 border border-slate-200/60'
         },
-        { id: 'metricas', label: 'Métricas & Estadísticas', icon: TrendingUp }
+        { id: 'metricas', label: 'Métricas', icon: TrendingUp }
       ]
     },
     {
       title: 'Configuración',
       items: [
-        { id: 'editor-pagina', label: 'Página Web & Portal', icon: Palette, badge: 'Público', badgeColor: 'bg-teal-100 text-teal-800 border border-teal-200/60' },
-        { id: 'servicios', label: 'Servicios & Aranceles', icon: DollarSign },
-        { id: 'horarios', label: 'Horarios de Atención', icon: Clock },
+        { id: 'editor-pagina', label: 'Mi Página', icon: Palette, badge: 'Público', badgeColor: 'bg-teal-100 text-teal-800 border border-teal-200/60' },
+        { id: 'servicios', label: 'Servicios', icon: DollarSign },
+        { id: 'horarios', label: 'Horarios', icon: Clock },
         {
           id: 'google-sync',
-          label: 'Google Workspace',
+          label: 'Google',
           icon: Cloud
         },
-        { id: 'configuracion', label: 'Ajustes Generales', icon: Settings },
+        { id: 'configuracion', label: 'Ajustes', icon: Settings },
         {
           id: 'suscripcion',
-          label: 'Planes & Precios',
+          label: 'Mi Plan',
           icon: CreditCard,
           badge: isTrial ? `${trialDaysLeft} DÍAS` : (practiceSettings.subscription_plan === 'pro' ? 'PRO AI' : 'BÁSICO'),
           badgeColor: isTrial ? 'bg-teal-100 text-teal-900 border border-teal-300 font-bold' : (practiceSettings.subscription_plan === 'pro' ? 'bg-sky-100 text-sky-800' : 'bg-slate-200 text-slate-800')
@@ -182,7 +182,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       ]
     },
     {
-      title: 'Ayuda & Soporte',
+      title: 'Ayuda',
       items: [
         {
           id: 'guia',
@@ -193,7 +193,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         },
         {
           id: 'sugerencias',
-          label: 'Buzón de Sugerencias',
+          label: 'Sugerencias',
           icon: Lightbulb,
           badge: 'Feedback',
           badgeColor: 'bg-amber-100 text-amber-800 border border-amber-200/60'
@@ -206,21 +206,21 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
         items: [
           {
             id: 'superadmin-apis',
-            label: 'APIs & Pasarelas (DLocal / MP)',
+            label: 'APIs',
             icon: Key,
             badge: 'Admin',
             badgeColor: 'bg-amber-400 text-slate-950 font-bold'
           },
           {
             id: 'superadmin-analytics',
-            label: 'Estadísticas SaaS & Cobros',
+            label: 'Estadísticas',
             icon: TrendingUp,
             badge: 'Admin',
             badgeColor: 'bg-amber-400 text-slate-950 font-bold'
           },
           {
             id: 'superadmin-mensajes',
-            label: 'Mensajes Web (Contacto)',
+            label: 'Mensajes Web',
             icon: Mail,
             badge: unreadContactMessagesCount > 0 ? `${unreadContactMessagesCount} NUEVO${unreadContactMessagesCount > 1 ? 'S' : ''}` : undefined,
             badgeColor: 'bg-rose-500 text-white font-bold animate-pulse'

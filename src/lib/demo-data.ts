@@ -616,7 +616,7 @@ export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   email_enabled: true,
   send_24h_before: true,
   send_2h_before: true,
-  require_confirmation: true,
+  require_confirmation: false, // el turno ya queda confirmado al reservarse
   auto_update_status_on_confirm: true,
   sender_email_alias: "Consultorio Médico - Agenfacil",
   whatsapp_template_24h: "Te confirmo tu turno, te paso los detalles 😊:\n\n🗓 **Fecha:** {fecha}\n⏰ **Horario:** {hora}\n👤 **Profesional:** {profesional}\n💼 **Servicio:** {servicio}\n📍 **Lugar:** {direccion}, {ciudad}\n\n¡Te esperamos mañana! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊",
