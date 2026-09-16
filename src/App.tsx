@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AgendaStoreProvider, useAgendaStore } from './lib/store';
+import { esSuperAdmin } from './lib/firestore-sync';
 import { AppLayout } from './components/AppLayout';
 import { DashboardView } from './views/DashboardView';
 import { AgendaView } from './views/AgendaView';
@@ -88,8 +89,10 @@ function MainApp() {
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
   const [pendingProtectedTab, setPendingProtectedTab] = useState<string | null>(null);
 
-  const isGonzalo = !currentUser || currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
-  const isSuperAdmin = isGonzalo || currentUser?.role === 'superadmin' || Boolean(currentUser?.isSuperAdmin);
+  // Antes, sin sesion iniciada la app trataba al visitante como super admin.
+    // Ahora solo lo es quien figura en la lista, y el servidor lo vuelve a verificar.
+    const isGonzalo = esSuperAdmin(currentUser?.email, currentUser?.uid);
+    const isSuperAdmin = isGonzalo;
   const isBasicPlan = practiceSettings.subscription_plan === 'basic' && !isSuperAdmin;
   const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
   const trialExpired = isTrial && (practiceSettings.trial_days_left ?? 0) <= 0 && !practiceSettings.is_permanent;

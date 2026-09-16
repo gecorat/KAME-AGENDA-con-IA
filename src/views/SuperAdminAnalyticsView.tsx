@@ -48,6 +48,7 @@ import {
 } from 'recharts';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
+import { esSuperAdmin } from '../lib/firestore-sync';
 import { SaasTenantUser } from '../types';
 
 export const SuperAdminAnalyticsView: React.FC = () => {
@@ -57,7 +58,10 @@ export const SuperAdminAnalyticsView: React.FC = () => {
     deleteSaasTenant,
     extendUserTrial,
     grantUserPlan,
-    currentUser
+    currentUser,
+    superAdminOverview,
+    superAdminCargando,
+    refrescarPanelSuperAdmin
   } = useAgendaStore();
 
   const [timeframe, setTimeframe] = useState<'day' | 'week' | 'month'>('month');
@@ -79,9 +83,16 @@ export const SuperAdminAnalyticsView: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   // Filter out the Super Admin platform owner from paying tenant metrics
+  // Los datos del panel salen del servidor (valida la sesion y lee la base completa).
+  // Si el servidor no contesta, se usa lo que ya trajo Firestore al navegador.
+  const fuenteTenants = (superAdminOverview?.usuarios?.length ? superAdminOverview.usuarios : saasTenants) as SaasTenantUser[];
+  const totalesReales = superAdminOverview?.totales || null;
+  const integraciones = superAdminOverview?.integraciones || null;
+  const erroresPlataforma: Array<{ cuando: string; detalle: string }> = superAdminOverview?.errores || [];
+
   const doctorTenants = useMemo(() => {
-    return saasTenants.filter(t => (t.email || '').toLowerCase() !== 'gonzalocorat@gmail.com');
-  }, [saasTenants]);
+    return fuenteTenants.filter((t: any) => !t?.es_super_admin && !esSuperAdmin(t?.email, t?.id));
+  }, [fuenteTenants]);
 
   const totalTenants = doctorTenants.length;
   const activeTenants = useMemo(() => {
@@ -414,6 +425,81 @@ export const SuperAdminAnalyticsView: React.FC = () => {
           </button>
         </div>
       )}
+
+      {/* Estado real de la plataforma (lo calcula el servidor) */}
+      <div className="bg-white rounded-2xl border border-neutral-200 p-5 space-y-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h3 className="font-bold text-neutral-900">Estado de la plataforma</h3>
+            <p className="text-xs text-neutral-500">
+              {superAdminOverview?.generado
+                ? 'Datos de la base al ' + new Date(superAdminOverview.generado).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) + ' hs'
+                : 'Sin confirmar con el servidor: se muestran los datos que llegaron al navegador.'}
+            </p>
+          </div>
+          <button
+            onClick={() => refrescarPanelSuperAdmin()}
+            disabled={superAdminCargando}
+            className="px-3 py-1.5 rounded-lg border border-neutral-300 text-sm font-medium hover:bg-neutral-50 disabled:opacity-50"
+          >
+            {superAdminCargando ? 'Actualizando...' : 'Actualizar'}
+          </button>
+        </div>
+
+        {totalesReales && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { t: 'Turnos totales', v: totalesReales.turnos },
+              { t: 'Turnos ultimos 30 dias', v: totalesReales.turnos_30_dias },
+              { t: 'Pacientes cargados', v: totalesReales.pacientes },
+              { t: 'Transferencias a revisar', v: totalesReales.transferencias_pendientes }
+            ].map((c) => (
+              <div key={c.t} className="rounded-xl bg-neutral-50 border border-neutral-200 p-3">
+                <div className="text-lg font-bold text-neutral-900">{Number(c.v || 0).toLocaleString('es-AR')}</div>
+                <div className="text-[11px] text-neutral-500">{c.t}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {integraciones && (
+          <div className="flex flex-wrap gap-2">
+            {[
+              { t: 'WhatsApp', ok: integraciones.whatsapp?.configurado },
+              { t: 'Correo', ok: integraciones.correo?.configurado },
+              { t: 'Mercado Pago', ok: integraciones.mercadopago?.configurado },
+              { t: 'dLocal Go', ok: integraciones.dlocal?.configurado },
+              { t: 'Base de datos', ok: integraciones.base_de_datos?.configurado }
+            ].map((c) => (
+              <span
+                key={c.t}
+                className={'px-2.5 py-1 rounded-full text-xs font-medium border ' + (c.ok ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200')}
+              >
+                {c.t}: {c.ok ? 'conectado' : 'sin configurar'}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {erroresPlataforma.length > 0 && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <div className="text-xs font-semibold text-amber-900 mb-1.5">Ultimos errores del servidor</div>
+            <ul className="space-y-1">
+              {erroresPlataforma.slice(0, 5).map((e, i) => (
+                <li key={i} className="text-[11px] text-amber-900/80 font-mono break-all">
+                  {new Date(e.cuando).toLocaleTimeString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' })} - {e.detalle}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {!superAdminOverview && !superAdminCargando && (
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+            El servidor todavia no confirmo esta sesion como super admin. Los numeros de abajo salen de lo que ve el navegador.
+          </div>
+        )}
+      </div>
 
       {/* 4 Core Financial KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

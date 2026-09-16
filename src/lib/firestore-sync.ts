@@ -41,9 +41,52 @@ export const googleProvider = new GoogleAuthProvider();
 
 // Interruptor del filtro de LECTURA. Se enciende despues de migrar los datos
 // existentes; si se encendiera antes, la app se veria vacia.
-export const FILTRAR_POR_CUENTA = false;
+// Campos que nunca viajan a Firestore: son credenciales.
+const CAMPOS_SENSIBLES = [
+  'evolution_api_url',
+  'evolution_api_key',
+  'evolution_instance_name',
+  'mercadopago_access_token',
+  'mercadopago_public_key',
+  'mercadopago_webhook_secret',
+  'dlocalgo_api_key',
+  'dlocalgo_secret_key',
+  'lemonsqueezy_api_key',
+  'resend_api_key',
+  'gemini_api_key'
+];
+
+export const FILTRAR_POR_CUENTA = true;
 
 export const cuentaActual = (): string | null => auth.currentUser?.uid || null;
+
+// Quien puede entrar al panel de Super Admin. La misma lista vive en server.ts:
+// aca solo decide que se muestra, alla decide que datos se entregan.
+export const SUPER_ADMIN_EMAILS = ['gonzalocorat' + '@gmail.com', 'gecorat' + '@gmail.com'];
+export const SUPER_ADMIN_UIDS = ['FiQCY7iMmubpXZlqs1YuZTYulXz1'];
+
+export const esSuperAdmin = (email?: string | null, uid?: string | null): boolean => {
+  const correo = (email || '').toLowerCase().trim();
+  const id = (uid || '').trim();
+  if (correo && SUPER_ADMIN_EMAILS.includes(correo)) return true;
+  if (id && SUPER_ADMIN_UIDS.includes(id)) return true;
+  return false;
+};
+
+// Panel de Super Admin ya calculado por el servidor, que valida la sesion de verdad.
+export const obtenerPanelSuperAdmin = async (): Promise<any | null> => {
+  try {
+    const usuario = auth.currentUser;
+    if (!usuario) return null;
+    const idToken = await usuario.getIdToken();
+    const res = await fetch('/api/superadmin/overview', { headers: { Authorization: 'Bearer ' + idToken } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (error) {
+    console.error('No se pudo traer el panel de super admin:', error);
+    return null;
+  }
+};
 
 // Agrega el dueño al documento que se va a guardar.
 const conDueno = (payload: any) => {
@@ -193,8 +236,11 @@ export const subscribeToUsers = (
   onError?: (err: Error) => void
 ) => {
   const colRef = collection(db, COLLECTIONS.USERS);
+  // El super admin necesita ver TODAS las cuentas: el filtro por dueño lo dejaria
+  // viendo solo la suya. El resto de las colecciones sigue filtrando igual que antes.
+  const soyElAdmin = esSuperAdmin(auth.currentUser?.email, auth.currentUser?.uid);
   return onSnapshot(
-    consultaDeLaCuenta(colRef),
+    soyElAdmin ? colRef : consultaDeLaCuenta(colRef),
     (snapshot) => {
       const emailMap = new Map<string, SaasTenantUser>();
       snapshot.forEach((d) => {
@@ -453,7 +499,12 @@ export const deletePaymentFromFirestore = async (paymentId: string): Promise<boo
 export const saveSettingsToFirestore = async (settings: PracticeSettings): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SETTINGS, docConfigDeLaCuenta());
-    const payload = conDueno(cleanObjectForFirestore(settings));
+    // Las claves NO se guardan en la base: este documento es legible sin login
+    // (la pagina publica de reservas lo necesita). Viven en las variables de
+    // entorno del servidor.
+    const sinClaves: any = { ...settings };
+    for (const campo of CAMPOS_SENSIBLES) delete sinClaves[campo];
+    const payload = conDueno(cleanObjectForFirestore(sinClaves));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {

@@ -42,6 +42,7 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
+import { esSuperAdmin } from '../lib/firestore-sync';
 import { NotificationCenter } from './NotificationCenter';
 import { PWAInstallButton } from './PWAInstallButton';
 import { getClientTerm, getProfessionInfo } from '../lib/terminology';
@@ -74,8 +75,10 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
   const waitingCount = waitlist.filter(w => w.status === 'waiting').length;
   const pendingPaymentsCount = appointments.filter(a => a.payment_status === 'pending' && a.status !== 'cancelled').length;
-  const isGonzalo = !currentUser || currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
-  const isSuperAdmin = isGonzalo || currentUser?.role === 'superadmin' || Boolean(currentUser?.isSuperAdmin);
+  // Antes, sin sesion iniciada la app trataba al visitante como super admin.
+    // Ahora solo lo es quien figura en la lista, y el servidor lo vuelve a verificar.
+    const isGonzalo = esSuperAdmin(currentUser?.email, currentUser?.uid);
+    const isSuperAdmin = isGonzalo;
   const isTrial = !isSuperAdmin && (practiceSettings.subscription_plan === 'trial' || Boolean(practiceSettings.trial_active));
   const isPro = isSuperAdmin || practiceSettings.subscription_plan === 'pro';
   const trialDaysLeft = practiceSettings.trial_days_left ?? 14;

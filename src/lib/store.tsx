@@ -103,7 +103,9 @@ import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  updateProfile
+  updateProfile,
+  esSuperAdmin,
+  obtenerPanelSuperAdmin
 } from './firestore-sync';
 
 export const isAppointmentPastSchedule = (apt: Appointment, nowMs: number = Date.now()): boolean => {
@@ -210,6 +212,9 @@ interface AgendaStoreContextType {
   logout: () => Promise<void>;
   switchUserRole: (role: UserRole) => void;
   saasTenants: SaasTenantUser[];
+  superAdminOverview: any | null;
+  superAdminCargando: boolean;
+  refrescarPanelSuperAdmin: () => Promise<void>;
   updateSaasTenant: (id: string, updates: Partial<SaasTenantUser>) => Promise<void>;
   deleteSaasTenant: (id: string) => Promise<boolean>;
   extendUserTrial: (id: string, daysToAdd: number) => Promise<boolean>;
@@ -773,7 +778,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser && firebaseUser.email) {
         const emailLower = firebaseUser.email.toLowerCase();
-        const isSuper = emailLower === 'gonzalocorat@gmail.com';
+        const isSuper = esSuperAdmin(emailLower, firebaseUser.uid);
         
         const remoteDoc = await getUserFromFirestore(firebaseUser.uid);
         const effectivePlan = isSuper ? 'pro' : (remoteDoc?.plan || 'basic');
@@ -845,7 +850,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       if (user && user.email) {
-        const isSuper = user.email.toLowerCase() === 'gonzalocorat@gmail.com';
+        const isSuper = esSuperAdmin(user.email, user.uid);
         const session: UserSession = {
           uid: user.uid,
           email: user.email,
@@ -877,7 +882,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       setIsAuthLoading(true);
       const cred = await signInWithEmailAndPassword(auth, email, pass);
       const user = cred.user;
-      const isSuper = user.email?.toLowerCase() === 'gonzalocorat@gmail.com';
+      const isSuper = esSuperAdmin(user.email, user.uid);
       const session: UserSession = {
         uid: user.uid,
         email: user.email || email,
@@ -902,7 +907,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       const cred = await createUserWithEmailAndPassword(auth, email, pass);
       const user = cred.user;
       await updateProfile(user, { displayName: name });
-      const isSuper = email.toLowerCase() === 'gonzalocorat@gmail.com';
+      const isSuper = esSuperAdmin(email, user.uid);
       const session: UserSession = {
         uid: user.uid,
         email,
@@ -1023,7 +1028,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const switchUserRole = (role: UserRole) => {
     // Only Gonzalo is authorized to switch roles or simulate views
-    if (!currentUser || currentUser.email.toLowerCase() !== 'gonzalocorat@gmail.com') {
+    if (!esSuperAdmin(currentUser?.email, currentUser?.uid)) {
       return;
     }
 
@@ -1051,16 +1056,43 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   // Real-time Firestore users synchronization for Super Admin
   const [saasTenants, setSaasTenants] = useState<SaasTenantUser[]>([]);
+  const [superAdminOverview, setSuperAdminOverview] = useState<any | null>(null);
+  const [superAdminCargando, setSuperAdminCargando] = useState(false);
 
   useEffect(() => {
     cleanupDuplicateUsers();
+  }, []);
+
+  // Se vuelve a suscribir cuando cambia la sesion: el super admin necesita ver
+  // todas las cuentas y un profesional comun solo la suya.
+  useEffect(() => {
     const unsub = subscribeToUsers((remoteUsers) => {
       if (remoteUsers) {
         setSaasTenants(remoteUsers);
       }
     });
     return () => unsub();
-  }, []);
+  }, [currentUser?.uid]);
+
+  // Panel de Super Admin: los numeros los calcula el servidor contra la base real,
+  // y valida la sesion antes de contestar.
+  const refrescarPanelSuperAdmin = React.useCallback(async () => {
+    if (!esSuperAdmin(currentUser?.email, currentUser?.uid)) {
+      setSuperAdminOverview(null);
+      return;
+    }
+    setSuperAdminCargando(true);
+    try {
+      const datos = await obtenerPanelSuperAdmin();
+      if (datos?.ok) setSuperAdminOverview(datos);
+    } finally {
+      setSuperAdminCargando(false);
+    }
+  }, [currentUser?.uid, currentUser?.email]);
+
+  useEffect(() => {
+    refrescarPanelSuperAdmin();
+  }, [refrescarPanelSuperAdmin]);
 
   const updateSaasTenant = async (id: string, updates: Partial<SaasTenantUser>) => {
     setSaasTenants(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
@@ -1069,7 +1101,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const deleteSaasTenant = async (id: string): Promise<boolean> => {
     const tenant = saasTenants.find(t => t.id === id);
-    if (tenant?.email?.toLowerCase() === 'gonzalocorat@gmail.com') {
+    if (esSuperAdmin(tenant?.email, tenant?.id)) {
       alert('No se puede eliminar la cuenta del Super Administrador.');
       return false;
     }
@@ -3052,6 +3084,9 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       logout,
       switchUserRole,
       saasTenants,
+      superAdminOverview,
+      superAdminCargando,
+      refrescarPanelSuperAdmin,
       updateSaasTenant,
       deleteSaasTenant,
       extendUserTrial,

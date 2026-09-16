@@ -2840,6 +2840,199 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   // Se corre UNA vez, antes de encender el filtro por cuenta en el front.
   // Con aplicar:false solo informa que haria (simulacion).
   // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
+  // SUPER ADMIN. El navegador puede mentir sobre quien es: por eso cada pedido
+  // del panel trae el idToken de Firebase y el servidor verifica la firma
+  // contra las claves publicas de Google antes de devolver un solo dato.
+  // -------------------------------------------------------------------------
+  const SUPER_ADMIN_EMAILS = ["gonzalocorat" + "@gmail.com", "gecorat" + "@gmail.com"];
+  const SUPER_ADMIN_UIDS = ["FiQCY7iMmubpXZlqs1YuZTYulXz1"];
+
+  // Bitacora de errores del servidor para mostrarlos en el panel.
+  const erroresPlataforma: Array<{ cuando: string; detalle: string }> = [];
+  const consoleErrorOriginal = console.error.bind(console);
+  console.error = (...args: any[]) => {
+    try {
+      const detalle = args.map(a => (a && a.message) ? String(a.message) : String(a)).join(" ").slice(0, 300);
+      erroresPlataforma.push({ cuando: new Date().toISOString(), detalle });
+      if (erroresPlataforma.length > 50) erroresPlataforma.shift();
+    } catch {}
+    consoleErrorOriginal(...args);
+  };
+
+  let cacheClavesGoogle: { claves: Record<string, string>; exp: number } = { claves: {}, exp: 0 };
+
+  const clavesPublicasGoogle = async (): Promise<Record<string, string>> => {
+    const ahora = Math.floor(Date.now() / 1000);
+    if (cacheClavesGoogle.exp > ahora && Object.keys(cacheClavesGoogle.claves).length) return cacheClavesGoogle.claves;
+    try {
+      const r = await fetch("https://www.googleapis.com/robot/v1/metadata/x509/securetoken" + "@" + "system.gserviceaccount.com");
+      if (!r.ok) return cacheClavesGoogle.claves;
+      const data: any = await r.json();
+      cacheClavesGoogle = { claves: data, exp: ahora + 3600 };
+      return data;
+    } catch {
+      return cacheClavesGoogle.claves;
+    }
+  };
+
+  const verificarIdToken = async (idToken: string): Promise<{ uid: string; email: string } | null> => {
+    try {
+      if (!idToken || idToken.split(".").length !== 3) return null;
+      const cripto: any = await import("crypto");
+      const partes = idToken.split(".");
+      const header = JSON.parse(Buffer.from(partes[0], "base64url").toString("utf8"));
+      const datos = JSON.parse(Buffer.from(partes[1], "base64url").toString("utf8"));
+      const claves = await clavesPublicasGoogle();
+      const certificado = claves[header.kid];
+      if (!certificado) return null;
+      const publica = new cripto.X509Certificate(certificado).publicKey;
+      const firmaOk = cripto.createVerify("RSA-SHA256")
+        .update(partes[0] + "." + partes[1])
+        .verify(publica, Buffer.from(partes[2], "base64url"));
+      if (!firmaOk) return null;
+      const ahora = Math.floor(Date.now() / 1000);
+      if (datos.aud !== FIREBASE_PROJECT_ID) return null;
+      if (datos.iss !== "https://securetoken.google.com/" + FIREBASE_PROJECT_ID) return null;
+      if (Number(datos.exp || 0) < ahora) return null;
+      const uid = String(datos.user_id || datos.sub || "");
+      if (!uid) return null;
+      return { uid, email: String(datos.email || "").toLowerCase() };
+    } catch (err: any) {
+      consoleErrorOriginal("[SuperAdmin] No se pudo verificar la sesion:", err?.message || err);
+      return null;
+    }
+  };
+
+  const exigirSuperAdmin = async (req: any, res: any): Promise<{ uid: string; email: string } | null> => {
+    const cabecera = String(req.headers?.authorization || "");
+    const idToken = cabecera.startsWith("Bearer ") ? cabecera.slice(7) : "";
+    if (!idToken) { res.status(401).json({ ok: false, error: "Falta la sesion" }); return null; }
+    const sesion = await verificarIdToken(idToken);
+    if (!sesion) { res.status(401).json({ ok: false, error: "Sesion invalida o vencida" }); return null; }
+    const esSuper = SUPER_ADMIN_UIDS.includes(sesion.uid) || SUPER_ADMIN_EMAILS.includes(sesion.email);
+    if (!esSuper) {
+      console.warn("[SuperAdmin] Acceso denegado a " + (sesion.email || sesion.uid));
+      res.status(403).json({ ok: false, error: "No autorizado" });
+      return null;
+    }
+    return sesion;
+  };
+
+  // Lee una coleccion entera paginando: listarColeccion corta en una sola pagina.
+  const listarTodo = async (coleccion: string, tope = 5000): Promise<any[]> => {
+    const token = await obtenerTokenFirestore();
+    if (!token) return [];
+    const salida: any[] = [];
+    let pageToken = "";
+    try {
+      while (salida.length < tope) {
+        const url = baseFirestoreUrl() + "/" + coleccion + "?pageSize=300" + (pageToken ? "&pageToken=" + encodeURIComponent(pageToken) : "");
+        const res = await fetch(url, { headers: { "Authorization": "Bearer " + token } });
+        if (!res.ok) break;
+        const data: any = await res.json().catch(() => ({}));
+        for (const d of (data.documents || [])) {
+          const out: any = { id: String(d.name || "").split("/").pop() };
+          for (const k of Object.keys(d.fields || {})) out[k] = deValorFirestore(d.fields[k]);
+          salida.push(out);
+        }
+        pageToken = data.nextPageToken || "";
+        if (!pageToken) break;
+      }
+    } catch (err: any) {
+      console.error("[SuperAdmin] Error leyendo " + coleccion + ":", err?.message || err);
+    }
+    return salida;
+  };
+
+  // Panel de Super Admin: todo sale de la base, nada de datos de ejemplo.
+  app.get("/api/superadmin/overview", async (req, res) => {
+    const sesion = await exigirSuperAdmin(req, res);
+    if (!sesion) return;
+    try {
+      const [usuarios, turnos, pacientes, transferencias, pagos] = await Promise.all([
+        listarTodo("users"),
+        listarTodo("appointments"),
+        listarTodo("patients"),
+        listarTodo("saas_transfers"),
+        listarTodo("payments")
+      ]);
+
+      const porDueno = (lista: any[]) => {
+        const mapa: Record<string, number> = {};
+        for (const d of lista) {
+          const dueno = String(d.owner_id || "");
+          if (!dueno) continue;
+          mapa[dueno] = (mapa[dueno] || 0) + 1;
+        }
+        return mapa;
+      };
+      const turnosPorDueno = porDueno(turnos);
+      const pacientesPorDueno = porDueno(pacientes);
+      const hace30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+      const lista = usuarios.map((u: any) => {
+        const email = String(u.email || "").toLowerCase();
+        return {
+          ...u,
+          email,
+          es_super_admin: SUPER_ADMIN_EMAILS.includes(email) || SUPER_ADMIN_UIDS.includes(String(u.id || "")),
+          appointments_count: turnosPorDueno[u.id] || 0,
+          patients_count: pacientesPorDueno[u.id] || 0
+        };
+      });
+
+      const clientes = lista.filter((u: any) => !u.es_super_admin && u.email);
+      const idsSuper = lista.filter((u: any) => u.es_super_admin).map((u: any) => u.id);
+      const activos = clientes.filter((u: any) => u.status === "active" && !u.trial_active);
+      const enPrueba = clientes.filter((u: any) => u.status === "trial" || Boolean(u.trial_active));
+      const mrr = activos.reduce((acc: number, u: any) => acc + Number(u.amount_monthly_ars || (u.plan === "pro" ? 49000 : 29000)), 0);
+      const cobradoTotal = clientes.reduce((acc: number, u: any) => acc + Number(u.total_paid_ars || 0), 0);
+      const turnosDeClientes = turnos.filter((t: any) => !idsSuper.includes(String(t.owner_id || "")));
+      const turnos30 = turnos.filter((t: any) => {
+        const f = Date.parse(t.start_datetime || t.created_at || "");
+        return Number.isFinite(f) && f >= hace30;
+      }).length;
+      const transferenciasPendientes = transferencias.filter((t: any) => String(t.status || "pending") === "pending").length;
+
+      res.json({
+        ok: true,
+        generado: new Date().toISOString(),
+        admin: { uid: sesion.uid, email: sesion.email },
+        usuarios: lista,
+        totales: {
+          usuarios: clientes.length,
+          activos: activos.length,
+          en_prueba: enPrueba.length,
+          pro: clientes.filter((u: any) => u.plan === "pro").length,
+          basic: clientes.filter((u: any) => u.plan === "basic").length,
+          mrr,
+          cobrado_total: cobradoTotal,
+          turnos: turnos.length,
+          turnos_de_clientes: turnosDeClientes.length,
+          turnos_30_dias: turnos30,
+          pacientes: pacientes.length,
+          pagos_consultorios: pagos.length,
+          transferencias_pendientes: transferenciasPendientes
+        },
+        integraciones: {
+          whatsapp: {
+            configurado: Boolean(lastKnownEvolutionConfig?.apiUrl && lastKnownEvolutionConfig?.apiKey),
+            instancia: lastKnownEvolutionConfig?.instanceName || ""
+          },
+          correo: { configurado: Boolean(process.env.RESEND_API_KEY || cachedPracticeSettings?.resend_api_key) },
+          mercadopago: { configurado: Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN) },
+          dlocal: { configurado: Boolean(process.env.DLOCAL_GO_API_KEY) },
+          base_de_datos: { configurado: hayPersistencia() }
+        },
+        errores: erroresPlataforma.slice(-30).reverse()
+      });
+    } catch (err: any) {
+      console.error("[SuperAdmin] Error armando el panel:", err?.message || err);
+      res.status(500).json({ ok: false, error: "No se pudo armar el panel" });
+    }
+  });
+
   app.post("/api/admin/migrar-owner", async (req, res) => {
     const esperado = process.env.CRON_SECRET || "";
     const recibido = String(req.headers["x-cron-secret"] || req.query.secret || "");
