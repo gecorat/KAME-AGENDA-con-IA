@@ -4,13 +4,20 @@ import { usePWAInstall } from '../hooks/usePWAInstall';
 import { PWAInstallModal } from './PWAInstallModal';
 
 export const PWAInstallBanner: React.FC = () => {
-  const { canInstall, isInstalled, isIOS, isMobile, dismissed, triggerInstall, dismissBanner } = usePWAInstall();
+  const { canInstall, isInstalled, isIOS, isMobile, hasNativePrompt, dismissed, triggerInstall, dismissBanner } = usePWAInstall();
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Show banner on mobile devices if not already installed and not dismissed
-  // Also show subtle prompt if desktop canInstall
+  // If already installed or dismissed, do not show the floating prompt
   if (isInstalled || dismissed || !canInstall) {
-    return null;
+    return (
+      <PWAInstallModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        onInstallClick={triggerInstall}
+        isIOS={isIOS}
+        hasNativePrompt={hasNativePrompt}
+      />
+    );
   }
 
   const handleInstallClick = async () => {
@@ -18,7 +25,7 @@ export const PWAInstallBanner: React.FC = () => {
       setModalOpen(true);
     } else {
       const outcome = await triggerInstall();
-      if (outcome === 'manual_ios') {
+      if (outcome === 'manual_ios' || outcome === 'manual_other') {
         setModalOpen(true);
       }
     }
@@ -26,36 +33,56 @@ export const PWAInstallBanner: React.FC = () => {
 
   return (
     <>
-      <div className="bg-gradient-to-r from-sky-600 via-sky-700 to-indigo-700 text-white px-4 py-2.5 shadow-md flex items-center justify-between gap-3 relative z-30 border-b border-sky-500/30">
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
-            <Smartphone className="w-4 h-4 text-sky-200" />
+      {/* Floating prompt docked at bottom for high visibility on mobile */}
+      <div
+        id="pwa-install-prompt-banner"
+        className="fixed bottom-3 left-3 right-3 sm:left-auto sm:right-4 sm:bottom-4 sm:max-w-md z-50 animate-in slide-in-from-bottom-5 duration-300 pointer-events-auto"
+      >
+        <div className="bg-slate-900/95 backdrop-blur-md text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border border-teal-500/30 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="relative shrink-0">
+              <img
+                src="/pwa-192x192.png"
+                alt="Agenfacil"
+                className="w-11 h-11 rounded-xl object-cover shadow-md border border-white/20"
+              />
+              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 border-2 border-slate-900 rounded-full" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-teal-300 bg-teal-950/80 px-1.5 py-0.5 rounded border border-teal-800/60">
+                  {isMobile ? 'App Móvil' : 'Web App'}
+                </span>
+                <span className="text-xs font-bold text-white truncate">
+                  Instalar Agenfacil
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-300 leading-tight truncate">
+                {isMobile ? 'Acceso rápido en tu inicio, más veloz y sin barra.' : 'Instala la aplicación en tu pantalla de inicio.'}
+              </p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <p className="text-xs font-bold leading-tight truncate">
-              {isMobile ? '📲 Descargar App Agenfacil en tu teléfono' : '💻 Instalar Agenfacil en tu dispositivo'}
-            </p>
-            <p className="text-[11px] text-sky-100/90 leading-tight hidden sm:block truncate">
-              Úsala como app web instalada con acceso directo y alertas push en tiempo real.
-            </p>
-          </div>
-        </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleInstallClick}
-            className="px-3 py-1.5 bg-white text-sky-700 hover:bg-sky-50 active:bg-sky-100 text-xs font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5 text-sky-600" />
-            <span>Instalar</span>
-          </button>
-          <button
-            onClick={dismissBanner}
-            title="Cerrar aviso"
-            className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              id="btn-pwa-install-action"
+              onClick={handleInstallClick}
+              className="px-3.5 py-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-400 hover:to-teal-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Instalar</span>
+            </button>
+            <button
+              type="button"
+              onClick={dismissBanner}
+              title="Cerrar aviso"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Cerrar aviso de instalación"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -64,6 +91,7 @@ export const PWAInstallBanner: React.FC = () => {
         onClose={() => setModalOpen(false)}
         onInstallClick={triggerInstall}
         isIOS={isIOS}
+        hasNativePrompt={hasNativePrompt}
       />
     </>
   );

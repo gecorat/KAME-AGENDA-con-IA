@@ -8,7 +8,9 @@ import {
   getDoc,
   getDocs,
   onSnapshot,
-  getDocFromServer
+  getDocFromServer,
+  query,
+  where
 } from 'firebase/firestore';
 import {
   getAuth,
@@ -30,6 +32,38 @@ export const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
+
+// ============================================================================
+// SEPARACION POR CUENTA
+// Cada dato guarda a que cuenta pertenece (owner_id = uid del usuario). Sin
+// esto, dos consultorios registrados comparten turnos, pacientes y cobros.
+// ============================================================================
+
+// Interruptor del filtro de LECTURA. Se enciende despues de migrar los datos
+// existentes; si se encendiera antes, la app se veria vacia.
+export const FILTRAR_POR_CUENTA = false;
+
+export const cuentaActual = (): string | null => auth.currentUser?.uid || null;
+
+// Agrega el dueño al documento que se va a guardar.
+const conDueno = (payload: any) => {
+  const uid = cuentaActual();
+  return uid ? { ...payload, owner_id: payload?.owner_id || uid } : payload;
+};
+
+// Documento de configuracion de ESTA cuenta. Con un unico 'practice_config'
+// todos los consultorios compartirian nombre, horarios y claves.
+export const docConfigDeLaCuenta = (): string => {
+  const uid = cuentaActual();
+  return uid ? `practice_config_${uid}` : 'practice_config';
+};
+
+// Consulta filtrada por dueño (sin filtro mientras no este migrado).
+const consultaDeLaCuenta = (colRef: any) => {
+  const uid = cuentaActual();
+  if (!FILTRAR_POR_CUENTA || !uid) return colRef;
+  return query(colRef, where('owner_id', '==', uid));
+};
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 // Export auth utilities
@@ -160,7 +194,7 @@ export const subscribeToUsers = (
 ) => {
   const colRef = collection(db, COLLECTIONS.USERS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const emailMap = new Map<string, SaasTenantUser>();
       snapshot.forEach((d) => {
@@ -212,7 +246,7 @@ export const subscribeToUsers = (
 export const updateUserInFirestore = async (userId: string, updates: Partial<SaasTenantUser>): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.USERS, userId);
-    const payload = cleanObjectForFirestore(updates);
+    const payload = conDueno(cleanObjectForFirestore(updates));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -274,7 +308,7 @@ export const cleanupDuplicateUsers = async (): Promise<void> => {
 export const saveAppointmentToFirestore = async (appointment: Appointment): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.APPOINTMENTS, appointment.id);
-    const payload = cleanObjectForFirestore(appointment);
+    const payload = conDueno(cleanObjectForFirestore(appointment));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -303,7 +337,7 @@ export const deleteAppointmentFromFirestore = async (appointmentId: string): Pro
 export const savePatientToFirestore = async (patient: Patient): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.PATIENTS, patient.id);
-    const payload = cleanObjectForFirestore(patient);
+    const payload = conDueno(cleanObjectForFirestore(patient));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -332,7 +366,7 @@ export const deletePatientFromFirestore = async (patientId: string): Promise<boo
 export const saveServiceToFirestore = async (service: Service): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SERVICES, service.id);
-    const payload = cleanObjectForFirestore(service);
+    const payload = conDueno(cleanObjectForFirestore(service));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -361,7 +395,7 @@ export const deleteServiceFromFirestore = async (serviceId: string): Promise<boo
 export const saveConsultationToFirestore = async (consultation: ConsultationRecord): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.CONSULTATIONS, consultation.id);
-    const payload = cleanObjectForFirestore(consultation);
+    const payload = conDueno(cleanObjectForFirestore(consultation));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -390,7 +424,7 @@ export const deleteConsultationFromFirestore = async (consultationId: string): P
 export const savePaymentToFirestore = async (payment: PaymentRecord): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.PAYMENTS, payment.id);
-    const payload = cleanObjectForFirestore(payment);
+    const payload = conDueno(cleanObjectForFirestore(payment));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -418,8 +452,8 @@ export const deletePaymentFromFirestore = async (paymentId: string): Promise<boo
  */
 export const saveSettingsToFirestore = async (settings: PracticeSettings): Promise<boolean> => {
   try {
-    const docRef = doc(db, COLLECTIONS.SETTINGS, 'practice_config');
-    const payload = cleanObjectForFirestore(settings);
+    const docRef = doc(db, COLLECTIONS.SETTINGS, docConfigDeLaCuenta());
+    const payload = conDueno(cleanObjectForFirestore(settings));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -434,7 +468,7 @@ export const saveSettingsToFirestore = async (settings: PracticeSettings): Promi
 export const saveWaitlistToFirestore = async (entry: WaitlistEntry): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.WAITLIST, entry.id);
-    const payload = cleanObjectForFirestore(entry);
+    const payload = conDueno(cleanObjectForFirestore(entry));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -466,7 +500,7 @@ export const subscribeToAppointments = (
 ) => {
   const colRef = collection(db, COLLECTIONS.APPOINTMENTS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: Appointment[] = [];
       snapshot.forEach((d) => {
@@ -491,7 +525,7 @@ export const subscribeToPatients = (
 ) => {
   const colRef = collection(db, COLLECTIONS.PATIENTS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: Patient[] = [];
       snapshot.forEach((d) => {
@@ -512,7 +546,9 @@ export const subscribeToPatients = (
 export const cleanupDuplicatePatientsInFirestore = async (): Promise<void> => {
   try {
     const colRef = collection(db, COLLECTIONS.PATIENTS);
-    const snap = await getDocs(colRef);
+    // Filtrado por cuenta: sin esto la limpieza borraria pacientes de otros
+    // consultorios al detectarlos como "duplicados".
+    const snap = await getDocs(consultaDeLaCuenta(colRef));
     const patients: Patient[] = [];
     snap.forEach(d => {
       patients.push({ id: d.id, ...(d.data() as any) } as Patient);
@@ -555,7 +591,8 @@ export const cleanupDuplicatePatientsInFirestore = async (): Promise<void> => {
           notes: duplicateOf.notes || p.notes,
           total_appointments: Math.max(duplicateOf.total_appointments || 0, p.total_appointments || 0)
         };
-        await setDoc(doc(db, COLLECTIONS.PATIENTS, duplicateOf.id), updatedCanonical, { merge: true });
+        // Sin sanear, un email undefined hace que Firestore rechace el guardado.
+        await setDoc(doc(db, COLLECTIONS.PATIENTS, duplicateOf.id), conDueno(cleanObjectForFirestore(updatedCanonical)), { merge: true });
         await deleteDoc(doc(db, COLLECTIONS.PATIENTS, p.id)).catch(() => {});
       } else {
         if (normPhone && normPhone.length >= 7) phoneMap.set(normPhone, p);
@@ -577,7 +614,7 @@ export const subscribeToServices = (
 ) => {
   const colRef = collection(db, COLLECTIONS.SERVICES);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: Service[] = [];
       snapshot.forEach((d) => {
@@ -598,12 +635,22 @@ export const subscribeToServices = (
 export const subscribeToSettings = (
   onData: (settings: PracticeSettings) => void
 ) => {
-  const docRef = doc(db, COLLECTIONS.SETTINGS, 'practice_config');
+  const idDoc = docConfigDeLaCuenta();
+  const docRef = doc(db, COLLECTIONS.SETTINGS, idDoc);
   return onSnapshot(
     docRef,
-    (snapshot) => {
+    async (snapshot) => {
       if (snapshot.exists()) {
         onData(snapshot.data() as PracticeSettings);
+        return;
+      }
+      // Primera vez con sesion iniciada: heredamos la configuracion historica
+      // para no arrancar con la app en blanco.
+      if (idDoc !== 'practice_config') {
+        try {
+          const viejo = await getDoc(doc(db, COLLECTIONS.SETTINGS, 'practice_config'));
+          if (viejo.exists()) onData(viejo.data() as PracticeSettings);
+        } catch { /* sin documento previo */ }
       }
     },
     (err) => console.warn('Firestore settings listener notice:', err)
@@ -619,7 +666,7 @@ export const subscribeToPayments = (
 ) => {
   const colRef = collection(db, COLLECTIONS.PAYMENTS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: PaymentRecord[] = [];
       snapshot.forEach((d) => {
@@ -643,7 +690,7 @@ export const subscribeToConsultations = (
 ) => {
   const colRef = collection(db, COLLECTIONS.CONSULTATIONS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: ConsultationRecord[] = [];
       snapshot.forEach((d) => {
@@ -667,7 +714,7 @@ export const subscribeToWaitlist = (
 ) => {
   const colRef = collection(db, COLLECTIONS.WAITLIST);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: WaitlistEntry[] = [];
       snapshot.forEach((d) => {
@@ -691,7 +738,7 @@ export const subscribeToSaasTransfers = (
 ) => {
   const colRef = collection(db, COLLECTIONS.SAAS_TRANSFERS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: SaasTransferSubmission[] = [];
       snapshot.forEach((d) => {
@@ -714,7 +761,7 @@ export const subscribeToSaasTransfers = (
 export const saveSaasTransferToFirestore = async (transfer: SaasTransferSubmission): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SAAS_TRANSFERS, transfer.id);
-    const payload = cleanObjectForFirestore(transfer);
+    const payload = conDueno(cleanObjectForFirestore(transfer));
     await setDoc(docRef, payload);
     return true;
   } catch (error) {
@@ -732,7 +779,7 @@ export const updateSaasTransferInFirestore = async (
 ): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SAAS_TRANSFERS, transferId);
-    const payload = cleanObjectForFirestore(updates);
+    const payload = conDueno(cleanObjectForFirestore(updates));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -750,7 +797,7 @@ export const subscribeToSuggestions = (
 ) => {
   const colRef = collection(db, COLLECTIONS.SUGGESTIONS);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: AppSuggestion[] = [];
       snapshot.forEach((d) => {
@@ -771,7 +818,7 @@ export const subscribeToSuggestions = (
 export const saveSuggestionToFirestore = async (suggestion: AppSuggestion): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestion.id);
-    const payload = cleanObjectForFirestore(suggestion);
+    const payload = conDueno(cleanObjectForFirestore(suggestion));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -789,7 +836,7 @@ export const updateSuggestionInFirestore = async (
 ): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.SUGGESTIONS, suggestionId);
-    const payload = cleanObjectForFirestore(updates);
+    const payload = conDueno(cleanObjectForFirestore(updates));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -821,7 +868,7 @@ export const subscribeToContactMessages = (
 ) => {
   const colRef = collection(db, COLLECTIONS.CONTACT_MESSAGES);
   return onSnapshot(
-    colRef,
+    consultaDeLaCuenta(colRef),
     (snapshot) => {
       const items: ContactMessage[] = [];
       snapshot.forEach((d) => {
@@ -844,7 +891,7 @@ export const subscribeToContactMessages = (
 export const saveContactMessageToFirestore = async (message: ContactMessage): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, message.id);
-    const payload = cleanObjectForFirestore(message);
+    const payload = conDueno(cleanObjectForFirestore(message));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {
@@ -862,7 +909,7 @@ export const updateContactMessageInFirestore = async (
 ): Promise<boolean> => {
   try {
     const docRef = doc(db, COLLECTIONS.CONTACT_MESSAGES, messageId);
-    const payload = cleanObjectForFirestore(updates);
+    const payload = conDueno(cleanObjectForFirestore(updates));
     await setDoc(docRef, payload, { merge: true });
     return true;
   } catch (error) {

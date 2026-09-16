@@ -1,3 +1,11 @@
+// Safeguard: ensure relative __dirname '.' introduced by tsx runtime does not break ESM loaders (like vite-plugin-pwa)
+if (typeof globalThis !== "undefined" && (globalThis as any).__dirname === ".") {
+  delete (globalThis as any).__dirname;
+}
+if (typeof global !== "undefined" && (global as any).__dirname === ".") {
+  delete (global as any).__dirname;
+}
+
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -1221,9 +1229,8 @@ Nota importante sobre datetime: La fecha y hora deben estar en hora local de Arg
 
 async function startServer() {
   const app = express();
-  // Cloud Run asigna el puerto por variable de entorno; sin esto el contenedor
-  // no pasa el chequeo de salud y el despliegue falla.
-  const PORT = Number(process.env.PORT) || 3000;
+  // AI Studio infrastructure routes external traffic exclusively to port 3000
+  const PORT = 3000;
 
   app.use(express.json({ limit: "25mb" }));
 
@@ -2826,6 +2833,49 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     conv.messages.forEach(m => { if (m.role === 'user') m.status = 'read'; });
     persistirConversacion(conv);
     return res.json({ success: true, id: conv.id });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Migracion: asigna dueño a los datos creados antes del multi-cuenta.
+  // Se corre UNA vez, antes de encender el filtro por cuenta en el front.
+  // Con aplicar:false solo informa que haria (simulacion).
+  // ---------------------------------------------------------------------------
+  app.post("/api/admin/migrar-owner", async (req, res) => {
+    const esperado = process.env.CRON_SECRET || "";
+    const recibido = String(req.headers["x-cron-secret"] || req.query.secret || "");
+    if (!esperado || recibido !== esperado) {
+      return res.status(401).json({ ok: false, error: "No autorizado" });
+    }
+    if (!hayPersistencia()) {
+      return res.status(400).json({ ok: false, error: "Falta la credencial de Firestore" });
+    }
+
+    const owner = String(req.body?.owner_id || "").trim();
+    if (!owner) {
+      return res.status(400).json({ ok: false, error: "Falta owner_id (el uid de la cuenta dueña)" });
+    }
+    const simulacion = req.body?.aplicar !== true;
+    const colecciones = ["appointments", "patients", "services", "consultations", "payments", "waitlist"];
+    const resumen: any = { owner_id: owner, simulacion, detalle: {} };
+
+    try {
+      for (const col of colecciones) {
+        const docs = await listarColeccion(col, 1000);
+        const sinDueno = docs.filter((d: any) => !d.owner_id);
+        resumen.detalle[col] = { total: docs.length, sin_dueno: sinDueno.length, actualizados: 0 };
+        if (simulacion) continue;
+        for (const d of sinDueno) {
+          if (await actualizarCampos(col, d.id, { owner_id: owner })) {
+            resumen.detalle[col].actualizados++;
+          }
+        }
+      }
+      console.log(`[Migracion] ${simulacion ? "Simulacion" : "Aplicada"} para ${owner}:`, JSON.stringify(resumen.detalle));
+      return res.json({ ok: true, ...resumen });
+    } catch (err: any) {
+      console.error("[Migracion] Error:", err?.message || err);
+      return res.status(500).json({ ok: false, error: err?.message || "error" });
+    }
   });
 
   // Cloud Run apaga el contenedor cuando no hay trafico y con el se van los

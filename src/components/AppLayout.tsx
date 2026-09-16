@@ -38,10 +38,12 @@ import {
   Briefcase,
   Lightbulb,
   Mail,
-  ArrowRight
+  ArrowRight,
+  ChevronDown
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { NotificationCenter } from './NotificationCenter';
+import { PWAInstallButton } from './PWAInstallButton';
 import { getClientTerm, getProfessionInfo } from '../lib/terminology';
 
 interface AppLayoutProps {
@@ -109,6 +111,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
       default: return Stethoscope;
     }
   };
+
+  // Solo "Día a día" arranca abierta: el resto queda a un clic. Así se ven
+  // cinco opciones al entrar y no veinticinco a la vez.
+  const [seccionesAbiertas, setSeccionesAbiertas] = useState<Record<string, boolean>>({});
+
+  const alternarSeccion = (titulo: string) =>
+    setSeccionesAbiertas(prev => ({ ...prev, [titulo]: !prev[titulo] }));
 
   const NAV_SECTIONS = [
     {
@@ -266,6 +275,7 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
+            <PWAInstallButton variant="header" />
             <NotificationCenter onSelectTab={onSelectTab} onOpenAppointment={onOpenAppointment} />
 
             <button
@@ -342,12 +352,31 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
 
         {/* Navigation Items (Grouped Sections) */}
         <nav className="flex-1 overflow-y-auto p-2.5 space-y-4">
-          {NAV_SECTIONS.map((section) => (
+          {NAV_SECTIONS.map((section) => {
+            const esDiaria = section.title === 'Día a día';
+            // La sección que contiene la pantalla abierta se despliega sola.
+            const contieneActiva = section.items.some(
+              it => it.id === activeTab || (it.id === 'chats' && activeTab === 'asistente')
+            );
+            const abierta = esDiaria || contieneActiva || seccionesAbiertas[section.title];
+
+            return (
             <div key={section.title} className="space-y-1">
-              <div className="px-2.5 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
-                {section.title}
-              </div>
-              <div className="space-y-0.5">
+              {esDiaria ? (
+                <div className="px-2.5 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                  {section.title}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => alternarSeccion(section.title)}
+                  className="w-full px-2.5 pb-0.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-slate-600 font-mono cursor-pointer transition-colors"
+                >
+                  <span>{section.title}</span>
+                  <ChevronDown className={`w-3 h-3 transition-transform ${abierta ? 'rotate-180' : ''}`} />
+                </button>
+              )}
+              <div className={`space-y-0.5 ${abierta ? '' : 'hidden'}`}>
                 {section.items.map(item => {
                   const Icon = item.icon;
                   const isActive = activeTab === item.id || (item.id === 'chats' && activeTab === 'asistente');
@@ -391,7 +420,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Sidebar Footer */}
@@ -438,6 +468,9 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
             </div>
             <ExternalLink className="w-3 h-3 text-slate-400" />
           </button>
+
+          {/* Install Mobile PWA Button */}
+          <PWAInstallButton variant="sidebar" />
 
           {/* Trial Promotion Card for Free Trial Users */}
           {isTrial && (

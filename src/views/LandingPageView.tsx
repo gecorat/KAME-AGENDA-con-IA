@@ -32,6 +32,7 @@ import {
 import confetti from 'canvas-confetti';
 import { motion, AnimatePresence } from 'motion/react';
 import { LandingFooter } from '../components/landing/LandingFooter';
+import { PWAInstallButton } from '../components/PWAInstallButton';
 import { useAgendaStore } from '../lib/store';
 
 interface LandingPageViewProps {
@@ -377,6 +378,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
 
           {/* Persuasive Call To Action Group */}
           <div className="flex items-center gap-2 sm:gap-3">
+            <PWAInstallButton variant="header" />
             <a
               href="#planes"
               className="text-xs font-semibold text-neutral-600 hover:text-neutral-950 px-2.5 sm:px-3 py-2 rounded-xl hover:bg-neutral-50 transition cursor-pointer"

@@ -36,6 +36,7 @@ import { WaitlistModal } from './components/WaitlistModal';
 import { ConsultationModal } from './components/ConsultationModal';
 import { DoctorCopilot } from './components/DoctorCopilot';
 import { PostAppointmentConfirmationModal } from './components/PostAppointmentConfirmationModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { Appointment, Patient, Service, WaitlistEntry, ConsultationRecord } from './types';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
@@ -910,6 +911,7 @@ export default function App() {
   return (
     <AgendaStoreProvider>
       <MainApp />
+      <PWAInstallBanner />
     </AgendaStoreProvider>
   );
 }

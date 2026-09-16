@@ -7,13 +7,15 @@ interface PWAInstallModalProps {
   onClose: () => void;
   onInstallClick?: () => void;
   isIOS?: boolean;
+  hasNativePrompt?: boolean;
 }
 
 export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
   isOpen,
   onClose,
   onInstallClick,
-  isIOS = false
+  isIOS = false,
+  hasNativePrompt = true
 }) => {
   const { requestBrowserNotificationPermission, testBrowserNotification, notificationPermission } = useAgendaStore();
   const [pushTested, setPushTested] = useState(false);
@@ -105,26 +107,47 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
             /* Android / Chromium / Desktop */
             <div className="space-y-4 text-center">
               <div className="py-2">
-                <div className="w-16 h-16 bg-sky-50 text-sky-600 rounded-2xl mx-auto flex items-center justify-center mb-3">
-                  <Smartphone className="w-8 h-8" />
+                <div className="w-16 h-16 bg-teal-50 text-teal-750 rounded-2xl mx-auto flex items-center justify-center mb-3 border border-teal-100">
+                  <Smartphone className="w-8 h-8 text-teal-700" />
                 </div>
-                <h4 className="text-sm font-semibold text-neutral-900">Instalación en 1 Clic</h4>
+                <h4 className="text-sm font-bold text-neutral-900">
+                  {hasNativePrompt ? 'Instalación en 1 Clic' : 'Instalar en tu Celular'}
+                </h4>
                 <p className="text-xs text-neutral-600 mt-1 max-w-xs mx-auto">
-                  Al pulsar el botón se abrirá el diálogo de tu navegador para añadir Agenfacil a tus aplicaciones.
+                  {hasNativePrompt
+                    ? 'Al pulsar el botón se abrirá el diálogo del navegador para añadir Agenfacil a tus aplicaciones.'
+                    : 'Puedes instalar Agenfacil directamente desde tu navegador móvil en 2 simples pasos.'}
                 </p>
               </div>
 
               {onInstallClick && (
                 <button
+                  type="button"
                   onClick={() => {
                     onInstallClick();
-                    onClose();
+                    if (hasNativePrompt) {
+                      onClose();
+                    }
                   }}
-                  className="w-full py-3 px-4 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-semibold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3 px-4 bg-teal-700 hover:bg-teal-800 active:bg-teal-900 text-white font-semibold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
                 >
                   <Download className="w-4 h-4" />
-                  Descargar e Instalar App Ahora
+                  <span>Descargar e Instalar App</span>
                 </button>
+              )}
+
+              {!hasNativePrompt && (
+                <div className="text-left space-y-2.5 pt-2 border-t border-neutral-100">
+                  <p className="text-xs font-semibold text-neutral-700">O también desde el menú:</p>
+                  <div className="flex items-start gap-2.5 p-2.5 bg-neutral-50 rounded-lg text-xs text-neutral-600">
+                    <span className="font-bold text-teal-700">1.</span>
+                    <span>Toca los <strong>tres puntos (⋮)</strong> en la esquina superior de Chrome o tu navegador.</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-2.5 bg-neutral-50 rounded-lg text-xs text-neutral-600">
+                    <span className="font-bold text-teal-700">2.</span>
+                    <span>Toca <strong>"Instalar aplicación"</strong> o <strong>"Añadir a la pantalla de inicio"</strong>.</span>
+                  </div>
+                </div>
               )}
             </div>
           )}
