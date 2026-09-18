@@ -45,10 +45,12 @@ export const googleProvider = new GoogleAuthProvider();
 const CAMPOS_SENSIBLES = [
   'evolution_api_url',
   'evolution_api_key',
-  'evolution_instance_name',
+  // El NOMBRE de la instancia si se guarda: no es un secreto y el servidor lo
+  // necesita para saber de que consultorio es cada mensaje de WhatsApp.
   'mercadopago_access_token',
   'mercadopago_public_key',
   'mercadopago_webhook_secret',
+  'patient_deposit_mp_token',
   'dlocalgo_api_key',
   'dlocalgo_secret_key',
   'lemonsqueezy_api_key',
@@ -76,7 +78,13 @@ export const esSuperAdmin = (email?: string | null, uid?: string | null): boolea
 // Panel de Super Admin ya calculado por el servidor, que valida la sesion de verdad.
 export const obtenerPanelSuperAdmin = async (): Promise<any | null> => {
   try {
-    const usuario = auth.currentUser;
+    // Firebase tarda un instante en restaurar la sesion al abrir la app: sin esta
+    // espera el primer pedido salia sin token y el panel quedaba sin datos.
+    let usuario = auth.currentUser;
+    for (let intento = 0; !usuario && intento < 20; intento++) {
+      await new Promise(r => setTimeout(r, 300));
+      usuario = auth.currentUser;
+    }
     if (!usuario) return null;
     const idToken = await usuario.getIdToken();
     const res = await fetch('/api/superadmin/overview', { headers: { Authorization: 'Bearer ' + idToken } });
@@ -88,9 +96,82 @@ export const obtenerPanelSuperAdmin = async (): Promise<any | null> => {
   }
 };
 
+// El paciente que entra por /u/<handle> no tiene sesion. El servidor resuelve
+// de quien es el consultorio y lo dejamos anotado aca: sin esto, el turno se
+// guardaba sin dueño y no aparecia en la agenda de nadie.
+let duenoPublico: string | null = null;
+export const fijarDuenoPublico = (uid: string | null) => { duenoPublico = uid || null; };
+export const duenoPublicoActual = (): string | null => duenoPublico;
+
+// Trae del servidor el consultorio que corresponde a ese enlace publico.
+export const cargarPerfilPublico = async (handle: string): Promise<any | null> => {
+  try {
+    const limpio = String(handle || '').trim();
+    if (!limpio) return null;
+    const res = await fetch('/api/publico/perfil/' + encodeURIComponent(limpio));
+    if (!res.ok) return null;
+    const datos: any = await res.json();
+    return datos?.ok ? datos : null;
+  } catch (error) {
+    console.error('No se pudo cargar el consultorio publico:', error);
+    return null;
+  }
+};
+
+// La disponibilidad vivia solo en el navegador del profesional: asi la pagina
+// publica no podia saber sus horarios. Ahora viaja en el mismo documento de configuracion.
+// Prueba de verdad cada modelo contra la API de Gemini. Solo super admin.
+// Borra turnos, cobros e historias que quedaron sin ficha. Solo super admin.
+export const limpiarSueltos = async (): Promise<any | null> => {
+  try {
+    const usuario = auth.currentUser;
+    if (!usuario) return null;
+    const idToken = await usuario.getIdToken();
+    const res = await fetch('/api/superadmin/limpiar-sueltos', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + idToken }
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (error) {
+    console.error('No se pudieron limpiar los registros sueltos:', error);
+    return null;
+  }
+};
+
+export const probarModelosIA = async (modelo?: string): Promise<any | null> => {
+  try {
+    const usuario = auth.currentUser;
+    if (!usuario) return null;
+    const idToken = await usuario.getIdToken();
+    const res = await fetch('/api/superadmin/probar-modelos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + idToken },
+      body: JSON.stringify({ modelo: modelo || '' })
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (error) {
+    console.error('No se pudieron probar los modelos:', error);
+    return null;
+  }
+};
+
+export const guardarDisponibilidadDeLaCuenta = async (disponibilidad: any[]): Promise<boolean> => {
+  try {
+    if (!cuentaActual()) return false;
+    const docRef = doc(db, COLLECTIONS.SETTINGS, docConfigDeLaCuenta());
+    await setDoc(docRef, { availability_json: JSON.stringify(disponibilidad || []) }, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('Error guardando la disponibilidad:', error);
+    return false;
+  }
+};
+
 // Agrega el dueño al documento que se va a guardar.
 const conDueno = (payload: any) => {
-  const uid = cuentaActual();
+  const uid = cuentaActual() || duenoPublico;
   return uid ? { ...payload, owner_id: payload?.owner_id || uid } : payload;
 };
 
@@ -513,6 +594,42 @@ export const saveSettingsToFirestore = async (settings: PracticeSettings): Promi
   }
 };
 
+export const docReminderConfigDeLaCuenta = (): string => {
+  const uid = cuentaActual();
+  return uid ? `reminder_config_${uid}` : 'reminder_config';
+};
+
+export const saveReminderConfigToFirestore = async (config: any): Promise<boolean> => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SETTINGS, docReminderConfigDeLaCuenta());
+    const payload = conDueno(cleanObjectForFirestore(config));
+    await setDoc(docRef, payload, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('Error guardando reminder_config en Firestore:', error);
+    return false;
+  }
+};
+
+export const subscribeToReminderConfig = (callback: (data: any | null) => void): (() => void) => {
+  try {
+    const docRef = doc(db, COLLECTIONS.SETTINGS, docReminderConfigDeLaCuenta());
+    return onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        callback(snapshot.data());
+      } else {
+        callback(null);
+      }
+    }, (error) => {
+      console.warn('Error suscribiendo a reminder_config:', error);
+      callback(null);
+    });
+  } catch (e) {
+    console.warn('No se pudo iniciar suscripción a reminder_config:', e);
+    return () => {};
+  }
+};
+
 /**
  * Save waitlist entry to Firestore
  */
@@ -607,7 +724,6 @@ export const cleanupDuplicatePatientsInFirestore = async (): Promise<void> => {
 
     const phoneMap = new Map<string, Patient>();
     const dniMap = new Map<string, Patient>();
-    const nameMap = new Map<string, Patient>();
 
     for (const p of patients) {
       const normPhone = p.phone ? p.phone.replace(/\D/g, '') : '';
@@ -621,12 +737,16 @@ export const cleanupDuplicatePatientsInFirestore = async (): Promise<void> => {
 
       let duplicateOf: Patient | undefined;
 
-      if (normPhone && normPhone.length >= 7 && phoneMap.has(normPhone)) {
-        duplicateOf = phoneMap.get(normPhone);
+      // La identidad es telefono + nombre, nunca el telefono solo: una familia
+      // comparte el celular y cada persona lleva su propia ficha. Antes esto
+      // fusionaba (y borraba) fichas de personas distintas por compartir numero.
+      const claveTelefonoNombre = normPhone && normName ? normPhone + "|" + normName : "";
+
+      if (claveTelefonoNombre && normPhone.length >= 7 && phoneMap.has(claveTelefonoNombre)) {
+        duplicateOf = phoneMap.get(claveTelefonoNombre);
       } else if (normDni && normDni.length >= 6 && dniMap.has(normDni)) {
+        // El documento si identifica a una persona sin ambiguedad.
         duplicateOf = dniMap.get(normDni);
-      } else if (normName && normName.length >= 5 && nameMap.has(normName)) {
-        duplicateOf = nameMap.get(normName);
       }
 
       if (duplicateOf && duplicateOf.id !== p.id) {
@@ -646,9 +766,9 @@ export const cleanupDuplicatePatientsInFirestore = async (): Promise<void> => {
         await setDoc(doc(db, COLLECTIONS.PATIENTS, duplicateOf.id), conDueno(cleanObjectForFirestore(updatedCanonical)), { merge: true });
         await deleteDoc(doc(db, COLLECTIONS.PATIENTS, p.id)).catch(() => {});
       } else {
-        if (normPhone && normPhone.length >= 7) phoneMap.set(normPhone, p);
+        // La clave es telefono + nombre juntos, no el telefono solo.
+        if (claveTelefonoNombre && normPhone.length >= 7) phoneMap.set(claveTelefonoNombre, p);
         if (normDni && normDni.length >= 6) dniMap.set(normDni, p);
-        if (normName && normName.length >= 5) nameMap.set(normName, p);
       }
     }
   } catch (error) {

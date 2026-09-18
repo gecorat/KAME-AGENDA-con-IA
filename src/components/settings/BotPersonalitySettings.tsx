@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   Bot,
   User,
@@ -23,23 +23,11 @@ import {
   Crown,
   PauseCircle,
   PlayCircle,
-  Image as ImageIcon,
   Timer,
-  CheckCheck,
-  ShieldAlert,
-  Send,
-  RefreshCw,
-  Phone,
-  Video,
-  MoreVertical,
-  Paperclip,
-  Smile,
-  Upload,
-  Link as LinkIcon,
-  RotateCcw,
-  Info
+  ShieldAlert
 } from 'lucide-react';
 import { useAgendaStore } from '../../lib/store';
+import { esSuperAdmin, probarModelosIA } from '../../lib/firestore-sync';
 import { PracticeSettings, BotAiModel, BotIdentityMode, BotPersonalityPreset } from '../../types';
 
 interface BotPersonalitySettingsProps {
@@ -57,44 +45,44 @@ const AI_MODELS: {
   icon: any;
 }[] = [
   {
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash',
-    badge: 'Recomendado por Defecto',
+    id: 'gemini-3.5-flash-lite',
+    name: 'Gemini 3.5 Flash Lite',
+    badge: 'Recomendado por defecto',
     badgeColor: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-    description: 'Máximo equilibrio y fluidez: entiende modismos coloquiales de pacientes, valida horarios médicos con precisión y opera a costo ultra bajo.',
-    costLabel: 'Ultra Económico',
-    latencyLabel: '~350ms',
-    icon: Zap
-  },
-  {
-    id: 'gemini-3.1-flash-lite',
-    name: 'Gemini 3.1 Flash Lite',
-    badge: 'Máximo Ahorro',
-    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200',
-    description: 'Diseñado para volumen masivo de mensajes con el consumo de tokens más bajo del mercado.',
-    costLabel: 'Hiper Económico',
+    description: 'El más barato de los que entienden bien una conversación. Es el que usa la app si no elegís otro.',
+    costLabel: 'Máximo ahorro',
     latencyLabel: '~200ms',
     icon: Flame
   },
   {
-    id: 'gemini-3.8-flash',
-    name: 'Gemini 3.8 Flash',
-    badge: 'Veloz & Moderno',
-    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
-    description: 'Generación rápida con capacidad avanzada de seguimiento de conversaciones y contexto clínico.',
-    costLabel: 'Económico',
-    latencyLabel: '~300ms',
-    icon: Cpu
+    id: 'gemini-3.1-flash-lite',
+    name: 'Gemini 3.1 Flash Lite',
+    badge: 'Muy económico',
+    badgeColor: 'bg-sky-50 text-sky-700 border-sky-200',
+    description: 'Pensado para mucho volumen de mensajes con el menor consumo posible.',
+    costLabel: 'Hiper económico',
+    latencyLabel: '~200ms',
+    icon: Flame
   },
   {
-    id: 'gemini-2.5-pro',
-    name: 'Gemini 2.5 Pro',
-    badge: 'Razonamiento Profundo',
+    id: 'gemini-3.5-flash',
+    name: 'Gemini 3.5 Flash',
+    badge: 'Equilibrado',
+    badgeColor: 'bg-purple-50 text-purple-700 border-purple-200',
+    description: 'Más capaz que los Lite, a un costo intermedio. Buena opción si el bot atiende consultas complejas.',
+    costLabel: 'Intermedio',
+    latencyLabel: '~300ms',
+    icon: Zap
+  },
+  {
+    id: 'gemini-3.8-flash',
+    name: 'Gemini 3.8 Flash',
+    badge: 'El más capaz',
     badgeColor: 'bg-amber-50 text-amber-700 border-amber-200',
-    description: 'Capacidad de razonamiento superior para protocolos clínicos extensos o clínicas con múltiples especialidades.',
-    costLabel: 'Estándar',
-    latencyLabel: '~900ms',
-    icon: Brain
+    description: 'El mejor de los rápidos. Cuesta más por mensaje: conviene sólo si notás que los otros se quedan cortos.',
+    costLabel: 'Mayor costo',
+    latencyLabel: '~350ms',
+    icon: Zap
   }
 ];
 
@@ -178,11 +166,21 @@ const PROMPT_SUGGESTIONS = [
 
 export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ onSaveSuccess }) => {
   const { practiceSettings, updatePracticeSettings, currentUser } = useAgendaStore();
-  const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
-  const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
+  // El motor de IA lo decide el super admin, no cada profesional que abre cuenta.
+  const isSuperAdmin = esSuperAdmin(currentUser?.email, currentUser?.uid);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const [probando, setProbando] = useState(false);
+  const [pruebaModelos, setPruebaModelos] = useState<any | null>(null);
+
+  const probarModelos = async () => {
+    setProbando(true);
+    try {
+      const datos = await probarModelosIA(formData.bot_ai_model);
+      setPruebaModelos(datos);
+    } finally {
+      setProbando(false);
+    }
+  };
 
   const [formData, setFormData] = useState<Partial<PracticeSettings>>({
     bot_enabled: practiceSettings.bot_enabled === true, // por defecto pausado: se activa a mano
@@ -191,7 +189,7 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
     bot_avatar_url: practiceSettings.bot_avatar_url || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80',
     bot_response_delay_seconds: practiceSettings.bot_response_delay_seconds ?? 20,
     bot_typing_simulation: practiceSettings.bot_typing_simulation ?? true,
-    bot_ai_model: practiceSettings.bot_ai_model || 'gemini-2.5-flash',
+    bot_ai_model: practiceSettings.bot_ai_model || 'gemini-3.5-flash-lite',
     bot_personality_preset: practiceSettings.bot_personality_preset || 'warm',
     bot_tone: practiceSettings.bot_tone || 'cálido, amable y profesional',
     welcome_message: practiceSettings.welcome_message || `¡Hola! 👋 Gracias por comunicarte con ${practiceSettings.practice_name}. ¿En qué te puedo ayudar hoy?`,
@@ -205,39 +203,6 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
   });
 
   const [saved, setSaved] = useState(false);
-  const [customAvatarInput, setCustomAvatarInput] = useState('');
-
-  const handleFileUpload = (file: File) => {
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      alert('Por favor selecciona un archivo de imagen válido (JPG, PNG, WebP).');
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const result = e.target?.result as string;
-      if (result) {
-        setFormData(prev => ({ ...prev, bot_avatar_url: result }));
-      }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  };
 
   const handleIdentityChange = (mode: BotIdentityMode) => {
     setFormData(prev => {
@@ -280,14 +245,6 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
     setTimeout(() => setSaved(false), 2500);
   };
 
-  const currentDisplayName = formData.bot_identity_mode === 'professional'
-    ? (practiceSettings.professional_name || 'Doctor/a a cargo')
-    : (formData.bot_assistant_name || 'Sofía (IA)');
-
-  const currentRoleSubtext = formData.bot_identity_mode === 'professional'
-    ? (practiceSettings.professional_title || 'Profesional')
-    : `Asistente de ${practiceSettings.practice_name}`;
-
   return (
     <form onSubmit={handleSave} className="space-y-6">
       {/* Top Header Card with Master Bot Active Switch */}
@@ -312,7 +269,7 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
               </span>
             </div>
             <p className="text-xs text-neutral-500">
-              Personaliza el estado del bot, tiempos de respuesta anti-detección, foto de perfil e instrucciones.
+              Personaliza el estado del bot, tiempos de respuesta anti-detección, tono de atención y directivas de los servicios.
             </p>
           </div>
         </div>
@@ -361,234 +318,13 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
         </div>
       </div>
 
-      {/* WHATSAPP WEB LIVE PREVIEW & VISUAL CUSTOMIZATION */}
-      <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-5">
-        <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="w-4 h-4 text-emerald-600" />
-            <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-              1. Vista Previa en WhatsApp Web & Foto de Perfil
-            </h3>
-          </div>
-          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
-            Simulador de Interfaz Real
-          </span>
-        </div>
-
-        <p className="text-xs text-neutral-600">
-          Así es como tus pacientes verán al bot en la ventana de WhatsApp Web. Sincroniza la foto de perfil del profesional o asistente para transmitir máxima confianza y cercanía.
-        </p>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* WhatsApp Web Simulator Box */}
-          <div className="lg:col-span-7 bg-[#efeae2] rounded-2xl border border-neutral-300/80 shadow-md overflow-hidden relative">
-            {/* WhatsApp Web Chat Header */}
-            <div className="bg-[#f0f2f5] px-4 py-3 border-b border-neutral-300 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <img
-                    src={formData.bot_avatar_url || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80'}
-                    alt="WhatsApp Avatar"
-                    className="w-10 h-10 rounded-full object-cover border border-neutral-200 shadow-2xs"
-                  />
-                  <span className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${
-                    formData.bot_enabled ? 'bg-emerald-500' : 'bg-neutral-400'
-                  }`} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <h4 className="text-xs font-bold text-neutral-900 leading-tight">
-                      {currentDisplayName}
-                    </h4>
-                    <span className="text-[10px] font-bold px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded">
-                      {formData.bot_identity_mode === 'professional' ? 'Profesional' : 'Asistente IA'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-neutral-500 flex items-center gap-1">
-                    {formData.bot_typing_simulation ? (
-                      <span className="text-emerald-700 font-medium animate-pulse">escribiendo...</span>
-                    ) : (
-                      <span>en línea • {currentRoleSubtext}</span>
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 text-neutral-600">
-                <Video className="w-4 h-4 cursor-pointer hover:text-neutral-900" />
-                <Phone className="w-4 h-4 cursor-pointer hover:text-neutral-900" />
-                <div className="w-[1px] h-4 bg-neutral-300" />
-                <MoreVertical className="w-4 h-4 cursor-pointer hover:text-neutral-900" />
-              </div>
-            </div>
-
-            {/* Simulated Chat Messages */}
-            <div className="p-4 space-y-3 min-h-[220px] bg-[radial-gradient(#d8d2cb_1px,transparent_1px)] [background-size:16px_16px]">
-              {/* Patient Message */}
-              <div className="flex justify-end">
-                <div className="bg-[#d9fdd3] text-neutral-900 rounded-lg rounded-tr-none px-3.5 py-2 max-w-[80%] text-xs shadow-2xs space-y-1">
-                  <p>Hola, buenas tardes! Quería saber si tienen turnos disponibles para esta semana con el doctor.</p>
-                  <div className="flex items-center justify-end gap-1 text-[10px] text-neutral-500">
-                    <span>14:32</span>
-                    <CheckCheck className="w-3.5 h-3.5 text-sky-600" />
-                  </div>
-                </div>
-              </div>
-
-              {/* Bot Response Message */}
-              <div className="flex justify-start">
-                <div className="bg-white text-neutral-900 rounded-lg rounded-tl-none px-3.5 py-2 max-w-[85%] text-xs shadow-2xs space-y-1.5 border border-neutral-200/60">
-                  <p className="whitespace-pre-wrap">{formData.welcome_message}</p>
-                  <p className="text-neutral-600">
-                    Tenemos turnos disponibles para <strong>{practiceSettings.specialty || 'consulta'}</strong> el <strong>Jueves a las 10:30 hs</strong> o <strong>Viernes a las 16:00 hs</strong>. ¿Cuál te queda más cómodo?
-                  </p>
-                  <div className="flex items-center justify-end gap-1 text-[10px] text-neutral-400">
-                    <span>14:32</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* WhatsApp Web Input Bar Mock */}
-            <div className="bg-[#f0f2f5] px-3 py-2 border-t border-neutral-300 flex items-center gap-2">
-              <Smile className="w-5 h-5 text-neutral-500" />
-              <Paperclip className="w-5 h-5 text-neutral-500" />
-              <div className="flex-1 bg-white rounded-lg px-3 py-1.5 text-xs text-neutral-400 border border-neutral-200 font-sans">
-                Escribe un mensaje aquí...
-              </div>
-              <div className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center">
-                <Send className="w-3.5 h-3.5" />
-              </div>
-            </div>
-          </div>
-
-          {/* Avatar / Profile Photo Controls */}
-          <div className="lg:col-span-5 space-y-3.5">
-            <div className="p-4 bg-neutral-50 rounded-xl border border-neutral-200 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-neutral-800 flex items-center gap-1.5">
-                  <ImageIcon className="w-4 h-4 text-sky-600" />
-                  <span>Foto de Perfil del Asistente / WhatsApp:</span>
-                </label>
-                {formData.bot_avatar_url && (
-                  <button
-                    type="button"
-                    onClick={() => setFormData(prev => ({ ...prev, bot_avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80' }))}
-                    className="text-[10px] text-neutral-500 hover:text-neutral-800 flex items-center gap-1 font-medium transition-colors"
-                    title="Restablecer a imagen sugerida predeterminada"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Restablecer</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Selected Avatar Preview */}
-              <div className="flex items-center gap-3 p-2.5 bg-white rounded-xl border border-neutral-200/80 shadow-2xs">
-                <img
-                  src={formData.bot_avatar_url || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&auto=format&fit=crop&q=80'}
-                  alt="Selected Avatar"
-                  className="w-12 h-12 rounded-full object-cover border-2 border-emerald-500/30 shadow-2xs shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-neutral-900 truncate">
-                    {currentDisplayName}
-                  </p>
-                  <p className="text-[10px] text-neutral-500 truncate">
-                    Foto asignada para simulador y panel
-                  </p>
-                </div>
-              </div>
-
-              {/* Clarification Notice: Suggestion vs Real WhatsApp */}
-              <div className="p-3 bg-sky-50/80 rounded-xl border border-sky-200/80 text-sky-950 text-[11px] space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-sky-900 text-xs">
-                  <Info className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                  <span>Aviso de sugerencia</span>
-                </div>
-                <p className="leading-relaxed text-sky-900/90 text-[11px]">
-                  Esta foto es una sugerencia visual para la previsualización. Al conectar tu número de WhatsApp real (mediante QR), los pacientes verán automáticamente la foto de perfil actual que tengas configurada en tu aplicación de WhatsApp en el teléfono.
-                </p>
-              </div>
-
-              {/* Option 1: Upload from Computer */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-neutral-700 block">
-                  Opción 1: Seleccionar imagen desde el ordenador:
-                </span>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/jpg"
-                  onChange={handleFileInputChange}
-                  className="hidden"
-                />
-                <div
-                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                  onDragLeave={() => setIsDragging(false)}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`p-3 rounded-xl border-2 border-dashed text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-1.5 ${
-                    isDragging
-                      ? 'border-sky-500 bg-sky-50'
-                      : 'border-neutral-300 hover:border-neutral-400 bg-white hover:bg-neutral-50/80'
-                  }`}
-                >
-                  <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center text-neutral-600">
-                    <Upload className="w-4 h-4 text-sky-600" />
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold text-neutral-800">
-                      Haz clic para examinar o arrastra una imagen aquí
-                    </p>
-                    <p className="text-[10px] text-neutral-500">
-                      Formatos compatibles: JPG, PNG o WebP
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Option 2: Custom Image URL */}
-              <div className="space-y-1.5 pt-1">
-                <label className="text-[11px] font-semibold text-neutral-700 block flex items-center gap-1">
-                  <LinkIcon className="w-3 h-3 text-neutral-500" />
-                  <span>Opción 2: Pegar enlace (URL) de imagen:</span>
-                </label>
-                <div className="flex gap-1.5">
-                  <input
-                    type="url"
-                    value={customAvatarInput}
-                    onChange={e => setCustomAvatarInput(e.target.value)}
-                    placeholder="https://ejemplo.com/foto.jpg"
-                    className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-neutral-200 rounded-lg focus:ring-1 focus:ring-neutral-900"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (customAvatarInput.trim()) {
-                        setFormData(prev => ({ ...prev, bot_avatar_url: customAvatarInput.trim() }));
-                        setCustomAvatarInput('');
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-neutral-900 text-white text-xs font-semibold rounded-lg hover:bg-neutral-800 shrink-0 transition-colors"
-                  >
-                    Aplicar
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. DEMORA DE RESPUESTA & PROTECCIÓN ANTI-BOT (PACING HUMANO) */}
+      {/* 1. DEMORA DE RESPUESTA & PROTECCIÓN ANTI-BOT (PACING HUMANO) */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
           <div className="flex items-center gap-2">
             <Timer className="w-4 h-4 text-amber-600" />
             <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-              2. Ritmo de Respuesta & Simulación Humana (Anti-Ban)
+              1. Ritmo de Respuesta & Simulación Humana (Anti-Ban)
             </h3>
           </div>
           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
@@ -687,8 +423,51 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
           </div>
 
           <p className="text-xs text-neutral-600">
-            Control de infraestructura SaaS: Selecciona qué modelo de Gemini ejecutará el backend para este consultorio. Por defecto recomendamos <strong>Gemini 2.5 Flash</strong> por su ultra bajo costo y perfecta fluidez en español.
-          </p>
+            El motor de IA lo elige el super admin y vale para toda la plataforma. Por defecto usamos el modelo mas barato que responda bien. Si cambias de modelo, probalo primero con el boton de abajo: si no contesta, el bot responde sin IA.</p>
+          {/* Probador real: el modelo se prueba contra la API, no se asume que anda */}
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50/70 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-[11px] text-neutral-600">
+                Probá los modelos contra la API antes de elegir uno. Si un modelo no contesta, el bot responde sin IA.
+              </p>
+              <button
+                type="button"
+                onClick={probarModelos}
+                disabled={probando}
+                className="px-3 py-1.5 rounded-lg bg-neutral-900 text-white text-xs font-bold disabled:opacity-50"
+              >
+                {probando ? 'Probando...' : 'Probar modelos'}
+              </button>
+            </div>
+          
+            {pruebaModelos?.modelos && (
+              <div className="space-y-1">
+                {pruebaModelos.modelos.map((r: any) => (
+                  <div key={r.id} className="flex items-center justify-between gap-2 text-[11px] bg-white border border-neutral-200 rounded-lg px-2.5 py-1.5">
+                    <span className="font-mono text-neutral-700">{r.id}</span>
+                    {r.funciona ? (
+                      <span className="text-emerald-700 font-semibold">anda · {Math.round(r.demora_ms / 100) / 10}s</span>
+                    ) : (
+                      <span className="text-red-600 font-semibold truncate max-w-[55%]" title={r.motivo}>no anda</span>
+                    )}
+                  </div>
+                ))}
+                {pruebaModelos.recomendado && (
+                  <button
+                    type="button"
+                    onClick={() => setFormData(prev => ({ ...prev, bot_ai_model: pruebaModelos.recomendado }))}
+                    className="w-full mt-1 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 text-xs font-bold hover:bg-emerald-50"
+                  >
+                    Usar el más barato que anda: {pruebaModelos.recomendado}
+                  </button>
+                )}
+              </div>
+            )}
+          
+            {pruebaModelos && !pruebaModelos.modelos && (
+              <p className="text-[11px] text-red-600">No se pudo probar. Revisá que la clave de Gemini esté cargada en el servidor.</p>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
             {AI_MODELS.map(model => {
@@ -740,12 +519,12 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
         </div>
       )}
 
-      {/* 4. IDENTIDAD Y ROL DEL BOT */}
+      {/* 2. IDENTIDAD Y ROL DEL BOT */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-4">
         <div className="flex items-center gap-2 pb-3 border-b border-neutral-100">
           <UserCheck className="w-4 h-4 text-neutral-700" />
           <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-            3. Identidad: ¿Cómo debe presentarse el Bot ante los pacientes?
+            2. Identidad: ¿Cómo debe presentarse el Bot ante los pacientes?
           </h3>
         </div>
 
@@ -810,12 +589,12 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
         )}
       </div>
 
-      {/* 5. ARQUETIPO, TONO Y SALUDO */}
+      {/* 3. ARQUETIPO, TONO Y SALUDO */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-4">
         <div className="flex items-center gap-2 pb-3 border-b border-neutral-100">
           <MessageSquare className="w-4 h-4 text-neutral-700" />
           <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-            4. Tono de Comunicación & Mensaje de Bienvenida
+            3. Tono de Comunicación & Mensaje de Bienvenida
           </h3>
         </div>
 
@@ -874,13 +653,13 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
         </div>
       </div>
 
-      {/* 6. FUNCIONES HABILITADAS DEL BOT */}
+      {/* 4. FUNCIONES HABILITADAS DEL BOT */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
           <div className="flex items-center gap-2">
             <Sliders className="w-4 h-4 text-neutral-700" />
             <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-              5. Funciones Habilitadas para Responder
+              4. Funciones Habilitadas para Responder
             </h3>
           </div>
         </div>
@@ -966,13 +745,13 @@ export const BotPersonalitySettings: React.FC<BotPersonalitySettingsProps> = ({ 
         </div>
       </div>
 
-      {/* 7. RESTRICCIONES & INSTRUCCIONES ESPECÍFICAS (PROMPT LIBRE) */}
+      {/* 5. RESTRICCIONES & INSTRUCCIONES ESPECÍFICAS (PROMPT LIBRE) */}
       <div className="bg-white p-6 rounded-2xl border border-neutral-200 shadow-2xs space-y-4">
         <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-amber-600" />
             <h3 className="text-xs font-bold text-neutral-900 uppercase tracking-wider font-display">
-              6. Restricciones y Reglas Específicas del Consultorio
+              5. Restricciones y Reglas Específicas del Consultorio
             </h3>
           </div>
           <span className="text-[10px] font-bold text-neutral-500 uppercase">

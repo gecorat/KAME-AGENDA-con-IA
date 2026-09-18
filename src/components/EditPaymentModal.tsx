@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, DollarSign, User, FileText, CreditCard, Landmark, QrCode, Shield, Check, Calendar, AlertTriangle } from 'lucide-react';
+import { X, DollarSign, User, FileText, CreditCard, Landmark, Smartphone, Shield, Check, Calendar, AlertTriangle } from 'lucide-react';
 import { PaymentRecord, PaymentMethod, Patient } from '../types';
 import { useAgendaStore } from '../lib/store';
 
@@ -212,7 +212,7 @@ export const EditPaymentModal: React.FC<EditPaymentModalProps> = ({
                     : 'border-neutral-200 hover:bg-neutral-50 text-neutral-700'
                 }`}
               >
-                <QrCode className="w-4 h-4 text-cyan-600" />
+                <Smartphone className="w-4 h-4 text-cyan-600" />
                 <span>Mercado Pago</span>
               </button>
 

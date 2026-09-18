@@ -57,7 +57,7 @@ export const PatientModal: React.FC<PatientModalProps> = ({
     } else {
       setFirstName('');
       setLastName('');
-      setPhone('+54 9 11 ');
+      setPhone('');
       setEmail('');
       setDni('');
       setCuit('');
@@ -78,8 +78,13 @@ export const PatientModal: React.FC<PatientModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!firstName.trim() || !phone.trim()) {
-      alert('Nombre y teléfono son obligatorios.');
+    const cleanDigits = phone.replace(/\D/g, "");
+    if (!firstName.trim()) {
+      alert('El nombre es obligatorio.');
+      return;
+    }
+    if (cleanDigits.length < 10) {
+      alert('Por favor ingrese un número de teléfono o WhatsApp válido con código de país y área (al menos 10 dígitos, ej: +54 9 11 1234-5678).');
       return;
     }
 

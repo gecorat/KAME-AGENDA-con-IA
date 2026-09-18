@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   Save,
@@ -16,7 +16,8 @@ import {
   Calendar,
   Bell,
   CheckSquare,
-  Clock
+  Clock,
+  Database
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { PracticeSettings } from '../types';
@@ -24,8 +25,13 @@ import { PatientDepositSettings } from '../components/settings/PatientDepositSet
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { RequiredFieldsSettings } from '../components/settings/RequiredFieldsSettings';
 import { ProfessionSettings } from '../components/settings/ProfessionSettings';
+import { DataBackupSettings } from '../components/settings/DataBackupSettings';
 
-export const SettingsView: React.FC = () => {
+interface SettingsViewProps {
+  initialTab?: 'general' | 'notifications' | 'deposits' | 'workspace' | 'backup';
+}
+
+export const SettingsView: React.FC<SettingsViewProps> = ({ initialTab = 'general' }) => {
   const {
     practiceSettings,
     updatePracticeSettings,
@@ -37,8 +43,20 @@ export const SettingsView: React.FC = () => {
   const isGonzalo = currentUser?.email?.toLowerCase() === 'gonzalocorat@gmail.com';
   const isSuperAdmin = isGonzalo && Boolean(currentUser?.isSuperAdmin);
 
-  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'deposits' | 'workspace'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'notifications' | 'deposits' | 'workspace' | 'backup'>(initialTab);
   const [savedNotice, setSavedNotice] = useState(false);
+
+  // Sync active tab if initialTab prop changes
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  // Keep local form in sync with practiceSettings updates
+  useEffect(() => {
+    setFormData(practiceSettings);
+  }, [practiceSettings]);
 
   const handleChange = (field: keyof PracticeSettings, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -164,7 +182,7 @@ export const SettingsView: React.FC = () => {
           }`}
         >
           <Landmark className="w-3.5 h-3.5 text-emerald-700" />
-          <span>Cobro de Señas a Pacientes</span>
+          <span>Datos de Cobro & Señas</span>
           <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
             Alias / MP
           </span>
@@ -181,6 +199,19 @@ export const SettingsView: React.FC = () => {
         >
           <Calendar className="w-3.5 h-3.5" />
           <span>Google Workspace</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab('backup')}
+          className={`px-3.5 py-1.5 text-xs font-medium rounded-lg transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'backup'
+              ? 'bg-white text-neutral-900 shadow-2xs font-semibold'
+              : 'text-neutral-600 hover:text-neutral-900'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5 text-indigo-600" />
+          <span>Respaldo & Exportación</span>
         </button>
       </div>
 
@@ -373,6 +404,11 @@ export const SettingsView: React.FC = () => {
               Tu consultorio cuenta con integración directa con las APIs oficiales de Google Calendar y Google Sheets. Puedes sincronizar turnos a tu calendario y crear respaldos automáticos en tu Google Drive desde la pestaña <strong>Google Workspace</strong> del menú principal.
             </p>
           </div>
+        )}
+
+        {/* TAB 5: COPIA DE SEGURIDAD & PORTABILIDAD DE DATOS */}
+        {activeTab === 'backup' && (
+          <DataBackupSettings />
         )}
 
         {/* System Version Footer */}

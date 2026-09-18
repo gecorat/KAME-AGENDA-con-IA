@@ -743,9 +743,9 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
       setQrErrorMessage(null);
     }
     try {
-      const targetInstance = practiceSettings.evolution_instance_name?.trim() || (practiceSettings.practice_name
-        ? practiceSettings.practice_name.toLowerCase().replace(/[^a-z0-9_-]/g, '')
-        : 'consultorio-principal');
+      const uidSanitized = currentUser?.uid ? currentUser.uid.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 12) : '';
+      const fallbackName = uidSanitized ? `consultorio-${uidSanitized}` : 'consultorio-principal';
+      const targetInstance = practiceSettings.evolution_instance_name?.trim() || fallbackName;
       const res = await fetch('/api/evolution/instance-qr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -754,6 +754,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
           apiUrl: practiceSettings.evolution_api_url,
           apiKey: practiceSettings.evolution_api_key,
           practiceSettings,
+          owner_id: currentUser?.uid || '',
           appUrl: typeof window !== 'undefined' ? window.location.origin : undefined
         })
       });
@@ -763,6 +764,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
         setQrConnectedSuccess(true);
         updatePracticeSettings({
           whatsapp_connected: true,
+          evolution_instance_name: targetInstance,
           whatsapp_session_phone: customPhoneInput || practiceSettings.whatsapp_number
         });
         confetti({ particleCount: 70, spread: 80, origin: { y: 0.5 } });
@@ -826,16 +828,17 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
 
   const handleDisconnectWhatsApp = async () => {
     try {
-      const targetInstance = practiceSettings.evolution_instance_name?.trim() || (practiceSettings.practice_name
-        ? practiceSettings.practice_name.toLowerCase().replace(/[^a-z0-9_-]/g, '')
-        : 'consultorio-principal');
+      const uidSanitized = currentUser?.uid ? currentUser.uid.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 12) : '';
+      const fallbackName = uidSanitized ? `consultorio-${uidSanitized}` : 'consultorio-principal';
+      const targetInstance = practiceSettings.evolution_instance_name?.trim() || fallbackName;
       await fetch('/api/evolution/disconnect-instance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instanceName: targetInstance,
           apiUrl: practiceSettings.evolution_api_url,
-          apiKey: practiceSettings.evolution_api_key
+          apiKey: practiceSettings.evolution_api_key,
+          owner_id: currentUser?.uid || ''
         })
       });
     } catch (err) {
@@ -1572,7 +1575,12 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                     <span className="text-emerald-800">
                       • {new Date(activePatientAppointments[0].start_datetime).toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })} a las {new Date(activePatientAppointments[0].start_datetime).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
                     </span>
-                    {activePatientAppointments[0].patient_confirmed ? (
+                    {activePatientAppointments[0].status === 'completed' ? (
+                      <span className="px-1.5 py-0.5 rounded bg-sky-200 text-sky-900 text-[10px] font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-sky-700" />
+                        Atendido
+                      </span>
+                    ) : (activePatientAppointments[0].patient_confirmed || activePatientAppointments[0].status === 'confirmed' || activePatientAppointments[0].status !== 'pending') ? (
                       <span className="px-1.5 py-0.5 rounded bg-emerald-200 text-emerald-900 text-[10px] font-bold flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3 text-emerald-700" />
                         Confirmado
@@ -1878,6 +1886,12 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                 <p className="text-[11px] text-neutral-500">
                   La conexión permite que el sistema envíe recordatorios automáticos y que el Bot responda turnos las 24 horas.
                 </p>
+                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-neutral-200/60 text-neutral-600">
+                  <span>Instancia asignada a tu cuenta:</span>
+                  <span className="font-mono font-bold text-neutral-800 bg-neutral-100 px-2 py-0.5 rounded border border-neutral-200">
+                    {practiceSettings.evolution_instance_name || (currentUser?.uid ? `consultorio-${currentUser.uid.slice(0, 10)}` : 'consultorio-principal')}
+                  </span>
+                </div>
               </div>
 
               {qrErrorMessage && (
@@ -2231,7 +2245,7 @@ export const WhatsAppChatsView: React.FC<WhatsAppChatsViewProps> = ({
                   if (onNavigateToTab) {
                     onNavigateToTab('suscripcion');
                   } else {
-                    updatePracticeSettings({ subscription_plan: 'pro' });
+                    window.location.hash = 'suscripcion';
                   }
                 }}
                 className="w-full sm:w-auto px-4 py-2 text-xs font-semibold bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg shadow-2xs transition-colors flex items-center justify-center gap-1.5"

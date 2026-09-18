@@ -48,7 +48,7 @@ import {
 } from 'recharts';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
-import { esSuperAdmin } from '../lib/firestore-sync';
+import { esSuperAdmin, limpiarSueltos } from '../lib/firestore-sync';
 import { SaasTenantUser } from '../types';
 
 export const SuperAdminAnalyticsView: React.FC = () => {
@@ -69,6 +69,25 @@ export const SuperAdminAnalyticsView: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'trial' | 'permanent'>('all');
   const [planFilter, setPlanFilter] = useState<'all' | 'pro' | 'basic'>('all');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+
+  const [limpiando, setLimpiando] = useState(false);
+  const [pasoLimpieza, setPasoLimpieza] = useState(0);
+
+  const ejecutarLimpieza = async () => {
+    setLimpiando(true);
+    try {
+      const r = await limpiarSueltos();
+      setPasoLimpieza(0);
+      if (r?.ok) {
+        setActionSuccessMsg(`Se borraron ${r.borrados} registros sin ficha.`);
+        await refrescarPanelSuperAdmin();
+      } else {
+        setActionSuccessMsg('No se pudo limpiar. Probá de nuevo.');
+      }
+    } finally {
+      setLimpiando(false);
+    }
+  };
 
   // Modals state
   const [trialModalTenant, setTrialModalTenant] = useState<SaasTenantUser | null>(null);
@@ -111,10 +130,10 @@ export const SuperAdminAnalyticsView: React.FC = () => {
     return doctorTenants.filter(t => t.plan === 'basic');
   }, [doctorTenants]);
 
-  // Real MRR: Sum of monthly subscription revenue from active paying doctor accounts (Plan Pro = $49.000 / Plan Básico = $29.000)
+  // Real MRR: Sum of monthly subscription revenue from active paying doctor accounts (Plan Pro = $59.000 / Plan Básico = $39.000)
   const mrr = useMemo(() => {
     return activeTenants.reduce((acc, curr) => {
-      const defaultAmount = curr.plan === 'pro' ? 49000 : 29000;
+      const defaultAmount = curr.plan === 'pro' ? 59000 : 39000;
       return acc + (curr.amount_monthly_ars || defaultAmount);
     }, 0);
   }, [activeTenants]);
@@ -164,8 +183,8 @@ export const SuperAdminAnalyticsView: React.FC = () => {
   // Plan distribution for Pie Chart
   const planDistributionData = useMemo(() => {
     return [
-      { name: 'Plan Pro AI ($49.000/mes)', value: proTenants.length, color: '#0284c7' },
-      { name: 'Plan Básico ($29.000/mes)', value: basicTenants.length, color: '#0d9488' },
+      { name: 'Plan Pro AI ($59.000/mes)', value: proTenants.length, color: '#0284c7' },
+      { name: 'Plan Básico ($39.000/mes)', value: basicTenants.length, color: '#0d9488' },
       { name: 'En Periodo de Prueba (Trial)', value: trialTenants.length, color: '#f59e0b' }
     ];
   }, [proTenants.length, basicTenants.length, trialTenants.length]);
@@ -224,7 +243,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
       t.trial_active ? 'SI' : 'NO',
       t.trial_days_left ?? 0,
       t.is_permanent ? 'SI' : 'NO',
-      t.amount_monthly_ars || (t.plan === 'pro' ? 49000 : 29000),
+      t.amount_monthly_ars || (t.plan === 'pro' ? 59000 : 39000),
       t.total_paid_ars || 0,
       t.appointments_count || 0,
       t.whatsapp_status || 'disconnected',
@@ -247,7 +266,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
 
   // Action: Simulate Renewal Payment
   const handleSimulatePayment = (tenant: SaasTenantUser) => {
-    const defaultAmount = tenant.plan === 'pro' ? 49000 : 29000;
+    const defaultAmount = tenant.plan === 'pro' ? 59000 : 39000;
     const amountToBill = tenant.amount_monthly_ars || defaultAmount;
     const nextDateObj = new Date(tenant.next_billing_date || new Date().toISOString());
     nextDateObj.setMonth(nextDateObj.getMonth() + 1);
@@ -277,15 +296,15 @@ export const SuperAdminAnalyticsView: React.FC = () => {
       plan: 'pro',
       status: 'active',
       trial_active: false,
-      amount_monthly_ars: 49000,
+      amount_monthly_ars: 59000,
       last_payment_date: new Date().toISOString().split('T')[0],
-      last_payment_amount: 49000,
-      total_paid_ars: (tenant.total_paid_ars || 0) + 49000,
+      last_payment_amount: 59000,
+      total_paid_ars: (tenant.total_paid_ars || 0) + 59000,
       next_billing_date: nextMonth.toISOString().split('T')[0]
     });
 
     confetti({ particleCount: 80, spread: 70 });
-    setActionSuccessMsg(`¡${tenant.doctor_name} pasó a Plan Pro AI ($49.000/mes)!`);
+    setActionSuccessMsg(`¡${tenant.doctor_name} pasó a Plan Pro AI ($59.000/mes)!`);
     setTimeout(() => setActionSuccessMsg(null), 3500);
   };
 
@@ -313,7 +332,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
     try {
       await grantUserPlan(planModalTenant.id, targetPlan, isPermanentAccess, accessDays);
       confetti({ particleCount: 75, spread: 70 });
-      const planName = targetPlan === 'pro' ? 'Plan Pro AI ($49.000/mes)' : 'Plan Básico ($29.000/mes)';
+      const planName = targetPlan === 'pro' ? 'Plan Pro AI ($59.000/mes)' : 'Plan Básico ($39.000/mes)';
       const durationStr = isPermanentAccess ? 'Permanente (De por vida)' : `por ${accessDays} días`;
       setActionSuccessMsg(`¡${planModalTenant.doctor_name} actualizado a ${planName} (${durationStr}) en Firestore!`);
       setPlanModalTenant(null);
@@ -462,6 +481,50 @@ export const SuperAdminAnalyticsView: React.FC = () => {
           </div>
         )}
 
+        {totalesReales && (Number(totalesReales.turnos_sin_dueno || 0) > 0 || Number(totalesReales.pacientes_sin_dueno || 0) > 0) && (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            Hay {Number(totalesReales.turnos_sin_dueno || 0)} turnos y {Number(totalesReales.pacientes_sin_dueno || 0)} fichas sin cuenta asignada.
+            No aparecen en la agenda de ningun profesional: son de antes de que el portal y el bot guardaran el dueño.
+          </div>
+        )}
+
+        {superAdminOverview?.sueltos && (superAdminOverview.sueltos.turnos > 0 || superAdminOverview.sueltos.cobros > 0 || superAdminOverview.sueltos.consultas > 0) && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2">
+            <div className="text-xs font-semibold text-amber-900">Datos sueltos, sin ficha de cliente</div>
+            <div className="text-[11px] text-amber-900/80">
+              Quedaron {superAdminOverview.sueltos.turnos} turnos, {superAdminOverview.sueltos.cobros} cobros
+              (por ${Number(superAdminOverview.sueltos.plata_en_cobros_sueltos || 0).toLocaleString('es-AR')})
+              y {superAdminOverview.sueltos.consultas} historias de clientes que ya no existen.
+              Por eso la caja puede mostrar plata que no corresponde a nadie.
+            </div>
+            {pasoLimpieza === 0 ? (
+              <button
+                onClick={() => setPasoLimpieza(1)}
+                className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700"
+              >
+                Limpiar estos registros
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] font-bold text-amber-900">¿Seguro? No se puede deshacer.</span>
+                <button
+                  onClick={() => setPasoLimpieza(0)}
+                  className="px-3 py-1.5 rounded-lg border border-neutral-300 text-xs font-bold text-neutral-700"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={ejecutarLimpieza}
+                  disabled={limpiando}
+                  className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 disabled:opacity-50"
+                >
+                  {limpiando ? 'Limpiando...' : 'Sí, borrar definitivamente'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {integraciones && (
           <div className="flex flex-wrap gap-2">
             {[
@@ -478,6 +541,15 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                 {c.t}: {c.ok ? 'conectado' : 'sin configurar'}
               </span>
             ))}
+          </div>
+        )}
+
+        {superAdminOverview?.variables_cargadas && Object.values(superAdminOverview.variables_cargadas).some((x: any) => !x) && (
+          <div className="text-[11px] text-neutral-500">
+            Claves que no llegaron al servidor:{' '}
+            {Object.keys(superAdminOverview.variables_cargadas)
+              .filter((k) => !superAdminOverview.variables_cargadas[k])
+              .join(', ')}
           </div>
         )}
 
@@ -618,7 +690,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                 Evolución de Ingresos: Cobrado Real vs. Proyección
               </h3>
               <p className="text-xs text-neutral-500">
-                Basado en planes reales: Plan Pro AI ($49.000 ARS) y Plan Básico ($29.000 ARS).
+                Basado en planes reales: Plan Pro AI ($59.000 ARS) y Plan Básico ($39.000 ARS).
               </p>
             </div>
             <span className="text-xs bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-full font-semibold border border-emerald-200">
@@ -800,7 +872,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                   const isTrial = tenant.status === 'trial' || Boolean(tenant.trial_active);
                   const isPro = tenant.plan === 'pro';
                   const isPermanent = Boolean(tenant.is_permanent) || isSuperAdminUser;
-                  const defaultAmount = isPro ? 49000 : 29000;
+                  const defaultAmount = isPro ? 59000 : 39000;
                   const monthlyAmount = tenant.amount_monthly_ars || defaultAmount;
 
                   return (
@@ -1110,7 +1182,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                       Plan PRO AI
                     </div>
                     <div className="text-[11px] text-neutral-500 mt-1">
-                      IA Gemini, Bot WhatsApp, recetas oficiales ($49.000/mes)
+                      IA Gemini, Bot WhatsApp, recetas oficiales ($59.000/mes)
                     </div>
                   </button>
 
@@ -1128,7 +1200,7 @@ export const SuperAdminAnalyticsView: React.FC = () => {
                       Plan Básico
                     </div>
                     <div className="text-[11px] text-neutral-500 mt-1">
-                      Agenda digital, recordatorios 1 clic ($29.000/mes)
+                      Agenda digital, recordatorios 1 clic ($39.000/mes)
                     </div>
                   </button>
                 </div>

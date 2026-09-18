@@ -70,11 +70,13 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('pending');
   const [notes, setNotes] = useState<string>('');
   const [isTelemedicine, setIsTelemedicine] = useState<boolean>(false);
-  const [patientConfirmed, setPatientConfirmed] = useState<boolean>(false);
+  const [patientConfirmed, setPatientConfirmed] = useState<boolean>(true);
   // Solo viene tildado para turnos NUEVOS. Al editar uno existente, "Guardar
   // Cambios" guarda y nada mas: antes abria WhatsApp siempre.
   const [sendWhatsAppOnSave, setSendWhatsAppOnSave] = useState<boolean>(!appointmentToEdit);
   const [sentNotice, setSentNotice] = useState<string | null>(null);
+  const [isChangingPatient, setIsChangingPatient] = useState(false);
+  const [showDepositSection, setShowDepositSection] = useState(false);
 
   // Deposit verification states
   const [depositDeclared, setDepositDeclared] = useState<boolean>(false);
@@ -123,7 +125,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setPaymentStatus(appointmentToEdit.payment_status);
       setNotes(appointmentToEdit.notes || '');
       setIsTelemedicine(appointmentToEdit.origin === 'telemedicine');
-      setPatientConfirmed(!!appointmentToEdit.patient_confirmed);
+      setPatientConfirmed(appointmentToEdit.patient_confirmed ?? (appointmentToEdit.status === 'confirmed' || appointmentToEdit.status === 'completed'));
       setNewPatientMode(false);
 
       setDepositDeclared(!!appointmentToEdit.deposit_declared);
@@ -131,6 +133,12 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
       setDepositVerified(!!appointmentToEdit.deposit_verified);
       setDepositMethod(appointmentToEdit.deposit_method || 'transfer');
       setDepositNotes(appointmentToEdit.deposit_notes || '');
+      setShowDepositSection(Boolean(
+        appointmentToEdit.deposit_declared || 
+        (appointmentToEdit.deposit_amount && appointmentToEdit.deposit_amount > 0) || 
+        appointmentToEdit.deposit_verified
+      ));
+      setIsChangingPatient(false);
     } else {
       const targetPatient = defaultPatientId 
         ? patients.find(p => p.id === defaultPatientId) 
@@ -235,10 +243,10 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         targetPatientPhone = found.phone;
       } else if (patientSearchQuery.trim()) {
         targetPatientName = patientSearchQuery.trim();
-        targetPatientPhone = "+54 9 11 ...";
+        targetPatientPhone = appointmentToEdit?.patient_phone || "";
       } else {
         targetPatientName = "Paciente";
-        targetPatientPhone = "+54 9 11 ...";
+        targetPatientPhone = appointmentToEdit?.patient_phone || "";
       }
     }
 
@@ -265,7 +273,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         status,
         payment_status: paymentStatus,
         notes,
-        patient_confirmed: patientConfirmed || sendWhatsAppOnSave,
+        patient_confirmed: patientConfirmed || status === 'confirmed' || status === 'completed' || sendWhatsAppOnSave,
         origin: isTelemedicine ? 'telemedicine' : (appointmentToEdit.origin || 'manual'),
         meet_url: isTelemedicine ? 'https://meet.google.com/agd-pro-meet' : undefined,
         deposit_declared: depositDeclared,
@@ -288,7 +296,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
         status,
         payment_status: paymentStatus,
         notes,
-        patient_confirmed: patientConfirmed || sendWhatsAppOnSave,
+        patient_confirmed: patientConfirmed || status === 'confirmed' || status === 'completed' || sendWhatsAppOnSave,
         origin: isTelemedicine ? 'telemedicine' : 'manual',
         meet_url: isTelemedicine ? 'https://meet.google.com/agd-pro-meet' : undefined,
         deposit_declared: depositDeclared,
@@ -391,246 +399,244 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden border border-neutral-200 animate-in fade-in zoom-in-95 duration-150">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-200 bg-neutral-50/50">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center">
+        {/* Simplified Header */}
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-neutral-200 bg-neutral-50/70">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-sky-100 text-sky-700 flex items-center justify-center shrink-0">
               <Calendar className="w-4 h-4" />
             </div>
-            <h2 className="text-base font-semibold text-neutral-900">
-              {appointmentToEdit ? 'Editar Turno' : 'Nuevo Turno'}
-            </h2>
+            <div>
+              <h2 className="text-sm font-bold text-neutral-900 leading-tight">
+                {appointmentToEdit ? 'Editar Turno' : 'Nuevo Turno'}
+              </h2>
+              {appointmentToEdit && (
+                <p className="text-[11px] text-neutral-500 font-medium">
+                  {appointmentToEdit.patient_name} • {appointmentToEdit.service_name}
+                </p>
+              )}
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
-          {/* Quick link to consultation if editing */}
-          {appointmentToEdit && onOpenConsultation && (
-            <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-indigo-700" />
-                <div>
-                  <span className="text-xs font-bold text-indigo-950 block">Historia Clínica y Consulta</span>
-                  <span className="text-[11px] text-indigo-700">Registrar evolución médica, recetas y certificados</span>
-                </div>
-              </div>
+          <div className="flex items-center gap-2">
+            {appointmentToEdit && onOpenConsultation && (
               <button
                 type="button"
                 onClick={() => {
                   onClose();
                   onOpenConsultation(appointmentToEdit.patient_id, appointmentToEdit.id);
                 }}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1 shrink-0"
+                className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
+                title="Abrir historia clínica, evoluciones y recetas"
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>Abrir Ficha</span>
+                <span>Ficha Médica</span>
               </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded-lg text-neutral-400 hover:text-neutral-600 hover:bg-neutral-100 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-3.5 max-h-[82vh] overflow-y-auto">
+          {/* Patient display / selection */}
+          {appointmentToEdit && !isChangingPatient ? (
+            <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded-full bg-sky-100 text-sky-700 flex items-center justify-center font-bold text-xs shrink-0">
+                  {(selectedPatient?.first_name || appointmentToEdit.patient_name)[0] || 'P'}
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-neutral-900 flex items-center gap-1.5">
+                    <span>{selectedPatient ? `${selectedPatient.first_name} ${selectedPatient.last_name}` : appointmentToEdit.patient_name}</span>
+                    {patientConfirmed && (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-100/90 px-1.5 py-0.2 rounded font-medium">
+                        Confirmado
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-neutral-500 flex items-center gap-2">
+                    <span>{selectedPatient?.phone || appointmentToEdit.patient_phone || 'Sin WhatsApp'}</span>
+                    {selectedPatient?.dni && <span>• DNI: {selectedPatient.dni}</span>}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsChangingPatient(true)}
+                className="text-xs font-semibold text-sky-600 hover:text-sky-800 hover:underline px-2 py-1 cursor-pointer"
+              >
+                Cambiar
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-neutral-500" />
+                  Paciente
+                </label>
+                <div className="flex items-center gap-2">
+                  {appointmentToEdit && isChangingPatient && (
+                    <button
+                      type="button"
+                      onClick={() => setIsChangingPatient(false)}
+                      className="text-xs text-neutral-500 hover:underline cursor-pointer"
+                    >
+                      Cancelar cambio
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newPatientMode) {
+                        setNewPatientMode(false);
+                        if (patients.length > 0) {
+                          setSelectedPatientId(patients[0].id);
+                          setPatientSearchQuery(`${patients[0].first_name} ${patients[0].last_name}`.trim());
+                        }
+                      } else {
+                        handleStartNewPatient(patientSearchQuery);
+                      }
+                    }}
+                    className="text-xs text-sky-600 hover:text-sky-700 font-medium flex items-center gap-1 cursor-pointer"
+                  >
+                    {newPatientMode ? '← Buscar existente' : '+ Nuevo paciente'}
+                  </button>
+                </div>
+              </div>
+
+              {newPatientMode ? (
+                <div className="space-y-3 p-3.5 bg-sky-50/50 rounded-2xl border border-sky-100 animate-in fade-in duration-150">
+                  <div className="flex items-center justify-between text-xs text-sky-900 font-semibold">
+                    <span className="flex items-center gap-1.5">
+                      <UserPlus className="w-3.5 h-3.5 text-sky-600" />
+                      Registrar nuevo paciente
+                    </span>
+                    {patients.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setNewPatientMode(false)}
+                        className="text-[11px] text-sky-600 hover:underline"
+                      >
+                        Cancelar
+                      </button>
+                    )}
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="Nombre y Apellido *"
+                      value={newPatientName}
+                      onChange={e => setNewPatientName(e.target.value)}
+                      className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      required
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-medium text-neutral-600 block">
+                      Teléfono WhatsApp (código de país y número local) *
+                    </label>
+                    <PhoneInputWithCountry
+                      value={newPatientPhone}
+                      onChange={(phone) => setNewPatientPhone(phone)}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <input
+                      type="text"
+                      placeholder="DNI o Documento (opcional)"
+                      value={newPatientDni}
+                      onChange={e => setNewPatientDni(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 h-[38px]"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="relative" ref={patientDropdownRef}>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400">
+                      <Search className="w-4 h-4" />
+                    </div>
+                    <input
+                      type="text"
+                      value={patientSearchQuery}
+                      onChange={(e) => {
+                        setPatientSearchQuery(e.target.value);
+                        setIsPatientDropdownOpen(true);
+                        if (selectedPatientId && `${selectedPatient?.first_name} ${selectedPatient?.last_name}`.trim() !== e.target.value) {
+                          setSelectedPatientId('');
+                        }
+                      }}
+                      onFocus={() => setIsPatientDropdownOpen(true)}
+                      placeholder="Buscar paciente por nombre, WhatsApp o DNI..."
+                      className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setIsPatientDropdownOpen(!isPatientDropdownOpen)}
+                      className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 hover:text-neutral-600"
+                    >
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isPatientDropdownOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+
+                  {isPatientDropdownOpen && (
+                    <div className="absolute z-20 left-0 right-0 mt-1.5 bg-white rounded-2xl border border-neutral-200 shadow-lg max-h-52 overflow-y-auto divide-y divide-neutral-100 animate-in fade-in duration-100">
+                      {filteredPatients.length > 0 ? (
+                        filteredPatients.map(p => {
+                          const isChosen = p.id === selectedPatientId;
+                          return (
+                            <div
+                              key={p.id}
+                              onClick={() => handleSelectExistingPatient(p)}
+                              className={`p-2.5 hover:bg-neutral-50 cursor-pointer flex items-center justify-between transition ${isChosen ? 'bg-sky-50/70' : ''}`}
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-7 h-7 rounded-full bg-neutral-100 text-neutral-700 flex items-center justify-center text-xs font-bold">
+                                  {p.first_name[0]}{p.last_name[0] || ''}
+                                </div>
+                                <div>
+                                  <div className="text-xs font-bold text-neutral-900">
+                                    {p.first_name} {p.last_name}
+                                  </div>
+                                  <div className="text-[11px] text-neutral-500 flex items-center gap-1.5">
+                                    <span>{p.phone}</span>
+                                    {p.dni && <span>• DNI: {p.dni}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                              {isChosen && <Check className="w-4 h-4 text-sky-600" />}
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="p-3 text-center text-xs text-neutral-500">
+                          No se encontró "{patientSearchQuery}".
+                        </div>
+                      )}
+                      <div
+                        onClick={() => handleStartNewPatient(patientSearchQuery)}
+                        className="p-2.5 bg-sky-50/40 hover:bg-sky-50 text-sky-700 cursor-pointer flex items-center gap-2 text-xs font-semibold transition"
+                      >
+                        <Plus className="w-4 h-4 text-sky-600" />
+                        <span>+ Registrar nuevo paciente</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Patient selection & smart search / creation */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-neutral-500" />
-                Paciente
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  if (newPatientMode) {
-                    setNewPatientMode(false);
-                    if (patients.length > 0) {
-                      setSelectedPatientId(patients[0].id);
-                      setPatientSearchQuery(`${patients[0].first_name} ${patients[0].last_name}`.trim());
-                    }
-                  } else {
-                    handleStartNewPatient(patientSearchQuery);
-                  }
-                }}
-                className="text-xs text-sky-600 hover:text-sky-700 font-medium flex items-center gap-1 cursor-pointer"
-              >
-                {newPatientMode ? '← Buscar existente' : '+ Nuevo paciente'}
-              </button>
-            </div>
-
-            {newPatientMode ? (
-              <div className="space-y-3 p-3.5 bg-sky-50/50 rounded-2xl border border-sky-100 animate-in fade-in duration-150">
-                <div className="flex items-center justify-between text-xs text-sky-900 font-semibold">
-                  <span className="flex items-center gap-1.5">
-                    <UserPlus className="w-3.5 h-3.5 text-sky-600" />
-                    Registrar nuevo paciente
-                  </span>
-                  {patients.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setNewPatientMode(false)}
-                      className="text-[11px] text-sky-600 hover:underline"
-                    >
-                      Cancelar
-                    </button>
-                  )}
-                </div>
-                <div>
-                  <input
-                    type="text"
-                    placeholder="Nombre y Apellido *"
-                    value={newPatientName}
-                    onChange={e => setNewPatientName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
-                    required
-                    autoFocus
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[11px] font-medium text-neutral-600 block">
-                    Teléfono WhatsApp (código de país y número local) *
-                  </label>
-                  <PhoneInputWithCountry
-                    value={newPatientPhone}
-                    onChange={(phone) => setNewPatientPhone(phone)}
-                    required
-                  />
-                </div>
-                <div>
-                  <input
-                    type="text"
-                    placeholder="DNI o Documento (opcional)"
-                    value={newPatientDni}
-                    onChange={e => setNewPatientDni(e.target.value)}
-                    className="w-full px-3 py-2 text-xs bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 h-[38px]"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="relative" ref={patientDropdownRef}>
-                {/* Search & Combobox Input */}
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-neutral-400">
-                    <Search className="w-4 h-4" />
-                  </div>
-                  <input
-                    type="text"
-                    value={patientSearchQuery}
-                    onChange={(e) => {
-                      setPatientSearchQuery(e.target.value);
-                      setIsPatientDropdownOpen(true);
-                      if (selectedPatientId && `${selectedPatient?.first_name} ${selectedPatient?.last_name}`.trim() !== e.target.value) {
-                        setSelectedPatientId('');
-                      }
-                    }}
-                    onFocus={() => setIsPatientDropdownOpen(true)}
-                    placeholder="Buscar paciente por nombre, WhatsApp o DNI..."
-                    className="w-full pl-9 pr-8 py-2.5 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500 transition shadow-2xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIsPatientDropdownOpen(!isPatientDropdownOpen)}
-                    className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-neutral-400 hover:text-neutral-600"
-                  >
-                    <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isPatientDropdownOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
-
-                {/* Selected patient preview card */}
-                {selectedPatient && !isPatientDropdownOpen && (
-                  <div className="mt-2 p-2.5 bg-emerald-50/60 border border-emerald-200/80 rounded-xl flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
-                        {selectedPatient.first_name[0]}{selectedPatient.last_name[0] || ''}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                          {selectedPatient.first_name} {selectedPatient.last_name}
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                        </div>
-                        <div className="text-[11px] text-emerald-700 font-medium flex items-center gap-2">
-                          <span>{selectedPatient.phone}</span>
-                          {selectedPatient.dni && <span>• DNI: {selectedPatient.dni}</span>}
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedPatientId('');
-                        setPatientSearchQuery('');
-                        setIsPatientDropdownOpen(true);
-                      }}
-                      className="text-[11px] text-emerald-700 hover:text-emerald-900 font-semibold px-2 py-1 bg-white rounded-lg border border-emerald-200 hover:bg-emerald-50 transition"
-                    >
-                      Cambiar
-                    </button>
-                  </div>
-                )}
-
-                {/* Dropdown Options List */}
-                {isPatientDropdownOpen && (
-                  <div className="absolute z-20 left-0 right-0 mt-1.5 bg-white rounded-2xl border border-neutral-200 shadow-lg max-h-56 overflow-y-auto divide-y divide-neutral-100 animate-in fade-in duration-100">
-                    {filteredPatients.length > 0 ? (
-                      filteredPatients.map(p => {
-                        const isChosen = p.id === selectedPatientId;
-                        return (
-                          <div
-                            key={p.id}
-                            onClick={() => handleSelectExistingPatient(p)}
-                            className={`p-2.5 hover:bg-neutral-50 cursor-pointer flex items-center justify-between transition ${isChosen ? 'bg-sky-50/70' : ''}`}
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <div className="w-7 h-7 rounded-full bg-neutral-100 text-neutral-700 flex items-center justify-center text-xs font-bold">
-                                {p.first_name[0]}{p.last_name[0] || ''}
-                              </div>
-                              <div>
-                                <div className="text-xs font-bold text-neutral-900">
-                                  {p.first_name} {p.last_name}
-                                </div>
-                                <div className="text-[11px] text-neutral-500 flex items-center gap-1.5">
-                                  <span>{p.phone}</span>
-                                  {p.dni && <span>• DNI: {p.dni}</span>}
-                                  {p.total_appointments ? (
-                                    <span className="text-[10px] bg-neutral-100 px-1.5 py-0.2 rounded text-neutral-600">
-                                      {p.total_appointments} turnos
-                                    </span>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </div>
-                            {isChosen && <Check className="w-4 h-4 text-sky-600" />}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="p-3 text-center text-xs text-neutral-500">
-                        No se encontró ningún paciente con "{patientSearchQuery}".
-                      </div>
-                    )}
-
-                    {/* Option to create a new patient with typed query */}
-                    <div
-                      onClick={() => handleStartNewPatient(patientSearchQuery)}
-                      className="p-2.5 bg-sky-50/40 hover:bg-sky-50 text-sky-700 cursor-pointer flex items-center gap-2 text-xs font-semibold transition"
-                    >
-                      <Plus className="w-4 h-4 text-sky-600" />
-                      <span>
-                        {patientSearchQuery.trim()
-                          ? `Crear nuevo paciente: "${patientSearchQuery.trim()}"`
-                          : '+ Registrar un nuevo paciente'}
-                      </span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
           {/* Service selection */}
           <div>
-            <label className="text-xs font-semibold text-neutral-700 block mb-1.5 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-neutral-700 block mb-1 flex items-center gap-1.5">
               <DollarSign className="w-3.5 h-3.5 text-neutral-500" />
               Servicio o Tratamiento
             </label>
@@ -641,7 +647,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             >
               {services.map(s => (
                 <option key={s.id} value={s.id}>
-                  {s.name} - ${s.price.toLocaleString()} ({s.duration_minutes} min)
+                  {s.name} — ${s.price.toLocaleString('es-AR')} ({s.duration_minutes} min)
                 </option>
               ))}
             </select>
@@ -650,7 +656,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           {/* Date and Time */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-neutral-700 block mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-neutral-700 block mb-1 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-neutral-500" />
                 Fecha
               </label>
@@ -658,20 +664,20 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 type="date"
                 value={date}
                 onChange={e => setDate(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
                 required
               />
             </div>
             <div>
-              <label className="text-xs font-semibold text-neutral-700 block mb-1.5 flex items-center gap-1.5">
+              <label className="text-xs font-semibold text-neutral-700 block mb-1 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-neutral-500" />
-                Hora de Inicio
+                Hora
               </label>
               <input
                 type="time"
                 value={time}
                 onChange={e => setTime(e.target.value)}
-                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
                 required
               />
             </div>
@@ -680,13 +686,13 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
           {/* Status and Payment */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-semibold text-neutral-700 block mb-1.5">
+              <label className="text-xs font-semibold text-neutral-700 block mb-1">
                 Estado del Turno
               </label>
               <select
                 value={status}
                 onChange={e => setStatus(e.target.value as AppointmentStatus)}
-                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
               >
                 <option value="confirmed">Confirmado</option>
                 <option value="pending">Pendiente de confirmación</option>
@@ -696,13 +702,13 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
               </select>
             </div>
             <div>
-              <label className="text-xs font-semibold text-neutral-700 block mb-1.5">
+              <label className="text-xs font-semibold text-neutral-700 block mb-1">
                 Estado del Pago
               </label>
               <select
                 value={paymentStatus}
                 onChange={e => setPaymentStatus(e.target.value as PaymentStatus)}
-                className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
               >
                 <option value="pending">Pendiente en consulta</option>
                 <option value="paid">Abonado</option>
@@ -711,149 +717,22 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
             </div>
           </div>
 
-          {/* SEÑA Y ANTICIPO DE RESERVA */}
-          <div className="p-3.5 bg-amber-50/50 rounded-xl border border-amber-200/80 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-amber-600" />
-                <div>
-                  <span className="text-xs font-bold text-neutral-900 block">Seña y Anticipo de Reserva</span>
-                  <span className="text-[11px] text-neutral-500">
-                    {depositDeclared 
-                      ? '⚠️ El cliente declaró haber abonado la seña online'
-                      : 'Registro o verificación de seña recibida'}
+          {/* Compact Billing Row (only in Edit mode) */}
+          {appointmentToEdit && (
+            <div className="p-2.5 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between text-xs">
+              {existingPayment ? (
+                <div className="flex items-center gap-2">
+                  <Receipt className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span className="text-emerald-900 font-medium truncate">
+                    Recibo #{existingPayment.receipt_number} ({existingPayment.method.toUpperCase()}) — ${existingPayment.amount.toLocaleString('es-AR')}
                   </span>
                 </div>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={depositDeclared || depositAmount > 0 || depositVerified}
-                  onChange={e => {
-                    const checked = e.target.checked;
-                    setDepositDeclared(checked);
-                    if (!checked) {
-                      setDepositAmount(0);
-                      setDepositVerified(false);
-                    } else if (depositAmount === 0) {
-                      const s = services.find(srv => srv.id === selectedServiceId);
-                      setDepositAmount(s?.deposit_required ? (s.deposit_amount || 5000) : 5000);
-                    }
-                  }}
-                  className="sr-only peer"
-                />
-                <div className="w-8 h-4 bg-neutral-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-neutral-300 after:border after:rounded-full after:h-3 after:w-3.5 after:transition-all peer-checked:bg-amber-600"></div>
-              </label>
-            </div>
-
-            {(depositDeclared || depositAmount > 0 || depositVerified) && (
-              <div className="space-y-2.5 pt-2 border-t border-amber-200/60 text-xs">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
-                      Monto de la Seña ($)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={depositAmount}
-                      onChange={e => setDepositAmount(Number(e.target.value))}
-                      className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-neutral-900 focus:ring-2 focus:ring-amber-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-neutral-700 block mb-1">
-                      Medio Informado
-                    </label>
-                    <select
-                      value={depositMethod}
-                      onChange={e => setDepositMethod(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-neutral-900 focus:ring-2 focus:ring-amber-500"
-                    >
-                      <option value="transfer">Transferencia Bancaria</option>
-                      <option value="mercado_pago">Mercado Pago / CVU</option>
-                      <option value="cash">Efectivo</option>
-                      <option value="card">Tarjeta</option>
-                    </select>
-                  </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-neutral-600">
+                  <DollarSign className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+                  <span>Cobro pendiente en caja (${appointmentToEdit.service_price?.toLocaleString('es-AR')})</span>
                 </div>
-
-                {/* Verification Status & Action Button */}
-                <div className="p-2.5 rounded-lg bg-white border border-amber-200 flex items-center justify-between">
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${depositVerified ? 'bg-emerald-500' : 'bg-amber-500 animate-pulse'}`}></span>
-                      <span className="font-bold text-neutral-900">
-                        {depositVerified ? '✓ Seña Verificada y Acreditada' : '⏳ Pendiente de Verificación por el Profesional'}
-                      </span>
-                    </div>
-                    {depositVerified ? (
-                      <p className="text-[10px] text-emerald-700 mt-0.5">
-                        Al cobrar en recepción, se descontará automáticamente ${depositAmount.toLocaleString('es-AR')} del total.
-                      </p>
-                    ) : (
-                      <p className="text-[10px] text-amber-700 mt-0.5">
-                        Revisa tu homebanking o billetera virtual antes de confirmar.
-                      </p>
-                    )}
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const nextStatus = !depositVerified;
-                      setDepositVerified(nextStatus);
-                      if (nextStatus) {
-                        setPaymentStatus('partial');
-                        if (appointmentToEdit) {
-                          verifyAppointmentDeposit(appointmentToEdit.id, true);
-                        }
-                      } else {
-                        if (paymentStatus === 'partial') setPaymentStatus('pending');
-                        if (appointmentToEdit) {
-                          verifyAppointmentDeposit(appointmentToEdit.id, false);
-                        }
-                      }
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs ${
-                      depositVerified
-                        ? 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700 border border-neutral-300'
-                        : 'bg-emerald-600 hover:bg-emerald-700 text-white animate-bounce-subtle'
-                    }`}
-                  >
-                    {depositVerified ? 'Desmarcar' : 'Confirmar Seña Recibida'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Billing Action Box if editing */}
-          {appointmentToEdit && (
-            <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-2">
-                <Receipt className="w-4 h-4 text-emerald-600" />
-                {existingPayment ? (
-                  <div>
-                    <span className="font-semibold text-neutral-900 block">
-                      Recibo {existingPayment.receipt_number} emitido
-                    </span>
-                    <span className="text-[11px] text-neutral-500">
-                      ${existingPayment.amount.toLocaleString('es-AR')} • {existingPayment.method.toUpperCase()}
-                    </span>
-                  </div>
-                ) : (
-                  <div>
-                    <span className="font-semibold text-neutral-800 block">
-                      Turno sin cobro registrado en caja
-                    </span>
-                    <span className="text-[11px] text-neutral-500">
-                      Arancel: ${appointmentToEdit.service_price?.toLocaleString('es-AR')}
-                    </span>
-                  </div>
-                )}
-              </div>
+              )}
 
               {existingPayment ? (
                 <button
@@ -862,7 +741,7 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                     setActivePayment(existingPayment);
                     setIsReceiptOpen(true);
                   }}
-                  className="px-3 py-1.5 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-800 transition-colors shadow-2xs"
+                  className="font-bold text-emerald-700 hover:underline px-1.5 py-0.5 cursor-pointer shrink-0"
                 >
                   Ver Recibo
                 </button>
@@ -870,115 +749,186 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsNewPayOpen(true)}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-2xs flex items-center gap-1"
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition flex items-center gap-1 cursor-pointer shrink-0"
                 >
-                  <DollarSign className="w-3.5 h-3.5" />
-                  Registrar Cobro
+                  <DollarSign className="w-3 h-3" />
+                  <span>Cobrar</span>
                 </button>
               )}
             </div>
           )}
 
-          {/* Telemedicine toggle */}
-          <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Video className="w-4 h-4 text-sky-600" />
-              <div>
-                <p className="text-xs font-medium text-neutral-900">Videoconsulta / Telemedicina</p>
-                <p className="text-[11px] text-neutral-500">Genera enlace Google Meet automático</p>
+          {/* Seña / Anticipo (Compact or Expandable) */}
+          {showDepositSection || depositDeclared || depositAmount > 0 || depositVerified ? (
+            <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/90 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-600" />
+                  <span className="text-xs font-bold text-neutral-900">Seña / Anticipo</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextStatus = !depositVerified;
+                      setDepositVerified(nextStatus);
+                      if (nextStatus) {
+                        setPaymentStatus('partial');
+                        if (appointmentToEdit) verifyAppointmentDeposit(appointmentToEdit.id, true);
+                      } else {
+                        if (paymentStatus === 'partial') setPaymentStatus('pending');
+                        if (appointmentToEdit) verifyAppointmentDeposit(appointmentToEdit.id, false);
+                      }
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                      depositVerified
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-emerald-600 text-white hover:bg-emerald-700'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>{depositVerified ? 'Seña Verificada' : 'Marcar Recibida'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowDepositSection(false);
+                      setDepositAmount(0);
+                      setDepositDeclared(false);
+                      setDepositVerified(false);
+                    }}
+                    className="text-neutral-400 hover:text-neutral-600 p-0.5"
+                    title="Quitar seña"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <label className="text-[10px] font-semibold text-neutral-600 block mb-0.5">
+                    Monto de Seña ($)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={depositAmount}
+                    onChange={e => setDepositAmount(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-xs text-neutral-900 focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-semibold text-neutral-600 block mb-0.5">
+                    Medio de Cobro
+                  </label>
+                  <select
+                    value={depositMethod}
+                    onChange={e => setDepositMethod(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs text-neutral-900 focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="transfer">Transferencia Bancaria</option>
+                    <option value="mercado_pago">Mercado Pago</option>
+                    <option value="cash">Efectivo</option>
+                    <option value="card">Tarjeta</option>
+                  </select>
+                </div>
               </div>
             </div>
-            <input
-              type="checkbox"
-              checked={isTelemedicine}
-              onChange={e => setIsTelemedicine(e.target.checked)}
-              className="w-4 h-4 text-sky-600 rounded focus:ring-sky-500"
-            />
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setShowDepositSection(true);
+                const s = services.find(srv => srv.id === selectedServiceId);
+                setDepositAmount(s?.deposit_required ? (s.deposit_amount || 5000) : 5000);
+              }}
+              className="text-xs text-neutral-500 hover:text-amber-700 font-medium flex items-center gap-1.5 transition py-1 cursor-pointer"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-500" />
+              <span>+ Registrar seña o anticipo de reserva</span>
+            </button>
+          )}
 
-          {/* Recordatorios Automatizados & Confirmación */}
-          <div className="p-3.5 bg-emerald-50/50 rounded-xl border border-emerald-200/90 space-y-3">
+          {/* Opciones Adicionales (Telemedicina & WhatsApp) */}
+          <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 space-y-2 text-xs">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Bell className="w-4 h-4 text-emerald-700" />
-                <span className="text-xs font-bold text-neutral-900">Recordatorios & Confirmación</span>
-              </div>
-              <label className="flex items-center gap-1.5 text-xs font-semibold text-emerald-900 cursor-pointer">
+              <label className="flex items-center gap-2 font-medium text-neutral-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isTelemedicine}
+                  onChange={e => setIsTelemedicine(e.target.checked)}
+                  className="w-4 h-4 text-sky-600 rounded focus:ring-sky-500"
+                />
+                <span className="flex items-center gap-1.5">
+                  <Video className="w-3.5 h-3.5 text-sky-600" />
+                  Videoconsulta (Google Meet automático)
+                </span>
+              </label>
+
+              <label className="flex items-center gap-1.5 font-medium text-neutral-800 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={patientConfirmed}
                   onChange={e => setPatientConfirmed(e.target.checked)}
                   className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
                 />
-                <span>Confirmado por paciente</span>
+                <span>Confirmado</span>
               </label>
             </div>
 
-            <label className="flex items-center gap-2 text-xs font-medium text-emerald-950 cursor-pointer bg-white/70 p-2 rounded-lg border border-emerald-200/60">
-              <input
-                type="checkbox"
-                checked={sendWhatsAppOnSave}
-                onChange={e => setSendWhatsAppOnSave(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
-              />
-              <span>Enviar confirmación por WhatsApp y registrar en el Chat al guardar</span>
-            </label>
+            <div className="flex items-center justify-between pt-1 border-t border-neutral-200/60">
+              <label className="flex items-center gap-2 text-[11px] text-neutral-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={sendWhatsAppOnSave}
+                  onChange={e => setSendWhatsAppOnSave(e.target.checked)}
+                  className="w-3.5 h-3.5 text-emerald-600 rounded focus:ring-emerald-500"
+                />
+                <span>Avisar al paciente por WhatsApp al guardar</span>
+              </label>
 
-            <div className="flex flex-wrap items-center gap-2 pt-0.5">
               <button
                 type="button"
                 onClick={handleSendWhatsAppConfirmationNow}
-                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Enviar mensaje de confirmación por WhatsApp Web y reflejarlo en el chat del paciente"
+                className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 hover:underline flex items-center gap-1 cursor-pointer"
+                title="Abrir WhatsApp para enviar confirmación"
               >
-                <MessageSquare className="w-3.5 h-3.5" />
-                Enviar WhatsApp de Confirmación
+                <MessageSquare className="w-3 h-3" />
+                <span>Enviar WhatsApp ahora</span>
               </button>
-
-              {appointmentToEdit && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    sendEmailReminder(appointmentToEdit.id, 'manual');
-                    setSentNotice('Correo enviado');
-                    setTimeout(() => setSentNotice(null), 2500);
-                  }}
-                  className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-                >
-                  <Mail className="w-3.5 h-3.5" />
-                  Enviar Correo Ahora
-                </button>
-              )}
-
-              {sentNotice && (
-                <span className="text-xs font-bold text-emerald-800 flex items-center gap-1 ml-auto bg-emerald-100/90 px-2 py-1 rounded">
-                  <Check className="w-3.5 h-3.5 text-emerald-600" /> {sentNotice}
-                </span>
-              )}
             </div>
+
+            {sentNotice && (
+              <p className="text-[11px] text-emerald-700 font-semibold flex items-center gap-1">
+                <Check className="w-3 h-3" /> {sentNotice}
+              </p>
+            )}
           </div>
 
-          {/* Notes */}
+          {/* Clinical notes */}
           <div>
-            <label className="text-xs font-semibold text-neutral-700 block mb-1.5 flex items-center gap-1.5">
+            <label className="text-xs font-semibold text-neutral-700 block mb-1 flex items-center gap-1.5">
               <FileText className="w-3.5 h-3.5 text-neutral-500" />
-              Notas clínicas o recordatorios
+              Notas o recordatorios
             </label>
             <textarea
               rows={2}
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Ej. Traer panorámica previa, control de brackets..."
-              className="w-full px-3 py-2 text-sm bg-white border border-neutral-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+              placeholder="Ej. Traer estudios previos, indicación..."
+              className="w-full px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-500"
             />
           </div>
 
+          {/* Footer Actions */}
           <div className="flex items-center justify-between pt-3 border-t border-neutral-200">
             {appointmentToEdit ? (
               <button
                 type="button"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="px-3 py-2 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors flex items-center gap-1.5"
+                className="px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition flex items-center gap-1.5 cursor-pointer"
                 title="Eliminar este turno"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -990,13 +940,13 @@ export const AppointmentModal: React.FC<AppointmentModalProps> = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg transition-colors"
+                className="px-3.5 py-1.5 text-xs font-medium text-neutral-600 hover:text-neutral-800 hover:bg-neutral-100 rounded-lg transition"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 text-sm font-medium text-white bg-sky-600 hover:bg-sky-700 rounded-lg shadow-xs transition-colors"
+                className="px-4 py-1.5 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 rounded-lg shadow-xs transition cursor-pointer"
               >
                 {appointmentToEdit ? 'Guardar Cambios' : 'Agendar Turno'}
               </button>

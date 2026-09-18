@@ -1,6 +1,5 @@
 import React from 'react';
 import { Sparkles, Lock, ArrowRight, CheckCircle2, Shield, Bot, Stethoscope, Cloud } from 'lucide-react';
-import { useAgendaStore } from '../lib/store';
 
 interface ProFeatureGateProps {
   featureTitle: string;
@@ -15,16 +14,6 @@ export const ProFeatureGate: React.FC<ProFeatureGateProps> = ({
   icon = 'lock',
   onNavigateToPlans
 }) => {
-  const { updatePracticeSettings } = useAgendaStore();
-
-  const handleQuickActivatePro = () => {
-    updatePracticeSettings({
-      subscription_plan: 'pro',
-      trial_active: true,
-      trial_days_left: 14
-    });
-  };
-
   const getIcon = () => {
     switch (icon) {
       case 'bot':

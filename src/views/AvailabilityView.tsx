@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Check, Calendar, Coffee, Save } from 'lucide-react';
+import { Clock, Check, Calendar, Coffee, Save, X } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { DayAvailability } from '../types';
 
@@ -23,6 +23,17 @@ export const AvailabilityView: React.FC = () => {
     setSchedule(prev =>
       prev.map(item =>
         item.day_of_week === dayOfWeek ? { ...item, enabled: !item.enabled } : item
+      )
+    );
+  };
+
+  // Quitar la pausa deja el dia de corrido; volver a ponerla arranca en 13 a 14.
+  const handleTogglePausa = (dayOfWeek: number, activar: boolean) => {
+    setSchedule(prev =>
+      prev.map(item =>
+        item.day_of_week === dayOfWeek
+          ? { ...item, break_start: activar ? '13:00' : '', break_end: activar ? '14:00' : '' }
+          : item
       )
     );
   };
@@ -108,24 +119,44 @@ export const AvailabilityView: React.FC = () => {
                     />
                   </div>
 
-                  {/* Lunch break */}
-                  <div className="flex items-center gap-1.5 bg-neutral-50 px-2.5 sm:px-3 py-1.5 rounded-xl border border-neutral-200 shrink-0">
-                    <Coffee className="w-3.5 h-3.5 text-amber-600" />
-                    <span className="text-neutral-500 font-medium">Pausa:</span>
-                    <input
-                      type="time"
-                      value={day.break_start || ''}
-                      onChange={e => handleChangeField(day.day_of_week, 'break_start', e.target.value)}
-                      className="bg-transparent font-mono text-neutral-900 font-semibold focus:outline-none"
-                    />
-                    <span className="text-neutral-400">a</span>
-                    <input
-                      type="time"
-                      value={day.break_end || ''}
-                      onChange={e => handleChangeField(day.day_of_week, 'break_end', e.target.value)}
-                      className="bg-transparent font-mono text-neutral-900 font-semibold focus:outline-none"
-                    />
-                  </div>
+                  {/* Pausa del mediodia. Hay consultorios que atienden de corrido: */}
+                  {/* si no hay pausa cargada, el resto de la app ya la ignora sola. */}
+                  {day.break_start && day.break_end ? (
+                    <div className="flex items-center gap-1.5 bg-neutral-50 px-2.5 sm:px-3 py-1.5 rounded-xl border border-neutral-200 shrink-0">
+                      <Coffee className="w-3.5 h-3.5 text-amber-600" />
+                      <span className="text-neutral-500 font-medium">Pausa:</span>
+                      <input
+                        type="time"
+                        value={day.break_start}
+                        onChange={e => handleChangeField(day.day_of_week, 'break_start', e.target.value)}
+                        className="bg-transparent font-mono text-neutral-900 font-semibold focus:outline-none"
+                      />
+                      <span className="text-neutral-400">a</span>
+                      <input
+                        type="time"
+                        value={day.break_end}
+                        onChange={e => handleChangeField(day.day_of_week, 'break_end', e.target.value)}
+                        className="bg-transparent font-mono text-neutral-900 font-semibold focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePausa(day.day_of_week, false)}
+                        title="Quitar la pausa: atiende de corrido"
+                        className="ml-0.5 text-neutral-400 hover:text-red-600 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePausa(day.day_of_week, true)}
+                      className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border border-dashed border-neutral-300 text-neutral-500 hover:text-neutral-800 hover:border-neutral-400 transition-colors shrink-0"
+                    >
+                      <Coffee className="w-3.5 h-3.5" />
+                      <span className="font-medium">De corrido · agregar pausa</span>
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="text-xs text-neutral-400 italic flex-1">

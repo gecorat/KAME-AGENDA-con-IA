@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Download, Smartphone, Share, PlusSquare, CheckCircle, Bell, X, Sparkles } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
+import { solicitarYRegistrarPushFCM } from '../lib/fcm';
 
 interface PWAInstallModalProps {
   isOpen: boolean;
@@ -17,13 +18,16 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
   isIOS = false,
   hasNativePrompt = true
 }) => {
-  const { requestBrowserNotificationPermission, testBrowserNotification, notificationPermission } = useAgendaStore();
+  const { requestBrowserNotificationPermission, testBrowserNotification, notificationPermission, currentUser } = useAgendaStore();
   const [pushTested, setPushTested] = useState(false);
 
   if (!isOpen) return null;
 
   const handleEnablePush = async () => {
     await requestBrowserNotificationPermission();
+    if (currentUser?.uid) {
+      await solicitarYRegistrarPushFCM(currentUser.uid).catch(() => {});
+    }
     await testBrowserNotification();
     setPushTested(true);
   };

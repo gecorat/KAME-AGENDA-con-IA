@@ -616,7 +616,7 @@ export const SuperAdminApisView: React.FC = () => {
                   2. Mercado Pago Suscripciones SaaS & Pagos Centrales
                 </h3>
                 <p className="text-xs text-neutral-500">
-                  Recibe las suscripciones recurrentes de los médicos (Plan Pro $49.000 / Plan Básico $29.000).
+                  Recibe las suscripciones recurrentes de los médicos (Plan Pro $59.000 / Plan Básico $39.000).
                 </p>
               </div>
             </div>

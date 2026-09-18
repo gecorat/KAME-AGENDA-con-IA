@@ -16,7 +16,8 @@ import {
   Bot,
   AlertTriangle,
   HelpCircle,
-  Play
+  Play,
+  Landmark
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
@@ -61,6 +62,13 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     reminderConfig && (reminderConfig.whatsapp_enabled || reminderConfig.email_enabled) &&
     (reminderConfig.send_24h_before || reminderConfig.send_2h_before)
   );
+  const isDepositConfigured = Boolean(
+    practiceSettings.patient_deposit_alias?.trim() ||
+    practiceSettings.patient_deposit_cbu?.trim() ||
+    practiceSettings.patient_deposit_mp_token?.trim() ||
+    practiceSettings.patient_deposit_mp_link?.trim() ||
+    practiceSettings.patient_deposit_mp_connected
+  );
 
   const guideSteps = [
     {
@@ -100,32 +108,24 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
       hint: isHoursComplete ? 'Días y turnos de atención configurados' : 'Debes activar al menos un día de atención'
     },
     {
-      id: 'whatsapp',
+      id: 'datos_cobro',
       number: '04',
-      title: 'Probar el bot',
-      description: 'Interactúa con el asistente virtual inteligente entrenado con tu agenda real. Coordina turnos y resuelve dudas como lo haría un paciente.',
-      tab: 'chats',
-      actionLabel: 'Abrir Simulador Bot IA',
-      icon: Bot,
-      completed: isBotTested,
-      essential: false,
-      hint: isBotTested ? 'Simulador probado con éxito' : 'Prueba cómo el bot agenda con tu agenda real'
-    },
-    {
-      id: 'share',
-      number: '05',
-      title: 'Probar tu página pública',
-      description: 'Verifica tu página pública agenfacil.com/u/... y realiza un agendamiento de prueba para comprobar el flujo.',
-      tab: 'portal',
-      actionLabel: 'Ver Portal de Turnos',
-      icon: Globe,
-      completed: isPortalTested,
-      essential: false,
-      hint: isPortalTested ? 'Portal verificado y funcional' : 'Prueba el link público para pacientes'
+      title: 'Datos de cobro y seña',
+      description: 'Carga tu Alias, CBU o conecta Mercado Pago para recibir el dinero de las señas directo en tu cuenta y evitar inasistencias.',
+      tab: 'datos-cobro',
+      actionLabel: 'Configurar cobro y seña',
+      icon: Landmark,
+      completed: isDepositConfigured,
+      essential: true,
+      hint: isDepositConfigured
+        ? (practiceSettings.patient_deposit_method === 'mercadopago_connect'
+            ? 'Mercado Pago activo'
+            : `Alias: ${practiceSettings.patient_deposit_alias || 'Configurado'}`)
+        : 'Falta configurar cuenta o Alias para recibir pagos'
     },
     {
       id: 'whatsapp_connect',
-      number: '06',
+      number: '05',
       title: 'Conectar tu WhatsApp',
       description: 'Escaneá el QR para vincular tu número. Sin esto el bot no puede recibir ni responder mensajes reales.',
       tab: 'chats',
@@ -137,7 +137,7 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
     },
     {
       id: 'reminders',
-      number: '07',
+      number: '06',
       title: 'Activar recordatorios',
       description: 'Avisos automáticos 24 horas y 2 horas antes de cada turno, por WhatsApp y por correo.',
       tab: 'recordatorios',
@@ -146,6 +146,30 @@ export const OnboardingGuideView: React.FC<OnboardingGuideViewProps> = ({
       completed: isRemindersReady,
       essential: true,
       hint: isRemindersReady ? 'Recordatorios activos' : 'Sin esto tus pacientes no reciben avisos'
+    },
+    {
+      id: 'share',
+      number: '07',
+      title: 'Probar tu página pública',
+      description: 'Verifica tu página pública agenfacil.com/u/... y realiza un agendamiento de prueba para comprobar el flujo.',
+      tab: 'portal',
+      actionLabel: 'Ver Portal de Turnos',
+      icon: Globe,
+      completed: isPortalTested,
+      essential: false,
+      hint: isPortalTested ? 'Portal verificado y funcional' : 'Prueba el link público para pacientes'
+    },
+    {
+      id: 'whatsapp',
+      number: '08',
+      title: 'Probar el bot',
+      description: 'Interactúa con el asistente virtual inteligente entrenado con tu agenda real. Coordina turnos y resuelve dudas como lo haría un paciente.',
+      tab: 'chats',
+      actionLabel: 'Abrir Simulador Bot IA',
+      icon: Bot,
+      completed: isBotTested,
+      essential: false,
+      hint: isBotTested ? 'Simulador probado con éxito' : 'Prueba cómo el bot agenda con tu agenda real'
     }
   ];
 

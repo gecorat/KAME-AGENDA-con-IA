@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, DollarSign, User, FileText, CreditCard, Landmark, QrCode, Shield, Check, Calendar } from 'lucide-react';
+import { X, DollarSign, User, FileText, CreditCard, Landmark, Smartphone, Shield, Check, Calendar } from 'lucide-react';
 import { PaymentRecord, PaymentMethod, Appointment, Patient } from '../types';
 import { useAgendaStore } from '../lib/store';
 
@@ -291,7 +291,7 @@ export const NewPaymentModal: React.FC<NewPaymentModalProps> = ({
               >
                 <option value="cash">💵 Efectivo (Caja)</option>
                 <option value="transfer">🏦 Transferencia Bancaria</option>
-                <option value="mercado_pago">📱 Mercado Pago / QR</option>
+                <option value="mercado_pago">📱 Mercado Pago</option>
                 <option value="card_debit">💳 Tarjeta de Débito</option>
                 <option value="card_credit">💳 Tarjeta de Crédito</option>
                 <option value="insurance">🛡️ Obra Social / Prepaga</option>

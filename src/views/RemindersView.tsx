@@ -20,9 +20,11 @@ import {
   RefreshCw,
   Smartphone,
   CheckCheck,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
+import { DEFAULT_REMINDER_CONFIG } from '../lib/demo-data';
 import { Appointment } from '../types';
 import { WhatsAppPreviewModal } from '../components/WhatsAppPreviewModal';
 import { EmailPreviewModal } from '../components/EmailPreviewModal';
@@ -71,7 +73,7 @@ export const RemindersView: React.FC = () => {
 
   // Calculate stats
   const totalUpcoming = appointments.filter(a => a.status !== 'cancelled' && new Date(a.start_datetime) >= new Date(Date.now() - 3600000 * 24)).length;
-  const confirmedCount = appointments.filter(a => a.patient_confirmed).length;
+  const confirmedCount = appointments.filter(a => a.status === 'confirmed' || a.status === 'completed' || a.patient_confirmed).length;
   const confirmationRate = totalUpcoming > 0 ? Math.round((confirmedCount / totalUpcoming) * 100) : 100;
   const totalWaSent = reminderLogs.filter(l => l.channel === 'whatsapp').length;
   const totalEmailSent = reminderLogs.filter(l => l.channel === 'email').length;
@@ -90,7 +92,7 @@ export const RemindersView: React.FC = () => {
       const aptDate = a.start_datetime.split('T')[0];
       if (filterQueue === 'today') return aptDate === todayStr;
       if (filterQueue === 'tomorrow') return aptDate === tomorrowStr;
-      if (filterQueue === 'unconfirmed') return !a.patient_confirmed;
+      if (filterQueue === 'unconfirmed') return a.status === 'pending' && !a.patient_confirmed;
       return true;
     })
     .sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
@@ -120,6 +122,19 @@ export const RemindersView: React.FC = () => {
       setExecutingScan(false);
       setTimeout(() => setScanResult(null), 4500);
     }, 800);
+  };
+
+  // Carga los textos recomendados en el editor. No guarda solo: el profesional
+  // los revisa y aprieta Guardar.
+  const usarTextosRecomendados = () => {
+    setEditTemplates({
+      wa_24h: DEFAULT_REMINDER_CONFIG.whatsapp_template_24h,
+      wa_2h: DEFAULT_REMINDER_CONFIG.whatsapp_template_2h,
+      email_subject_24h: DEFAULT_REMINDER_CONFIG.email_subject_24h,
+      email_body_24h: DEFAULT_REMINDER_CONFIG.email_body_24h,
+      email_subject_2h: DEFAULT_REMINDER_CONFIG.email_subject_2h,
+      email_body_2h: DEFAULT_REMINDER_CONFIG.email_body_2h
+    });
   };
 
   const handleSaveTemplates = () => {
@@ -400,15 +415,25 @@ export const RemindersView: React.FC = () => {
                           <h4 className="text-sm font-bold text-neutral-900 truncate">
                             {apt.patient_name}
                           </h4>
-                          {apt.patient_confirmed ? (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                              <CheckCheck className="w-3 h-3" />
-                              Confirmado por paciente
+                          {apt.status === 'completed' ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200 flex items-center gap-1">
+                              <CheckCheck className="w-3 h-3 text-sky-600" />
+                              Cita Asistida / Atendido
+                            </span>
+                          ) : (apt.status === 'confirmed' || apt.patient_confirmed || (apt.status !== 'pending' && apt.status !== 'cancelled' && apt.status !== 'no_show')) ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                              <CheckCheck className="w-3 h-3 text-emerald-600" />
+                              Confirmado
+                            </span>
+                          ) : apt.status === 'no_show' ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1">
+                              <X className="w-3 h-3 text-rose-600" />
+                              No asistió
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              Esperando confirmación
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-amber-600" />
+                              Pendiente
                             </span>
                           )}
                         </div>
@@ -467,7 +492,7 @@ export const RemindersView: React.FC = () => {
                       </button>
 
                       {/* Patient Confirmation Button */}
-                      {!apt.patient_confirmed && (
+                      {apt.status === 'pending' && !apt.patient_confirmed && (
                         <button
                           type="button"
                           onClick={() => confirmAppointmentByPatient(apt.id)}
@@ -499,6 +524,13 @@ export const RemindersView: React.FC = () => {
                   Personaliza los textos automáticos con variables dinámicas que se completarán solas
                 </p>
               </div>
+              <div className="flex items-center gap-2">
+              <button
+                onClick={usarTextosRecomendados}
+                className="px-3.5 py-2 border border-neutral-300 hover:bg-neutral-50 text-neutral-700 rounded-xl text-xs font-bold transition-colors"
+              >
+                Usar textos recomendados
+              </button>
               <button
                 onClick={handleSaveTemplates}
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5"
@@ -506,6 +538,7 @@ export const RemindersView: React.FC = () => {
                 <Check className="w-3.5 h-3.5" />
                 {savedSettingsNotice ? '¡Guardado!' : 'Guardar Plantillas'}
               </button>
+              </div>
             </div>
 
             {/* Template Selector Pills */}

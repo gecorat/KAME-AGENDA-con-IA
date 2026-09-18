@@ -147,7 +147,7 @@ export const PostAppointmentConfirmationModal: React.FC<PostAppointmentConfirmat
   const paymentOptions: { id: PaymentMethod; label: string; icon: any; desc: string }[] = [
     { id: 'cash', label: 'Efectivo', icon: Banknote, desc: 'Ingresa a Caja diaria automáticamente' },
     { id: 'transfer', label: 'Transferencia', icon: Building, desc: 'CBU / CVU / Alias bancario' },
-    { id: 'mercadopago', label: 'Mercado Pago', icon: Smartphone, desc: 'Cobro con QR o dinero en cuenta' },
+    { id: 'mercadopago', label: 'Mercado Pago', icon: Smartphone, desc: 'Cobro online o dinero en cuenta' },
     { id: 'card_debit', label: 'Débito', icon: CreditCard, desc: 'Tarjeta de débito en posnet' },
     { id: 'card_credit', label: 'Crédito', icon: CreditCard, desc: 'Tarjeta de crédito' },
     { id: 'insurance', label: 'Obra Social / Cobertura', icon: ShieldCheck, desc: 'Bono o copago liquidable' }

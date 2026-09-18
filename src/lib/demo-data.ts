@@ -126,6 +126,12 @@ export const INITIAL_PRACTICE_SETTINGS: PracticeSettings = {
   notify_bot_bookings: true,
   notify_patient_confirmations: true,
   notify_sound_enabled: true,
+
+  // Avisos al profesional cuando entra un turno.
+  avisar_prof_email: true,
+  avisar_prof_push: true,
+  avisar_prof_whatsapp: false,
+  avisar_prof_app: false,
   // Required fields defaults: Name & Phone/WhatsApp mandatory, others optional
   booking_required_fields: {
     full_name: true,
@@ -378,14 +384,15 @@ export function getInitialAppointments(): Appointment[] {
       service_price: 18000,
       start_datetime: makeDate(0, 15, 0),
       end_datetime: makeDate(0, 15, 30),
-      status: "pending",
+      status: "confirmed",
       payment_status: "pending",
       notes: "Reserva realizada desde el link público web.",
       origin: "public_booking",
-      reminder_24h_sent: false,
+      reminder_24h_sent: true,
       reminder_2h_sent: false,
-      email_reminder_sent: false,
-      patient_confirmed: false
+      email_reminder_sent: true,
+      patient_confirmed: true,
+      patient_confirmed_at: makeDate(-1, 15, 0)
     },
     {
       id: "apt-4",
@@ -619,8 +626,8 @@ export const DEFAULT_REMINDER_CONFIG: ReminderConfig = {
   require_confirmation: false, // el turno ya queda confirmado al reservarse
   auto_update_status_on_confirm: true,
   sender_email_alias: "Consultorio Médico - Agenfacil",
-  whatsapp_template_24h: "Te confirmo tu turno, te paso los detalles 😊:\n\n🗓 **Fecha:** {fecha}\n⏰ **Horario:** {hora}\n👤 **Profesional:** {profesional}\n💼 **Servicio:** {servicio}\n📍 **Lugar:** {direccion}, {ciudad}\n\n¡Te esperamos mañana! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊",
-  whatsapp_template_2h: "Hola {paciente}, te esperamos hoy a las *{hora} hs* en {direccion} para tu atención de *{servicio}*. Si tienes algún imprevisto, avísanos con antelación.",
+  whatsapp_template_24h: "¡Hola {paciente}! Te recordamos tu turno de *{servicio}* para mañana *{fecha}* a las *{hora} hs* con {profesional} en {direccion}.\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊",
+  whatsapp_template_2h: "¡Hola {paciente}! Te recordamos que tu turno de *{servicio}* es hoy a las *{hora} hs* con {profesional} en {direccion}.\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊",
   email_subject_24h: "Recordatorio de Turno: {servicio} - Mañana {hora} hs ({consultorio})",
   email_body_24h: "Estimado/a {paciente},\n\nLe recordamos su próximo turno programado en {consultorio} con {profesional}.\n\n📅 Fecha: {fecha}\n⏰ Hora: {hora} hs\n🩺 Tratamiento: {servicio}\n📍 Dirección: {direccion}, {ciudad}\n\nPara confirmar su asistencia y conservar su lugar reservado, por favor haga clic en el botón a continuación:\n\n{boton_confirmar}\n\nAnte cualquier consulta o necesidad de reprogramación, puede responder a este correo o comunicarse a nuestro WhatsApp {whatsapp}.\n\nAtentamente,\nEquipo de {consultorio}",
   email_subject_2h: "Aviso de turno hoy: {servicio} a las {hora} hs en {consultorio}",
@@ -1116,7 +1123,7 @@ export const DEMO_SAAS_TRANSFERS: SaasTransferSubmission[] = [
     phone: '+54 9 11 3322-8811',
     plan: 'pro',
     billing_cycle: 'monthly',
-    amount: 49000,
+    amount: 59000,
     currency: 'ARS',
     reference_number: 'OP-78942105',
     transfer_date: new Date().toISOString().split('T')[0],
@@ -1133,7 +1140,7 @@ export const DEMO_SAAS_TRANSFERS: SaasTransferSubmission[] = [
     phone: '+54 9 11 9900-4455',
     plan: 'pro',
     billing_cycle: 'annual',
-    amount: 499000,
+    amount: 599000,
     currency: 'ARS',
     reference_number: 'TRF-BBVA-901844',
     transfer_date: '2026-04-03',

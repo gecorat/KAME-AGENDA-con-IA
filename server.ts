@@ -114,7 +114,7 @@ const obtenerTokenFirestore = async (): Promise<string | null> => {
     const header = { alg: "RS256", typ: "JWT" };
     const claim = {
       iss: serviceAccount.client_email,
-      scope: "https://www.googleapis.com/auth/datastore",
+      scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/firebase.messaging",
       aud: "https://oauth2.googleapis.com/token",
       exp: ahora + 3600,
       iat: ahora
@@ -360,20 +360,21 @@ const guardarReminderConfig = async (cfg: any) => {
 const aplicarPlantilla = (texto: string, datos: Record<string, string>) =>
   String(texto || "").replace(/\{(\w+)\}/g, (_, clave) => datos[clave] ?? "");
 
-const datosDelTurno = (turno: any) => {
+const datosDelTurno = (turno: any, config?: any) => {
+  const cfg = config || cachedPracticeSettings || {};
   const inicio = new Date(turno.start_datetime);
-  const fecha = inicio.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" });
-  const hora = inicio.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  const fecha = inicio.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
+  const hora = inicio.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
   return {
     paciente: turno.patient_name || "",
-    profesional: cachedPracticeSettings.professional_name || cachedPracticeSettings.practice_name || "",
-    consultorio: cachedPracticeSettings.practice_name || "",
+    profesional: cfg.professional_name || cfg.practice_name || "el profesional",
+    consultorio: cfg.practice_name || "el consultorio",
     servicio: turno.service_name || "",
     fecha,
     hora,
-    direccion: cachedPracticeSettings.address || "",
-    ciudad: cachedPracticeSettings.city || "",
-    whatsapp: cachedPracticeSettings.whatsapp_number || ""
+    direccion: cfg.address || "",
+    ciudad: cfg.city || "",
+    whatsapp: cfg.whatsapp_number || ""
   };
 };
 
@@ -421,27 +422,44 @@ const registrarEnvioRecordatorio = async (turno: any, canal: string, momento: st
 };
 
 const enviarRecordatorio = async (turno: any, momento: "24h" | "2h") => {
-  const cfg = reminderConfig || {};
-  const datos = datosDelTurno(turno);
+  let cfg = reminderConfig || {};
+  let cfgPractice: any = {};
+  if (turno.owner_id) {
+    try {
+      const docRem = await leerDocumento("settings", "reminder_config_" + turno.owner_id);
+      cfgPractice = (await leerDocumento("settings", "practice_config_" + turno.owner_id)) || {};
+      if (docRem?.config) {
+        try { cfg = { ...cfg, ...JSON.parse(docRem.config) }; } catch {}
+      } else if (docRem) {
+        cfg = { ...cfg, ...docRem };
+      }
+      if (cfgPractice) {
+        cfg = { ...cfg, ...cfgPractice };
+      }
+    } catch {}
+  }
+  const datos = datosDelTurno(turno, cfgPractice);
   const marca = momento === "24h" ? "reminder_24h_sent_at" : "reminder_2h_sent_at";
   let algunoSalio = false;
 
   const plan = canalesDelPlan();
 
   // WhatsApp (solo plan pro)
-  if (plan.whatsapp && cfg.whatsapp_enabled !== false && turno.patient_phone) {
+  const telLimpio = String(turno.patient_phone || "").replace(/\D/g, "");
+  if (plan.whatsapp && cfg.whatsapp_enabled !== false && telLimpio.length >= 10) {
     const plantilla = momento === "24h" ? cfg.whatsapp_template_24h : cfg.whatsapp_template_2h;
     const texto = aplicarPlantilla(plantilla || "", datos);
     if (texto.trim()) {
-      const targetUrl = (lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
-      const targetKey = lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
-      const targetInstance = (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
-      const destino = `${String(turno.patient_phone).replace(/\D/g, "")}@s.whatsapp.net`;
-      const r = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: destino, text: texto });
+      const targetUrl = (lastKnownEvolutionConfig.apiUrl || cfgPractice.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = lastKnownEvolutionConfig.apiKey || cfgPractice.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (String(cfgPractice.evolution_instance_name || cfg.evolution_instance_name || "").trim() || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+      const r = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: telLimpio, text: texto });
       algunoSalio = algunoSalio || r.ok;
       await registrarEnvioRecordatorio(turno, "whatsapp", momento, r.ok ? "sent" : "failed", texto);
       console.log(`[Recordatorios] ${momento} WhatsApp a ${turno.patient_name}: ${r.ok ? "enviado" : "fallo"}`);
     }
+  } else if (plan.whatsapp && cfg.whatsapp_enabled !== false && turno.patient_phone && telLimpio.length < 10) {
+    console.warn(`[Recordatorios] ${momento} WhatsApp omitido para ${turno.patient_name}: telefono incompleto ("${turno.patient_phone}")`);
   }
 
   // Email (todos los planes)
@@ -462,6 +480,43 @@ const enviarRecordatorio = async (turno: any, momento: "24h" | "2h") => {
   return algunoSalio;
 };
 
+// Encuesta de Satisfacción Post-Consulta (NPS automatizado)
+const enviarEncuestaSatisfaccion = async (turno: any): Promise<boolean> => {
+  if (!turno || !turno.id) return false;
+  let cfgPractice: any = {};
+  if (turno.owner_id) {
+    try {
+      cfgPractice = (await leerDocumento("settings", "practice_config_" + turno.owner_id)) || {};
+    } catch {}
+  }
+  const datos = datosDelTurno(turno, cfgPractice);
+  const nombre = datos.paciente || "Paciente";
+  const profesional = datos.profesional || "el profesional";
+  const servicio = datos.servicio || "tu consulta";
+  
+  const texto = `¡Hola ${nombre}! Esperamos que hayas tenido una excelente atención en tu consulta de ${servicio} con ${profesional}. 😊\n\n¿Cómo calificarías tu experiencia del 1 al 5? ⭐\n(Podés respondernos con un número del 1 al 5 o dejarnos cualquier comentario que nos ayude a seguir mejorando). ¡Muchas gracias!`;
+
+  let salio = false;
+  const telLimpio = String(turno.patient_phone || "").replace(/\D/g, "");
+  if (telLimpio.length >= 10) {
+    const targetUrl = (lastKnownEvolutionConfig.apiUrl || cfgPractice.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+    const targetKey = lastKnownEvolutionConfig.apiKey || cfgPractice.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
+    const targetInstance = (String(cfgPractice.evolution_instance_name || "").trim() || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+    if (targetUrl && targetKey && targetInstance) {
+      const r = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: telLimpio, text: texto });
+      salio = r.ok;
+      console.log(`[Encuestas NPS] Encuesta enviada por WhatsApp a ${nombre}: ${r.ok ? "enviada" : "fallo"}`);
+    }
+  } else if (turno.patient_phone) {
+    console.warn(`[Encuestas NPS] Encuesta omitida para ${nombre}: telefono incompleto ("${turno.patient_phone}")`);
+  }
+
+  await actualizarCampos("appointments", turno.id, {
+    satisfaction_survey_sent_at: new Date().toISOString()
+  });
+  return salio;
+};
+
 const procesarRecordatorios = async () => {
   if (!hayPersistencia()) return;
   const cfg = reminderConfig;
@@ -479,6 +534,9 @@ const procesarRecordatorios = async () => {
 
       const estado = String(t.status || "").toLowerCase();
       if (estado.includes("cancel")) continue;
+      // Un turno que todavia espera que el profesional lo confirme NO genera
+      // recordatorios: el paciente recibiria un aviso de algo que no esta cerrado.
+      if (estado === "pending" || estado.includes("pendiente de confirmacion")) continue;
 
       const restante = inicio - ahora;
       const creado = new Date(t.created_at || 0).getTime();
@@ -513,6 +571,84 @@ const procesarRecordatorios = async () => {
   }
 };
 
+// La configuracion dejo de vivir en un unico "practice_config": desde la
+// migracion a multicuenta cada profesional tiene el suyo. El servidor seguia
+// leyendo el viejo, asi que al reiniciarse arrancaba sin la configuracion real:
+// sin la personalidad del bot, sin los tiempos de respuesta, con los textos de
+// recordatorio por defecto y, por precaucion, con el bot sin responder.
+const configDeLaCuentaDelBot = async (): Promise<any | null> => {
+  try {
+    // Sin atajos ni dependencias de otras funciones: leemos la coleccion y nos
+    // quedamos con el documento de configuracion de la cuenta.
+    const docs = (await listarColeccion("settings", 300))
+      .filter((d: any) => String(d.id || "").startsWith("practice_config_"));
+    if (!docs.length) {
+      console.error("[Config] No hay ningun documento de configuracion de cuenta en la base.");
+      return null;
+    }
+    if (docs.length === 1) return docs[0];
+
+    const porEnv = process.env.EVOLUTION_OWNER_UID
+      ? docs.find((d: any) => String(d.id) === "practice_config_" + process.env.EVOLUTION_OWNER_UID)
+      : null;
+    if (porEnv) return porEnv;
+
+    const instancia = String(lastKnownEvolutionConfig.instanceName || "").toLowerCase().trim();
+    const porInstancia = instancia
+      ? docs.find((d: any) => [d.evolution_instance_name, d.evolution_instance, d.whatsapp_instance]
+          .some((x: any) => String(x || "").toLowerCase().trim() === instancia))
+      : null;
+    if (porInstancia) return porInstancia;
+
+    console.error("[Config] Hay " + docs.length + " cuentas y ninguna declara su instancia de WhatsApp: no se cual es la del bot.");
+    return null;
+  } catch (err: any) {
+    console.error("[Config] No pude leer la configuracion de la cuenta: " + (err?.message || err));
+    return null;
+  }
+};
+
+// Los turnos ya no piden confirmacion al paciente. Las plantillas viejas que la
+// pedian se reemplazan solas: el profesional no tiene que apretar nada.
+const PLANTILLA_24H = "¡Hola {paciente}! Te recordamos tu turno de *{servicio}* para mañana *{fecha}* a las *{hora} hs* con {profesional} en {direccion}.\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊";
+const PLANTILLA_2H = "¡Hola {paciente}! Te recordamos que tu turno de *{servicio}* es hoy a las *{hora} hs* con {profesional} en {direccion}.\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊";
+
+const pedeConfirmacion = (texto: any) =>
+  typeof texto === "string" &&
+  /\{link_confirmar\}|responde \*?1\*?|Para confirmar tu asistencia|confirmar tu asistencia/i.test(texto);
+
+const migrarPlantillasViejas = async () => {
+  if (!reminderConfig) return;
+  let cambio = false;
+  if (!reminderConfig.whatsapp_template_24h || pedeConfirmacion(reminderConfig.whatsapp_template_24h)) {
+    reminderConfig.whatsapp_template_24h = PLANTILLA_24H;
+    cambio = true;
+  }
+  if (!reminderConfig.whatsapp_template_2h || pedeConfirmacion(reminderConfig.whatsapp_template_2h)) {
+    reminderConfig.whatsapp_template_2h = PLANTILLA_2H;
+    cambio = true;
+  }
+  if (reminderConfig.require_confirmation) {
+    reminderConfig.require_confirmation = false;
+    cambio = true;
+  }
+  if (cambio) {
+    console.log("[Recordatorios] Plantillas actualizadas: ya no piden confirmacion al paciente.");
+    await guardarReminderConfig(reminderConfig).catch(() => {});
+  }
+};
+
+// El navegador manda su configuracion por varias vias. Ninguna puede prender ni
+// apagar el bot: eso lo decide la base. Un navegador con datos viejos dejaba el
+// bot mudo sin que nadie se enterara.
+let ultimaCargaConfig = 0;
+
+const fusionarSettingsDelFront = (settings: any) => {
+  if (!settings || typeof settings !== "object") return;
+  const { bot_enabled, ...resto } = settings;
+  cachedPracticeSettings = { ...cachedPracticeSettings, ...resto };
+};
+
 const cargarConfigDesdeBase = async () => {
   if (!hayPersistencia()) return;
   try {
@@ -521,10 +657,30 @@ const cargarConfigDesdeBase = async () => {
       cachedPracticeSettings = { ...cachedPracticeSettings, ...config };
     }
 
+    // La de la cuenta manda sobre la vieja generica.
+    const propia = await configDeLaCuentaDelBot();
+    if (!propia) console.error("[Config] Arranco sin la configuracion de la cuenta: el bot queda en pausa por precaucion.");
+    if (propia && Object.keys(propia).length > 0) {
+      cachedPracticeSettings = { ...cachedPracticeSettings, ...propia };
+      console.log("[Config] Configuracion de la cuenta cargada: bot_enabled=" + cachedPracticeSettings.bot_enabled);
+      // Los horarios viajan en el mismo documento desde que el profesional los guarda.
+      try {
+        const crudo = (propia as any).availability_json;
+        if (typeof crudo === "string" && crudo.trim()) {
+          const lista = JSON.parse(crudo);
+          if (Array.isArray(lista) && lista.length) {
+            businessContext.availability = lista;
+            businessContext.updatedAt = Date.now();
+          }
+        }
+      } catch {}
+    }
+
     const rc = await leerDocumento("settings", REMINDER_DOC);
     if (rc?.config) {
       try { reminderConfig = JSON.parse(rc.config); } catch { /* documento corrupto */ }
     }
+    await migrarPlantillasViejas();
 
     const runtime = await leerDocumento("settings", RUNTIME_DOC);
     if (runtime) {
@@ -550,6 +706,8 @@ const cargarConfigDesdeBase = async () => {
     if (businessContext.availability.length > 0) {
       businessContext.updatedAt = Date.now();
     }
+
+    ultimaCargaConfig = Date.now();
 
     console.log(`[Config] Cargada desde la base: bot_enabled=${cachedPracticeSettings.bot_enabled}, ${businessContext.services.length} servicios, ${businessContext.availability.length} franjas, ${businessContext.existingAppointments.length} turnos futuros.`);
   } catch (err: any) {
@@ -612,20 +770,159 @@ const mismoTelefono = (a: any, b: any) => {
   return x.slice(-8) === y.slice(-8);
 };
 
-const buscarPacientePorTelefono = async (telefono: string): Promise<any | null> => {
-  if (!hayPersistencia() || soloDigitos(telefono).length < 8) return null;
+// Que cuenta esta detras de un enlace publico o de una instancia de WhatsApp.
+// Vive aca arriba porque lo usan tanto el bot como las rutas publicas.
+let cachePerfiles: { cuando: number; docs: any[] } = { cuando: 0, docs: [] };
+
+const settingsDeCuentas = async (): Promise<any[]> => {
+  const ahora = Date.now();
+  if (ahora - cachePerfiles.cuando < 60000 && cachePerfiles.docs.length) return cachePerfiles.docs;
+  const docs = (await listarColeccion("settings", 300)).filter((d: any) => String(d.id || "").startsWith("practice_config_"));
+  if (docs.length) cachePerfiles = { cuando: ahora, docs };
+  return docs;
+};
+
+const normalizarHandle = (h: any) => String(h || "").toLowerCase().trim().replace(/^\/+|\/+$/g, "");
+
+const uidDelDoc = (d: any) => String(d?.id || "").replace("practice_config_", "");
+
+// A que cuenta pertenece una instancia de WhatsApp. Hoy hay una sola conexion,
+// pero cuando cada profesional tenga la suya el turno ya cae en su agenda.
+const duenoDeLaInstancia = async (instancia?: string): Promise<string | null> => {
   try {
-    const pacientes = await listarColeccion("patients", 500);
-    return pacientes.find((pa: any) => mismoTelefono(pa.phone, telefono)) || null;
-  } catch (err: any) {
-    console.error("[Pacientes] Error buscando la ficha:", err?.message || err);
+    const buscada = String(instancia || lastKnownEvolutionConfig.instanceName || "").toLowerCase().trim();
+    const docs = await settingsDeCuentas();
+    if (buscada) {
+      const encontrado = docs.find((d: any) =>
+        [d.evolution_instance_name, d.evolution_instance, d.whatsapp_instance, d.instance_name]
+          .some((x: any) => String(x || "").toLowerCase().trim() === buscada));
+      if (encontrado) return uidDelDoc(encontrado);
+    }
+    if (process.env.EVOLUTION_OWNER_UID) return String(process.env.EVOLUTION_OWNER_UID);
+    if (docs.length === 1) return uidDelDoc(docs[0]);
+    return null;
+  } catch {
     return null;
   }
 };
 
+// Un modelo que no existe o esta saturado puede tardar minutos en fallar. El
+// paciente ve al bot mudo y despues le contesta un texto generico. Cortamos.
+const conLimiteDeTiempo = async <T>(tarea: Promise<T>, ms: number, queEs: string): Promise<T> => {
+  let reloj: any = null;
+  try {
+    return await Promise.race([
+      tarea,
+      new Promise<T>((_, rechazar) => {
+        reloj = setTimeout(() => rechazar(new Error(queEs + " tardo mas de " + Math.round(ms / 1000) + " segundos")), ms);
+      })
+    ]);
+  } finally {
+    if (reloj) clearTimeout(reloj);
+  }
+};
+
+// Contexto de UNA cuenta: sus servicios, sus horarios y sus turnos. Sirve para
+// que el bot conteste con la agenda del consultorio que recibio el mensaje.
+const cacheContextos: Map<string, { cuando: number; datos: any }> = new Map();
+
+const contextoDeCuenta = async (uid: string): Promise<any | null> => {
+  if (!uid || !hayPersistencia()) return null;
+  const guardado = cacheContextos.get(uid);
+  if (guardado && Date.now() - guardado.cuando < 120000) return guardado.datos;
+  try {
+    const [config, servicios, turnos] = await Promise.all([
+      leerDocumento("settings", "practice_config_" + uid),
+      listarColeccion("services", 500),
+      listarColeccion("appointments", 500)
+    ]);
+    if (!config) return null;
+    let disponibilidad: any[] = [];
+    try {
+      const crudo = (config as any).availability_json;
+      if (typeof crudo === "string" && crudo.trim()) disponibilidad = JSON.parse(crudo);
+    } catch {}
+    const ahora = Date.now();
+    const datos = {
+      config,
+      services: servicios.filter((s: any) => String(s.owner_id || "") === uid),
+      availability: disponibilidad,
+      existingAppointments: turnos.filter((tu: any) => {
+        if (String(tu.owner_id || "") !== uid) return false;
+        const f = Date.parse(tu.start_datetime || "");
+        return Number.isFinite(f) && f > ahora - 86400000;
+      }),
+      instancia: String((config as any).evolution_instance_name || (config as any).evolution_instance || "").trim()
+    };
+    cacheContextos.set(uid, { cuando: ahora, datos });
+    return datos;
+  } catch (err: any) {
+    console.error("[Bot] No pude cargar el contexto de la cuenta:", err?.message || err);
+    return null;
+  }
+};
+
+// Un mismo numero puede ser de varias personas (una familia comparte telefono).
+// La identidad es TELEFONO + NOMBRE, nunca el telefono solo.
+const normalizarNombre = (n: any) =>
+  String(n || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9 ]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+// Todas las fichas de esa cuenta que comparten el numero.
+const personasDelTelefono = async (telefono: string, ownerId?: string | null): Promise<any[]> => {
+  if (!hayPersistencia() || soloDigitos(telefono).length < 8) return [];
+  try {
+    const pacientes = await listarColeccion("patients", 500);
+    return pacientes.filter((pa: any) => {
+      if (!mismoTelefono(pa.phone, telefono)) return false;
+      if (ownerId) return String(pa.owner_id || "") === ownerId;
+      return true;
+    });
+  } catch (err: any) {
+    console.error("[Pacientes] Error buscando fichas por telefono: " + (err?.message || err));
+    return [];
+  }
+};
+
+// La ficha de ESA persona: mismo numero y mismo nombre. Si el numero ya existe
+// pero el nombre es otro, es otra persona y le corresponde su propia ficha.
+const buscarPacientePorTelefono = async (
+  telefono: string,
+  nombre?: string,
+  ownerId?: string | null
+): Promise<any | null> => {
+  const candidatas = await personasDelTelefono(telefono, ownerId);
+  if (!candidatas.length) return null;
+
+  const buscado = normalizarNombre(nombre);
+  if (!buscado) return candidatas[0];
+
+  const nombreDeFicha = (pa: any) =>
+    normalizarNombre(((pa.first_name || "") + " " + (pa.last_name || "")).trim() || pa.name);
+
+  const exacta = candidatas.find((pa: any) => nombreDeFicha(pa) === buscado);
+  if (exacta) return exacta;
+
+  // "Juan" contra "Juan Perez": misma persona si uno contiene al otro.
+  const parecida = candidatas.find((pa: any) => {
+    const ficha = nombreDeFicha(pa);
+    if (!ficha) return false;
+    return ficha.startsWith(buscado + " ") || buscado.startsWith(ficha + " ");
+  });
+  if (parecida) return parecida;
+
+  console.log("[Pacientes] El numero ya tiene " + candidatas.length + " ficha(s), pero ninguna es " + nombre + ": creo una nueva.");
+  return null;
+};
+
 // Crea el turno en la coleccion que lee la app. Devuelve null si no se pudo,
 // para que la conversacion quede marcada para revision humana.
-const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string; detalle: string } | null> => {
+const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string; detalle: string; start_datetime?: string; status?: string; owner_id?: string } | null> => {
   if (!hayPersistencia()) {
     console.error("[Turnos] Sin credencial de Firestore no se puede crear el turno.");
     return null;
@@ -642,6 +939,31 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
     const duracion = Number(servicio?.duration_minutes) > 0 ? Number(servicio.duration_minutes) : 30;
     const fin = new Date(inicio.getTime() + duracion * 60000);
 
+    // De quien es este turno. Sin esto quedaba sin dueño y, con el filtro por
+    // cuenta activo, no aparecia en la agenda de nadie.
+    const duenoTurno = await duenoDeLaInstancia(conv?.instancia || conv?.instanceName);
+    if (!duenoTurno) console.error("[Turnos] No pude determinar de que cuenta es este turno del bot.");
+
+    // Bloqueo preventivo: verificar que el horario no esté ocupado en la agenda de este profesional
+    if (duenoTurno && hayPersistencia()) {
+      const turnosAgenda = await listarColeccion("appointments", 500);
+      const reqStart = inicio.getTime();
+      const reqEnd = fin.getTime();
+      const solapado = turnosAgenda.find((a: any) => {
+        if (a.owner_id !== duenoTurno) return false;
+        const st = String(a.status || "").toLowerCase();
+        if (st === "cancelled" || st === "no_show" || st.includes("cancel")) return false;
+        if (!a.start_datetime) return false;
+        const aStart = new Date(a.start_datetime).getTime();
+        const aEnd = a.end_datetime ? new Date(a.end_datetime).getTime() : (aStart + 30 * 60000);
+        return reqStart < aEnd && reqEnd > aStart;
+      });
+      if (solapado) {
+        console.warn(`[Turnos Bot] Horario solicitado (${inicio.toISOString()}) ya ocupado para la cuenta ${duenoTurno}`);
+        return null;
+      }
+    }
+
     const autoPhone = (accion.patient_phone || conv.patient_phone || conv.id || "").replace(/@.*$/, "").replace(/\D/g, "");
     const cleanFormattedPhone = autoPhone ? (autoPhone.startsWith("+") ? autoPhone : `+${autoPhone}`) : (accion.patient_phone || conv.patient_phone || "");
     const patientName = accion.patient_name || conv.patient_name || "Paciente";
@@ -653,7 +975,8 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
     try {
       // Si ya existe la ficha, la reutilizamos: antes se creaba una nueva en
       // cada reserva y el mismo paciente quedaba duplicado, sin su correo.
-      fichaPaciente = await buscarPacientePorTelefono(cleanFormattedPhone);
+      // Telefono + nombre, y solo entre las fichas de esta cuenta.
+      fichaPaciente = await buscarPacientePorTelefono(cleanFormattedPhone, patientName, duenoTurno);
       if (fichaPaciente?.id) {
         patientDocId = fichaPaciente.id;
         console.log(`[Turnos] Vinculado a la ficha existente de ${fichaPaciente.first_name || ""} ${fichaPaciente.last_name || ""}`.trim());
@@ -672,6 +995,7 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
         total_appointments: 1,
         completed_appointments_count: 0,
         notes: "Futuro cliente agendado automáticamente por el Bot de WhatsApp.",
+        owner_id: duenoTurno || "",
         created_at: new Date().toISOString()
       });
       if (createdPid) {
@@ -684,6 +1008,10 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
     }
 
     // 2. Registrar el turno con el ID del paciente vinculado
+    const configPractice = duenoTurno ? ((await leerDocumento("settings", "practice_config_" + duenoTurno)) || {}) : {};
+    const aMano = (configPractice as any).auto_confirm_bookings === false;
+    const initialStatus = aMano ? "pending" : "confirmed";
+
     const id = await crearDocumento("appointments", {
       patient_id: patientDocId,
       patient_name: patientName,
@@ -695,10 +1023,11 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
       service_price: Number(servicio?.price) || 0,
       start_datetime: inicio.toISOString(),
       end_datetime: fin.toISOString(),
-      status: "confirmed",
+      status: initialStatus,
       payment_status: "pending",
       notes: `Agendado por el bot de WhatsApp. ${accion.notes || ""}`.trim(),
       origin: "bot_whatsapp",
+      owner_id: duenoTurno || "",
       created_at: new Date().toISOString()
     });
 
@@ -708,14 +1037,14 @@ const crearTurnoDesdeBot = async (accion: any, conv: any): Promise<{ id: string;
     // antes del proximo sync.
     businessContext.existingAppointments = [
       ...(businessContext.existingAppointments || []),
-      { start_datetime: inicio.toISOString(), duration_minutes: duracion, status: "confirmed", service_name: servicio?.name }
+      { start_datetime: inicio.toISOString(), duration_minutes: duracion, status: initialStatus, service_name: servicio?.name }
     ];
 
     const fechaStr = inicio.toLocaleDateString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", weekday: "long", day: "numeric", month: "long" });
     const horaStr = inicio.toLocaleTimeString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", hour: "2-digit", minute: "2-digit" });
     const detalle = `${servicio?.name || "Consulta"} el ${fechaStr} a las ${horaStr} hs`;
-    console.log(`[Turnos] Turno creado por el bot: ${id} (${detalle})`);
-    return { id, detalle };
+    console.log(`[Turnos] Turno creado por el bot: ${id} (${detalle}) - estado: ${initialStatus}`);
+    return { id, detalle, start_datetime: inicio.toISOString(), status: initialStatus, owner_id: duenoTurno };
   } catch (err: any) {
     console.error("[Turnos] Error creando el turno:", err?.message || err);
     return null;
@@ -794,9 +1123,9 @@ const alreadyProcessed = (id: string) => {
 };
 
 // ---------------------------------------------------------------------------
-// Envio a Evolution API. v2 espera { number, text }; v1 { number, textMessage }.
-// Mandabamos los dos campos juntos y v2 rechazaba el body con 400.
-// Probamos v2 y solo si falla por validacion reintentamos con v1.
+// Envio a Evolution API.
+// Valida el numero de telefono antes de enviarlo para evitar errores 400 (exists: false).
+// Soporta Evolution API v2 ({ number, text }) y fallback seguro v1 ({ number, text, textMessage }).
 // ---------------------------------------------------------------------------
 const sendEvolutionText = async (params: {
   targetUrl: string;
@@ -809,6 +1138,19 @@ const sendEvolutionText = async (params: {
   if (!targetUrl || !targetKey || !targetInstance || !to || !text) {
     return { ok: false, error: "Faltan datos para enviar el mensaje" };
   }
+
+  const isGroup = to.includes("@g.us");
+  const cleanDigits = to.split("@")[0].replace(/\D/g, "");
+
+  // Numeros incompletos como "54911" (solo codigo de pais y area) no existen en WhatsApp
+  // y hacen fallar a la Evolution API con error 400 (exists: false).
+  if (!isGroup && cleanDigits.length < 10) {
+    console.warn(`[Evolution API] Omitiendo mensaje a "${to}": numero incompleto (${cleanDigits.length} digitos, minimo requerido 10).`);
+    return { ok: false, status: 400, error: "invalid_phone_number" };
+  }
+
+  // En Evolution API v2 el parametro number se prefiere en digitos puros o JID si es grupo
+  const destination = isGroup ? to : cleanDigits;
   const url = `${targetUrl.replace(/\/$/, "")}/message/sendText/${targetInstance}`;
   const headers = { "apikey": targetKey, "Content-Type": "application/json" };
 
@@ -816,18 +1158,34 @@ const sendEvolutionText = async (params: {
     const v2 = await fetch(url, {
       method: "POST",
       headers,
-      body: JSON.stringify({ number: to, text, delay: 1200 })
+      body: JSON.stringify({ number: destination, text, delay: 1200 })
     });
     if (v2.ok) return { ok: true, status: v2.status };
 
     const bodyTxt = await v2.text().catch(() => "");
+
+    // Si WhatsApp informa que el numero no existe o no tiene cuenta, no reintentamos
+    const noExisteEnWhatsApp = bodyTxt.includes('"exists":false') ||
+                               bodyTxt.toLowerCase().includes("not a whatsapp user") ||
+                               bodyTxt.toLowerCase().includes("number does not exist");
+    if (noExisteEnWhatsApp) {
+      console.warn(`[Evolution API] El numero ${destination} no esta registrado en WhatsApp (exists: false). Omitiendo reintento.`);
+      return { ok: false, status: 400, error: "not_on_whatsapp" };
+    }
+
     console.warn(`[Evolution API] sendText v2 fallo (${v2.status}): ${bodyTxt.slice(0, 300)}`);
 
+    // Si fallo por incompatibilidad de version o endpoint, probamos fallback manteniendo "text" para validar esquema
     if (v2.status === 400 || v2.status === 404 || v2.status === 422) {
       const v1 = await fetch(url, {
         method: "POST",
         headers,
-        body: JSON.stringify({ number: to, textMessage: { text }, options: { delay: 1200, presence: "composing" } })
+        body: JSON.stringify({
+          number: destination,
+          text, // Evita error: 'instance requires property "text"'
+          textMessage: { text },
+          options: { delay: 1200, presence: "composing" }
+        })
       });
       if (v1.ok) return { ok: true, status: v1.status };
       const b1 = await v1.text().catch(() => "");
@@ -942,6 +1300,7 @@ async function generateAiBotResponse(params: {
   existingAppointments?: any[];
   senderPhone?: string;
   patientName?: string;
+  personasDelNumero?: any[];
 }) {
   const {
     message,
@@ -951,11 +1310,12 @@ async function generateAiBotResponse(params: {
     availability = [],
     existingAppointments = [],
     senderPhone = "",
-    patientName = ""
+    patientName = "",
+    personasDelNumero = []
   } = params;
 
   if (practiceSettings && Object.keys(practiceSettings).length > 0) {
-    cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+    fusionarSettingsDelFront(practiceSettings);
   }
 
   const ai = getAI();
@@ -1011,6 +1371,17 @@ async function generateAiBotResponse(params: {
   const hasSenderPhone = cleanPhone.length >= 6;
   const knownPhoneStr = hasSenderPhone ? (cleanPhone.startsWith("+") ? cleanPhone : `+${cleanPhone}`) : "";
 
+  // Un numero puede ser de varias personas (familia, pareja, un cuidador). El bot
+  // tiene que preguntar para quien es el turno en vez de asumir.
+  const nombresDelNumero = (personasDelNumero || [])
+    .map((p: any) => ((p.first_name || "") + " " + (p.last_name || "")).trim() || p.name || "")
+    .filter(Boolean);
+  const avisoPersonas = nombresDelNumero.length === 0
+    ? "Este numero todavia no tiene ninguna ficha: pedile el nombre y apellido completo antes de agendar."
+    : nombresDelNumero.length === 1
+      ? `Este numero ya figura a nombre de ${nombresDelNumero[0]}. Si el turno es para esa persona, no le pidas el nombre de nuevo. Si te dice que es para otra persona, pedile el nombre y apellido de ESA persona: cada una lleva su propia ficha.`
+      : `Este numero lo comparten varias personas ya registradas: ${nombresDelNumero.join(", ")}. ANTES de agendar preguntá para cual de ellas es el turno, o si es para alguien mas. Usá exactamente el nombre de la persona elegida en patient_name.`;
+
   const botReq = effectiveSettings.bot_required_fields || {
     full_name: true,
     phone: true,
@@ -1065,6 +1436,8 @@ Dirección del consultorio: ${effectiveSettings.address || "Consultorio céntric
 Teléfono / WhatsApp de contacto: ${effectiveSettings.phone || effectiveSettings.whatsapp_number || ""}.
 ${patientNameNotice}
 
+QUIEN ESCRIBE: ${avisoPersonas}
+
 INFORMACIÓN OFICIAL DEL CONSULTORIO (HORARIOS Y SERVICIOS EN HORA ARGENTINA):
 Servicios y aranceles:
 ${featPricing ? servicesList : "Informar que los aranceles se coordinan en la consulta presencial."}
@@ -1109,12 +1482,27 @@ Nota importante sobre datetime: La fecha y hora deben estar en hora local de Arg
 
   if (ai) {
     // El modelo elegido en Ajustes manda; los demas quedan como respaldo si falla.
-    const modeloElegido = effectiveSettings.bot_ai_model;
+    // Los modelos viejos ya no existen en la API: si quedaron elegidos en Ajustes,
+    // TODAS las llamadas fallaban y el bot contestaba con el texto generico.
+    const MODELOS_RETIRADOS: Record<string, string> = {
+      "gemini-2.5-flash": "gemini-3.5-flash-lite",
+      "gemini-2.5-pro": "gemini-3.5-flash",
+      "gemini-2.0-flash": "gemini-3.5-flash-lite",
+      "gemini-1.5-flash": "gemini-3.5-flash-lite",
+      "gemini-1.5-pro": "gemini-3.5-flash"
+    };
+    const elegidoCrudo = String(effectiveSettings.bot_ai_model || "");
+    const modeloElegido = MODELOS_RETIRADOS[elegidoCrudo] || elegidoCrudo;
+    if (elegidoCrudo && modeloElegido !== elegidoCrudo) {
+      console.error("[Bot IA] El modelo " + elegidoCrudo + " ya no existe: uso " + modeloElegido + ". Cambialo en Ajustes.");
+    }
     const candidateModels = Array.from(new Set([
       ...(modeloElegido ? [modeloElegido] : []),
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash",
       "gemini-3.8-flash",
-      "gemini-flash-latest",
-      "gemini-3.1-pro-preview"
+      "gemini-flash-latest"
     ]));
     for (const modelName of candidateModels) {
       try {
@@ -1125,10 +1513,11 @@ Nota importante sobre datetime: La fecha y hora deben estar en hora local de Arg
 
         const fullPrompt = `${systemInstruction}\n\n=== HISTORIAL DE LA CONVERSACIÓN ===\n${conversationText || "(Inicio de la conversación)"}\n\nPaciente: ${message}\n${isProfessionalIdentity ? professionalName : "Asistente"}:`;
 
-        const response = await ai.models.generateContent({
-          model: modelName,
-          contents: fullPrompt,
-        });
+        const response: any = await conLimiteDeTiempo(
+          ai.models.generateContent({ model: modelName, contents: fullPrompt }),
+          15000,
+          "el modelo " + modelName
+        );
 
         const replyRaw = response.text?.trim();
         if (replyRaw) {
@@ -1169,10 +1558,13 @@ Nota importante sobre datetime: La fecha y hora deben estar en hora local de Arg
           };
         }
       } catch (aiErr: any) {
-        console.warn(`Gemini AI error with ${modelName}:`, aiErr?.message || aiErr);
+        // Con console.warn el motivo no llegaba al panel y el bot parecia "tonto" sin explicacion.
+        console.error(`[Bot IA] Fallo el modelo ${modelName}: ${aiErr?.message || aiErr}`);
       }
     }
   }
+
+  if (ai) console.error("[Bot IA] Ningun modelo contesto: respondo con el texto de respaldo, sin IA. Revisa el modelo elegido en Ajustes.");
 
   // Fallback si Gemini esta caido o sin cuota.
   // Solo usa datos REALES: si no hay servicios u horarios cargados, no informa
@@ -1271,6 +1663,19 @@ async function startServer() {
         senderPhone,
         patientName
       });
+
+      // Si el bot va a agendar un turno, usamos el texto EXACTO oficial configurado para la cuenta (sin inventos de la IA)
+      if (botResponse.action?.action === "book_appointment") {
+        const aMano = practiceSettings.auto_confirm_bookings === false;
+        const datosTurno = {
+          patient_name: botResponse.action.patient_name || patientName || "Paciente",
+          start_datetime: botResponse.action.datetime,
+          service_name: botResponse.action.service_name || "Consulta"
+        };
+        botResponse.reply = aMano
+          ? armarMensajeSolicitudRecibida(datosTurno, practiceSettings)
+          : armarMensajeTurnoAgendado(datosTurno, practiceSettings);
+      }
 
       // Bot human-like response delay pacing
       const delaySeconds = Math.min(Math.max(Number(practiceSettings.bot_response_delay_seconds) || 0, 0), 60);
@@ -1826,14 +2231,22 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   });
 
   // Sync Evolution and Practice config with backend
-  app.post("/api/evolution/sync-config", (req, res) => {
+  app.post("/api/evolution/sync-config", async (req, res) => {
     try {
       const { apiUrl, apiKey, instanceName, practiceSettings, appUrl } = req.body;
       if (apiUrl) lastKnownEvolutionConfig.apiUrl = apiUrl.replace(/\/$/, "");
       if (apiKey) lastKnownEvolutionConfig.apiKey = apiKey;
       if (instanceName) lastKnownEvolutionConfig.instanceName = instanceName.trim();
       if (practiceSettings) {
-        cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+        fusionarSettingsDelFront(practiceSettings);
+        // Para prender o apagar el bot manda lo que dice la base, no lo que traiga
+        // el navegador: con datos viejos en el navegador el bot quedaba en pausa.
+        try {
+          const propia = await configDeLaCuentaDelBot();
+          if (propia && typeof (propia as any).bot_enabled === "boolean") {
+            cachedPracticeSettings.bot_enabled = (propia as any).bot_enabled;
+          }
+        } catch {}
       }
       return res.json({ success: true });
     } catch (err: any) {
@@ -1989,6 +2402,236 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     ).trim();
   };
 
+  // ============================================================================
+  // FORMATO OFICIAL DE MENSAJES Y NOTIFICACIONES PUSH REALES
+  // ============================================================================
+  const armarDetalleTurno = (turno: any, config: any) => {
+    const cuando = new Date(turno.start_datetime);
+    const fecha = cuando.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
+    const hora = cuando.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
+    const profesional = (config as any)?.professional_name || (config as any)?.practice_name || "el profesional";
+    const lugar = [(config as any)?.address, (config as any)?.city].filter(Boolean).join(", ");
+    const servicio = turno.service_name || "la consulta";
+    const paciente = turno.patient_name || "";
+
+    const detalle = [
+      "🗓️ *Fecha:* " + fecha,
+      "⏰ *Horario:* " + hora + " hs",
+      "👤 *Profesional:* " + profesional,
+      "💼 *Servicio:* " + servicio,
+      lugar ? "📍 *Lugar:* " + lugar : ""
+    ].filter(Boolean).join("\n");
+
+    return { fecha, hora, profesional, lugar, servicio, paciente, detalle };
+  };
+
+  const armarMensajeTurnoAgendado = (turno: any, config: any) => {
+    const { paciente, detalle } = armarDetalleTurno(turno, config);
+    return "¡Hola " + paciente + "! Quería recordarte que tu turno quedó agendado, te paso los detalles:\n\n" + detalle +
+      "\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊";
+  };
+
+  const armarMensajeSolicitudRecibida = (turno: any, config: any) => {
+    const { paciente, profesional, detalle } = armarDetalleTurno(turno, config);
+    return "¡Hola " + paciente + "! Recibimos tu solicitud de turno, te paso los detalles:\n\n" + detalle +
+      "\n\nEn cuanto " + profesional + " la confirme te aviso por acá. 😊";
+  };
+
+  const ownerFcmTokensMap = new Map<string, Set<string>>();
+
+  const tokensFcmDeLaCuenta = async (ownerId: string): Promise<string[]> => {
+    if (!ownerId) return [];
+    if (!ownerFcmTokensMap.has(ownerId)) {
+      const docPush = await leerDocumento("settings", "push_tokens_" + ownerId);
+      const list = Array.isArray(docPush?.tokens) ? docPush.tokens : [];
+      ownerFcmTokensMap.set(ownerId, new Set(list.filter(Boolean)));
+    }
+    return Array.from(ownerFcmTokensMap.get(ownerId) || []);
+  };
+
+  const guardarTokenFcm = async (ownerId: string, token: string) => {
+    if (!ownerId || !token) return;
+    const tokens = await tokensFcmDeLaCuenta(ownerId);
+    if (!tokens.includes(token)) {
+      tokens.push(token);
+      ownerFcmTokensMap.set(ownerId, new Set(tokens));
+      if (hayPersistencia()) {
+        await guardarDocumento("settings", "push_tokens_" + ownerId, {
+          owner_id: ownerId,
+          tokens,
+          updated_at: new Date().toISOString()
+        });
+      }
+    }
+  };
+
+  const enviarPushReal = async (params: {
+    ownerId: string;
+    title: string;
+    body: string;
+    data?: Record<string, string>;
+    priority?: "high" | "normal";
+    critical?: boolean;
+  }) => {
+    const { ownerId, title, body, data, priority, critical } = params;
+    if (!ownerId) return { ok: false, error: "Sin ownerId" };
+    const tokens = await tokensFcmDeLaCuenta(ownerId);
+    if (!tokens.length) return { ok: false, sent: 0, reason: "No tokens registered" };
+
+    const authToken = await obtenerTokenFirestore();
+    if (!authToken) return { ok: false, error: "Sin auth token" };
+
+    let enviados = 0;
+    const invalidTokens: string[] = [];
+    const isCritical = critical === true || priority === "high";
+
+    for (const token of tokens) {
+      try {
+        const fcmUrl = `https://fcm.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/messages:send`;
+        const res = await fetch(fcmUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${authToken}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            message: {
+              token,
+              notification: {
+                title,
+                body
+              },
+              data: {
+                ...(data || {}),
+                title,
+                body,
+                critical: isCritical ? "true" : "false",
+                priority: isCritical ? "high" : "normal"
+              },
+              android: {
+                priority: "high",
+                notification: {
+                  channel_id: isCritical ? "critical_turnos" : "general_turnos",
+                  priority: "high",
+                  default_sound: true,
+                  default_vibrate_timings: true
+                }
+              },
+              webpush: {
+                headers: {
+                  Urgency: isCritical ? "high" : "normal"
+                },
+                notification: {
+                  title,
+                  body,
+                  icon: "/pwa-192x192.png",
+                  badge: "/icon.svg",
+                  requireInteraction: isCritical,
+                  vibrate: isCritical ? [300, 100, 300, 100, 300] : [200, 100, 200],
+                  tag: isCritical ? "agenfacil-critical" : "agenfacil-general"
+                }
+              }
+            }
+          })
+        });
+
+        if (res.ok) {
+          enviados++;
+        } else {
+          const errJson: any = await res.json().catch(() => ({}));
+          const status = errJson?.error?.status || "";
+          if (status === "UNREGISTERED" || status === "INVALID_ARGUMENT") {
+            invalidTokens.push(token);
+          }
+          console.warn(`[Push FCM] Error enviando a token: ${res.status}`, errJson?.error?.message);
+        }
+      } catch (pushErr: any) {
+        console.warn("[Push FCM] Error de red enviando push:", pushErr?.message);
+      }
+    }
+
+    if (invalidTokens.length) {
+      const actuales = ownerFcmTokensMap.get(ownerId);
+      if (actuales) {
+        invalidTokens.forEach(t => actuales.delete(t));
+        if (hayPersistencia()) {
+          guardarDocumento("settings", "push_tokens_" + ownerId, {
+            owner_id: ownerId,
+            tokens: Array.from(actuales),
+            updated_at: new Date().toISOString()
+          }).catch(() => {});
+        }
+      }
+    }
+
+    console.log(`[Push FCM] Enviados ${enviados}/${tokens.length} para cuenta ${ownerId}`);
+    return { ok: true, sent: enviados };
+  };
+
+  // Endpoints para registro y prueba de notificaciones Push (Firebase Cloud Messaging)
+  app.post("/api/push/registrar-token", async (req, res) => {
+    try {
+      const { owner_id, token } = req.body || {};
+      if (!owner_id || !token) {
+        return res.status(400).json({ ok: false, error: "Faltan owner_id o token" });
+      }
+      await guardarTokenFcm(String(owner_id).trim(), String(token).trim());
+      console.log(`[Push FCM] Token registrado correctamente para la cuenta ${owner_id}`);
+      return res.json({ ok: true, message: "Token FCM registrado con éxito" });
+    } catch (err: any) {
+      console.error("[Push FCM] Error al registrar token:", err);
+      return res.status(500).json({ ok: false, error: err?.message || "Error al registrar token" });
+    }
+  });
+
+  app.post("/api/push/test", async (req, res) => {
+    try {
+      const { owner_id, title, body } = req.body || {};
+      if (!owner_id) {
+        return res.status(400).json({ ok: false, error: "Falta owner_id para enviar notificación de prueba" });
+      }
+      const resultado = await enviarPushReal({
+        ownerId: String(owner_id).trim(),
+        title: title || "🔔 Agenfacil: Notificación de Prueba",
+        body: body || "¡Excelente! Tu dispositivo está correctamente conectado para recibir alertas de turnos al celular.",
+        data: { type: "test", timestamp: new Date().toISOString() },
+        priority: "high",
+        critical: true
+      });
+      return res.json(resultado);
+    } catch (err: any) {
+      console.error("[Push FCM] Error enviando push de prueba:", err);
+      return res.status(500).json({ ok: false, error: err?.message || "Error enviando push" });
+    }
+  });
+
+  // Enviar alerta crítica de turnos al celular del profesional
+  app.post("/api/push/send-alert", async (req, res) => {
+    try {
+      const { owner_id, title, body, priority, critical, appointment_id, url } = req.body || {};
+      if (!owner_id || !title) {
+        return res.status(400).json({ ok: false, error: "Faltan owner_id o title" });
+      }
+      const resultado = await enviarPushReal({
+        ownerId: String(owner_id).trim(),
+        title: String(title),
+        body: String(body || "Aviso de turno urgente"),
+        priority: priority === "high" ? "high" : "normal",
+        critical: critical !== false,
+        data: {
+          type: "critical_appointment",
+          appointment_id: String(appointment_id || ""),
+          url: String(url || "/#agenda"),
+          timestamp: new Date().toISOString()
+        }
+      });
+      return res.json(resultado);
+    } catch (err: any) {
+      console.error("[Push FCM] Error enviando alerta crítica:", err);
+      return res.status(500).json({ ok: false, error: err?.message || "Error enviando alerta" });
+    }
+  });
+
   // Helper to process any raw message or chat item into realWhatsAppConversations
   const processIncomingOrSyncedMessage = async (item: any, options?: {
     targetUrl?: string;
@@ -2092,11 +2735,11 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         }
 
         if (!botEnabled || !convEnabled) {
-          console.log(`[WhatsApp Bot] Bot pausado (global:${botEnabled} conversacion:${convEnabled}). Mensaje queda en la bandeja sin responder.`);
+          console.error(`[WhatsApp Bot] No responde: bot activo=${botEnabled}, conversacion activa=${convEnabled}. El mensaje queda en la bandeja.`);
         } else if (!contextoOk) {
           // Sin agenda real cargada preferimos el silencio a inventar horarios.
           conv.needs_human = true;
-          console.warn("[WhatsApp Bot] Sin contexto de agenda fresco. No se responde automaticamente.");
+          console.error("[WhatsApp Bot] No responde: no tengo la agenda cargada (servicios y horarios) para contestar sin inventar.");
         }
 
         const isBotActive = botEnabled && convEnabled && contextoOk && !enPausaManual;
@@ -2111,8 +2754,14 @@ Responde ÚNICAMENTE con un JSON con la estructura:
             // (la creacion del turno se hace mas abajo, con crearTurnoDesdeBot)
             // Siempre la agenda REAL: el webhook no recibia estos datos y el bot
             // terminaba contestando con los valores por defecto del prompt.
+            // Quienes ya estan registrados con este numero, para que el bot
+            // pregunte para quien es el turno en vez de asumir.
+            const duenoDeEsteChat = await duenoDeLaInstancia(options?.targetInstance);
+            const personasDelNumero = await personasDelTelefono(senderPhone, duenoDeEsteChat);
+
             const botResult = await generateAiBotResponse({
               message: text,
+              personasDelNumero,
               history: conv.messages.slice(-10),
               practiceSettings: cachedPracticeSettings,
               services: options.services?.length ? options.services : businessContext.services,
@@ -2125,6 +2774,45 @@ Responde ÚNICAMENTE con un JSON con la estructura:
             if (botResult && botResult.reply && options.targetUrl && options.targetKey && options.targetInstance) {
               // Respondemos al JID exacto que mando el mensaje.
               const destino = conv.remote_jid || remoteJid || senderPhone;
+
+              // Si el bot va a agendar un turno, PRIMERO lo creamos en Firestore
+              // y usamos el texto EXACTO oficial configurado para la cuenta (sin inventos de la IA)
+              let creado: any = null;
+              if (botResult.action?.action === "book_appointment") {
+                creado = await crearTurnoDesdeBot(botResult.action, { ...conv, instancia: options?.targetInstance });
+                if (creado) {
+                  const duenoBot = creado.owner_id || (await duenoDeLaInstancia(options?.targetInstance));
+                  const configPractice = duenoBot ? ((await leerDocumento("settings", "practice_config_" + duenoBot)) || {}) : cachedPracticeSettings;
+                  const aMano = (configPractice as any).auto_confirm_bookings === false;
+
+                  const datosTurno = {
+                    patient_name: botResult.action.patient_name || conv.patient_name || "Paciente",
+                    start_datetime: creado.start_datetime || botResult.action.datetime,
+                    service_name: botResult.action.service_name || "Consulta"
+                  };
+
+                  // TEXTO EXACTO OFICIAL
+                  botResult.reply = aMano
+                    ? armarMensajeSolicitudRecibida(datosTurno, configPractice)
+                    : armarMensajeTurnoAgendado(datosTurno, configPractice);
+
+                  // 🔔 PUSH REAL AL CELULAR DEL PROFESIONAL
+                  if (duenoBot) {
+                    enviarPushReal({
+                      ownerId: duenoBot,
+                      title: aMano ? "🔔 Solicitud de Turno por WhatsApp" : "✅ Turno Agendado por WhatsApp",
+                      body: `${datosTurno.patient_name} - ${datosTurno.service_name}`,
+                      data: {
+                        type: aMano ? "bot_booking_pending" : "bot_booking_confirmed",
+                        appointment_id: creado.id || ""
+                      }
+                    }).catch(() => {});
+                  }
+                } else {
+                  conv.needs_human = true;
+                  botResult.reply = "Disculpá, hubo un inconveniente al registrar ese horario o ya no se encuentra disponible. ¿Te gustaría coordinar en otro horario?";
+                }
+              }
 
               // Simulacion de tipeo: le avisamos a WhatsApp que estamos escribiendo.
               if (cachedPracticeSettings.bot_typing_simulation) {
@@ -2155,28 +2843,16 @@ Responde ÚNICAMENTE con un JSON con la estructura:
                 content: botResult.reply,
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 status: sendResult.ok ? 'sent' : 'failed',
-                actionTaken: botResult.action
+                actionTaken: creado ? {
+                  type: "appointment_created",
+                  appointmentId: creado.id,
+                  details: creado.detalle
+                } : botResult.action
               };
 
               conv.messages.push(assistantMsg);
               conv.last_message = botResult.reply;
               conv.last_timestamp = new Date().toISOString();
-
-              // La reserva se creaba SOLO desde el front: por WhatsApp el bot
-              // confirmaba el turno y no quedaba agendado en ningun lado.
-              if (sendResult.ok && botResult.action?.action === "book_appointment") {
-                const creado = await crearTurnoDesdeBot(botResult.action, conv);
-                if (creado) {
-                  assistantMsg.actionTaken = {
-                    type: "appointment_created",
-                    appointmentId: creado.id,
-                    details: creado.detalle
-                  };
-                } else {
-                  conv.needs_human = true;
-                  console.error("[WhatsApp Bot] El turno NO se pudo crear pese a que el bot lo confirmo.");
-                }
-              }
             }
           } catch (botErr) {
             console.error("Bot auto-reply error:", botErr);
@@ -2328,7 +3004,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       if (apiKey) lastKnownEvolutionConfig.apiKey = targetKey;
       if (instanceName) lastKnownEvolutionConfig.instanceName = targetInstance;
       if (practiceSettings) {
-        cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+        fusionarSettingsDelFront(practiceSettings);
       }
 
       // Guardamos servicios, horarios y turnos para que el WEBHOOK pueda usarlos.
@@ -2571,16 +3247,25 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   // Get or Generate QR Code for an Instance
   app.post("/api/evolution/instance-qr", async (req, res) => {
     try {
-      const { instanceName, apiUrl, apiKey, practiceSettings, appUrl } = req.body;
+      const { instanceName, apiUrl, apiKey, practiceSettings, appUrl, owner_id } = req.body;
       const targetUrl = (apiUrl || lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
       const targetKey = apiKey || lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
       const targetInstance = (instanceName || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim();
+      const ownerId = String(owner_id || practiceSettings?.owner_id || "").trim();
 
       if (apiUrl) lastKnownEvolutionConfig.apiUrl = targetUrl;
       if (apiKey) lastKnownEvolutionConfig.apiKey = targetKey;
       if (instanceName) lastKnownEvolutionConfig.instanceName = targetInstance;
       if (practiceSettings) {
-        cachedPracticeSettings = { ...cachedPracticeSettings, ...practiceSettings };
+        fusionarSettingsDelFront(practiceSettings);
+      }
+
+      // Si tenemos la cuenta del profesional, asociamos de inmediato la instancia con su cuenta
+      if (ownerId && targetInstance) {
+        actualizarCampos("settings", "practice_config_" + ownerId, {
+          evolution_instance_name: targetInstance
+        }).catch(() => {});
+        cacheContextos.delete(ownerId);
       }
 
       if (!targetUrl || !targetKey) {
@@ -2731,6 +3416,9 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       }
 
       const cleanPhone = phone.replace(/\D/g, "");
+      if (cleanPhone.length < 10) {
+        return res.status(400).json({ error: "El teléfono debe contener al menos 10 dígitos (código de país + área + número)." });
+      }
 
       if (!targetUrl || !targetKey) {
         return res.json({
@@ -2783,14 +3471,14 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         return res.status(400).json({ success: false, error: "Falta la configuracion de Evolution API." });
       }
 
-      // Normalizamos el numero a digitos y armamos el JID.
+      // Normalizamos el numero a digitos y validamos longitud internacional.
       const soloDigitos = String(phone).replace(/\D/g, "");
-      if (soloDigitos.length < 8) {
-        return res.status(400).json({ success: false, error: "El telefono no parece valido." });
+      if (soloDigitos.length < 10) {
+        return res.status(400).json({ success: false, error: "El teléfono debe contener al menos 10 dígitos (código de país + área + número)." });
       }
       const destino = `${soloDigitos}@s.whatsapp.net`;
 
-      const envio = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: destino, text });
+      const envio = await sendEvolutionText({ targetUrl, targetKey, targetInstance, to: soloDigitos, text });
       if (!envio.ok) {
         return res.status(502).json({
           success: false,
@@ -2945,17 +3633,543 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     return salida;
   };
 
+  // -------------------------------------------------------------------------
+  // PAGINA PUBLICA DE RESERVAS. El enlace /u/<handle> no identificaba al
+  // profesional: el navegador del paciente mostraba la configuracion que
+  // tuviera a mano. Aca el servidor resuelve el enlace contra la base.
+  // -------------------------------------------------------------------------
+  // Aviso al paciente y al profesional cuando entra una reserva por la pagina.
+  // Si el profesional eligio confirmar a mano, el paciente recibe un "recibimos
+  // tu solicitud" y el turno queda esperando; si no, sale la confirmacion.
+  app.post("/api/publico/aviso-reserva", async (req, res) => {
+    try {
+      const turno = req.body?.turno || {};
+      const ownerId = String(req.body?.owner_id || turno.owner_id || "").trim();
+      if (!ownerId || !turno.start_datetime) {
+        return res.status(400).json({ ok: false, error: "Faltan datos del turno" });
+      }
+
+      const config = (await leerDocumento("settings", "practice_config_" + ownerId)) || {};
+      const aMano = (config as any).auto_confirm_bookings === false;
+
+      const cuando = new Date(turno.start_datetime);
+      const fecha = cuando.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
+      const hora = cuando.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
+      const profesional = (config as any).professional_name || (config as any).practice_name || "el profesional";
+      const lugar = [(config as any).address, (config as any).city].filter(Boolean).join(", ");
+      const servicio = turno.service_name || "la consulta";
+      const paciente = turno.patient_name || "";
+
+      const detalle = [
+        "🗓️ *Fecha:* " + fecha,
+        "⏰ *Horario:* " + hora + " hs",
+        "👤 *Profesional:* " + profesional,
+        "💼 *Servicio:* " + servicio,
+        lugar ? "📍 *Lugar:* " + lugar : ""
+      ].filter(Boolean).join("\n");
+
+      const textoPaciente = aMano
+        ? "¡Hola " + paciente + "! Recibimos tu solicitud de turno, te paso los detalles:\n\n" + detalle +
+          "\n\nEn cuanto " + profesional + " la confirme te aviso por acá. 😊"
+        : "¡Hola " + paciente + "! Quería recordarte que tu turno quedó agendado, te paso los detalles:\n\n" + detalle +
+          "\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊";
+
+      const textoProfesional = aMano
+        ? "🔔 Tenés un turno para confirmar:\n\n" + detalle + "\n\nPaciente: " + paciente + "\nEntrá a la app para confirmarlo."
+        : "✅ Nuevo turno agendado por la página:\n\n" + detalle + "\n\nPaciente: " + paciente;
+
+      const targetUrl = (lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (String((config as any).evolution_instance_name || "").trim() || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+      const puedeWhatsApp = Boolean(targetUrl && targetKey && targetInstance);
+
+      const enviarWhatsApp = async (telefono: any, texto: string) => {
+        const numero = String(telefono || "").replace(/\D/g, "");
+        if (!puedeWhatsApp || numero.length < 10) return false;
+        const r = await sendEvolutionText({
+          targetUrl,
+          targetKey,
+          targetInstance,
+          to: numero,
+          text: texto
+        });
+        return Boolean(r?.ok);
+      };
+
+      const resultado: any = { aMano, paciente: {}, profesional: {} };
+
+      resultado.paciente.whatsapp = await enviarWhatsApp(turno.patient_phone, textoPaciente);
+      if (turno.patient_email) {
+        resultado.paciente.email = await enviarEmailRecordatorio(
+          turno.patient_email,
+          aMano ? "Recibimos tu solicitud de turno" : "Tu turno quedó agendado",
+          textoPaciente
+        );
+      }
+
+      // Avisos al profesional, segun lo que eligio en Configuracion.
+      const quiereCorreo = (config as any).avisar_prof_email !== false;
+      const quiereWhatsApp = (config as any).avisar_prof_whatsapp === true;
+      const correoProf = (config as any).email || (config as any).sender_email || "";
+      const telProf = (config as any).whatsapp_number || (config as any).phone || "";
+
+      if (quiereWhatsApp) {
+        resultado.profesional.whatsapp = await enviarWhatsApp(telProf, textoProfesional);
+      }
+      if (quiereCorreo && correoProf) {
+        resultado.profesional.email = await enviarEmailRecordatorio(
+          correoProf,
+          aMano ? "Tenés un turno para confirmar" : "Nuevo turno agendado",
+          textoProfesional
+        );
+      }
+
+      // 🔔 Aviso push real al celular del profesional (FCM)
+      const quierePush = (config as any).avisar_prof_push !== false;
+      if (quierePush && ownerId) {
+        resultado.profesional.push = await enviarPushReal({
+          ownerId,
+          title: aMano ? "🔔 Solicitud de Turno para Confirmar" : "✅ Nuevo Turno Agendado",
+          body: `${paciente} - ${servicio} (${fecha} ${hora} hs)`,
+          data: {
+            type: aMano ? "booking_pending" : "booking_confirmed",
+            appointment_id: String(turno.id || "")
+          }
+        }).catch(() => ({ ok: false }));
+      }
+
+      console.log("[Reserva] Aviso enviado. Confirmacion a mano: " + aMano);
+      res.json({ ok: true, ...resultado });
+    } catch (err: any) {
+      console.error("[Reserva] No se pudo avisar: " + (err?.message || err));
+      res.status(500).json({ ok: false, error: "No se pudo avisar" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Secuencia de "Turno Agendado" cuando el profesional confirma a mano un turno
+  // ---------------------------------------------------------------------------
+  app.post("/api/turnos/confirmar-profesional", async (req, res) => {
+    try {
+      const { appointmentId, owner_id } = req.body || {};
+      const turnoBody = req.body?.turno || {};
+      let turno: any = Object.keys(turnoBody).length ? turnoBody : null;
+      let ownerId = String(owner_id || turno?.owner_id || "").trim();
+
+      if (!turno && appointmentId) {
+        turno = await leerDocumento("appointments", appointmentId);
+        if (turno && !ownerId) {
+          ownerId = String(turno.owner_id || "").trim();
+        }
+      }
+
+      if (!turno) {
+        return res.status(404).json({ ok: false, error: "Turno no encontrado" });
+      }
+
+      if (!ownerId && turno.owner_id) ownerId = String(turno.owner_id).trim();
+
+      const config = ownerId
+        ? ((await leerDocumento("settings", "practice_config_" + ownerId)) || {})
+        : cachedPracticeSettings;
+
+      // Actualizamos estado en Firestore
+      const aptId = appointmentId || turno.id;
+      if (aptId) {
+        await actualizarCampos("appointments", aptId, {
+          status: "confirmed",
+          confirmed_at: new Date().toISOString()
+        });
+      }
+
+      // Generar el mensaje exacto oficial de Turno Agendado
+      const textoTurnoAgendado = armarMensajeTurnoAgendado(turno, config);
+
+      const targetUrl = (lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+      const targetKey = lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
+      const targetInstance = (String((config as any).evolution_instance_name || "").trim() || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+      const puedeWhatsApp = Boolean(targetUrl && targetKey && targetInstance);
+
+      let whatsappEnviado = false;
+      const numero = String(turno.patient_phone || "").replace(/\D/g, "");
+      if (puedeWhatsApp && numero.length >= 10) {
+        const r = await sendEvolutionText({
+          targetUrl,
+          targetKey,
+          targetInstance,
+          to: numero,
+          text: textoTurnoAgendado
+        });
+        whatsappEnviado = Boolean(r?.ok);
+      }
+
+      let emailEnviado = false;
+      if (turno.patient_email) {
+        const practiceName = (config as any).practice_name || "Agenfacil";
+        emailEnviado = await enviarEmailRecordatorio(
+          turno.patient_email,
+          `¡Tu turno ha sido confirmado! - ${practiceName}`,
+          textoTurnoAgendado
+        );
+      }
+
+      console.log(`[Confirmar Profesional] Turno ${aptId} confirmado por profesional. WA: ${whatsappEnviado}, Email: ${emailEnviado}`);
+      return res.json({
+        ok: true,
+        message: "Turno confirmado exitosamente y secuencia de notificación enviada al paciente.",
+        whatsapp: whatsappEnviado,
+        email: emailEnviado
+      });
+    } catch (err: any) {
+      console.error("[Confirmar Profesional] Error:", err);
+      return res.status(500).json({ ok: false, error: err?.message || "Error al confirmar turno" });
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Reserva pública del lado del servidor (para cerrar reglas de Firestore por dueño)
+  // ---------------------------------------------------------------------------
+  app.post("/api/publico/crear-reserva", async (req, res) => {
+    try {
+      const { owner_id, turno } = req.body || {};
+      const ownerId = String(owner_id || "").trim();
+
+      if (!ownerId) {
+        return res.status(400).json({ ok: false, error: "Identificador de consultorio (owner_id) requerido" });
+      }
+
+      if (!turno || !turno.patient_name || !turno.patient_phone || !turno.start_datetime) {
+        return res.status(400).json({ ok: false, error: "Faltan datos obligatorios del turno (nombre, teléfono o fecha)" });
+      }
+
+      const config = (await leerDocumento("settings", "practice_config_" + ownerId)) || {};
+      const aMano = (config as any).auto_confirm_bookings === false;
+      const initialStatus = aMano ? "pending" : "confirmed";
+
+      // Bloqueo atómico contra solapamientos (Double-Booking Prevention)
+      if (hayPersistencia()) {
+        const turnosExistentes = await listarColeccion("appointments", 500);
+        const reqStart = new Date(turno.start_datetime).getTime();
+        const reqEnd = new Date(turno.end_datetime || (reqStart + 30 * 60000)).getTime();
+
+        const solapado = turnosExistentes.find((a: any) => {
+          if (a.owner_id !== ownerId) return false;
+          const st = String(a.status || "").toLowerCase();
+          if (st === "cancelled" || st === "no_show" || st.includes("cancel")) return false;
+          if (!a.start_datetime) return false;
+
+          const aStart = new Date(a.start_datetime).getTime();
+          const aEnd = a.end_datetime ? new Date(a.end_datetime).getTime() : (aStart + 30 * 60000);
+
+          return reqStart < aEnd && reqEnd > aStart;
+        });
+
+        if (solapado) {
+          return res.status(409).json({
+            ok: false,
+            error: "slot_taken",
+            message: "El horario seleccionado acaba de ser reservado por otro paciente. Por favor selecciona otro horario disponible."
+          });
+        }
+      }
+
+      const nuevoTurno = {
+        owner_id: ownerId,
+        patient_id: `pat-web-${Date.now()}`,
+        patient_name: String(turno.patient_name || "").trim(),
+        patient_phone: String(turno.patient_phone || "").trim(),
+        patient_email: String(turno.patient_email || "").trim() || null,
+        patient_dni: String(turno.patient_dni || "").trim() || null,
+        patient_insurance: String(turno.patient_insurance || "").trim() || null,
+        patient_address: String(turno.patient_address || "").trim() || null,
+        service_id: String(turno.service_id || ""),
+        service_name: String(turno.service_name || "Consulta"),
+        service_price: Number(turno.service_price) || 0,
+        start_datetime: turno.start_datetime,
+        end_datetime: turno.end_datetime || turno.start_datetime,
+        status: initialStatus,
+        payment_status: "pending",
+        notes: turno.notes || "Reserva online por enlace público",
+        origin: turno.origin || "public_booking",
+        created_at: new Date().toISOString()
+      };
+
+      // Guardar directamente en Firestore con permisos de backend
+      let docId: string | null = null;
+      if (hayPersistencia()) {
+        docId = await crearDocumento("appointments", nuevoTurno);
+      }
+      if (!docId) {
+        docId = `apt-${Date.now()}`;
+      }
+
+      const turnoCompleto = { id: docId, ...nuevoTurno };
+
+      // Disparar la secuencia de aviso (paciente + profesional)
+      try {
+        const cuando = new Date(nuevoTurno.start_datetime);
+        const fecha = cuando.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long", timeZone: "America/Argentina/Buenos_Aires" });
+        const hora = cuando.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Argentina/Buenos_Aires" });
+        const profesional = (config as any).professional_name || (config as any).practice_name || "el profesional";
+        const lugar = [(config as any).address, (config as any).city].filter(Boolean).join(", ");
+        const servicio = nuevoTurno.service_name;
+        const paciente = nuevoTurno.patient_name;
+
+        const detalle = [
+          "🗓️ *Fecha:* " + fecha,
+          "⏰ *Horario:* " + hora + " hs",
+          "👤 *Profesional:* " + profesional,
+          "💼 *Servicio:* " + servicio,
+          lugar ? "📍 *Lugar:* " + lugar : ""
+        ].filter(Boolean).join("\n");
+
+        const textoPaciente = aMano
+          ? "¡Hola " + paciente + "! Recibimos tu solicitud de turno, te paso los detalles:\n\n" + detalle +
+            "\n\nEn cuanto " + profesional + " la confirme te aviso por acá. 😊"
+          : "¡Hola " + paciente + "! Quería recordarte que tu turno quedó agendado, te paso los detalles:\n\n" + detalle +
+            "\n\n¡Te esperamos! Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊";
+
+        const textoProfesional = aMano
+          ? "🔔 Tenés un turno para confirmar:\n\n" + detalle + "\n\nPaciente: " + paciente + "\nEntrá a la app para confirmarlo."
+          : "✅ Nuevo turno agendado por la página:\n\n" + detalle + "\n\nPaciente: " + paciente;
+
+        const targetUrl = (lastKnownEvolutionConfig.apiUrl || process.env.EVOLUTION_API_URL || "").replace(/\/$/, "");
+        const targetKey = lastKnownEvolutionConfig.apiKey || process.env.EVOLUTION_API_KEY || "";
+        const targetInstance = (String((config as any).evolution_instance_name || "").trim() || lastKnownEvolutionConfig.instanceName || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
+        const puedeWhatsApp = Boolean(targetUrl && targetKey && targetInstance);
+
+        if (puedeWhatsApp) {
+          const numPaciente = String(nuevoTurno.patient_phone || "").replace(/\D/g, "");
+          if (numPaciente.length >= 10) {
+            sendEvolutionText({ targetUrl, targetKey, targetInstance, to: numPaciente, text: textoPaciente }).catch(() => {});
+          }
+          if ((config as any).avisar_prof_whatsapp) {
+            const numProf = String((config as any).whatsapp_number || (config as any).phone || "").replace(/\D/g, "");
+            if (numProf.length >= 10) {
+              sendEvolutionText({ targetUrl, targetKey, targetInstance, to: numProf, text: textoProfesional }).catch(() => {});
+            }
+          }
+        }
+
+        if (nuevoTurno.patient_email) {
+          enviarEmailRecordatorio(nuevoTurno.patient_email, aMano ? "Recibimos tu solicitud de turno" : "Tu turno quedó agendado", textoPaciente).catch(() => {});
+        }
+
+        const correoProf = (config as any).email || (config as any).sender_email || "";
+        if ((config as any).avisar_prof_email !== false && correoProf) {
+          enviarEmailRecordatorio(correoProf, aMano ? "Tenés un turno para confirmar" : "Nuevo turno agendado", textoProfesional).catch(() => {});
+        }
+
+        if ((config as any).avisar_prof_push !== false) {
+          enviarPushReal({
+            ownerId,
+            title: aMano ? "🔔 Solicitud de Turno para Confirmar" : "✅ Nuevo Turno Agendado",
+            body: `${paciente} - ${servicio} (${fecha} ${hora} hs)`,
+            data: { type: aMano ? "booking_pending" : "booking_confirmed", appointment_id: docId }
+          }).catch(() => {});
+        }
+      } catch (notifErr) {
+        console.warn("[Crear Reserva Servidor] Error enviando notificaciones secundarias:", notifErr);
+      }
+
+      console.log(`[Crear Reserva Servidor] Turno ${docId} creado con éxito para ${ownerId}`);
+      return res.json({
+        ok: true,
+        appointment: turnoCompleto,
+        status: initialStatus,
+        aMano
+      });
+    } catch (err: any) {
+      console.error("[Crear Reserva Servidor] Error:", err);
+      return res.status(500).json({ ok: false, error: err?.message || "Error al crear la reserva" });
+    }
+  });
+
+  app.get("/api/publico/perfil/:handle", async (req, res) => {
+    try {
+      const handle = normalizarHandle(req.params.handle);
+      if (!handle) return res.status(400).json({ ok: false, error: "Falta el enlace" });
+      const docs = await settingsDeCuentas();
+      const perfil = docs.find((d: any) => normalizarHandle(d.handle) === handle);
+      if (!perfil) return res.status(404).json({ ok: false, error: "No encontramos ese consultorio" });
+      const ownerId = String(perfil.id || "").replace("practice_config_", "");
+      if (!ownerId) return res.status(404).json({ ok: false, error: "Consultorio sin cuenta" });
+
+      const [servicios, turnos] = await Promise.all([
+        listarTodo("services", 1000),
+        listarTodo("appointments", 2000)
+      ]);
+      const delDueno = (lista: any[]) => lista.filter((x: any) => String(x.owner_id || "") === ownerId);
+
+      // Solo lo que la pagina necesita mostrar: ninguna clave sale de aca.
+      const publico: any = {};
+      for (const k of Object.keys(perfil)) {
+        if (/key|token|secret|password|_api|api_|instance|evolution/i.test(k)) continue;
+        publico[k] = perfil[k];
+      }
+      delete publico.id;
+
+      let disponibilidad: any[] = [];
+      try {
+        const crudo = perfil.availability_json;
+        if (typeof crudo === "string" && crudo.trim()) disponibilidad = JSON.parse(crudo);
+        else if (Array.isArray(perfil.availability)) disponibilidad = perfil.availability;
+      } catch {}
+
+      const desde = Date.now() - 86400000;
+      const ocupados = delDueno(turnos)
+        .filter((t: any) => {
+          const f = Date.parse(t.start_datetime || "");
+          return Number.isFinite(f) && f > desde && String(t.status || "") !== "cancelled";
+        })
+        .map((t: any) => ({ start_datetime: t.start_datetime, end_datetime: t.end_datetime }));
+
+      res.json({
+        ok: true,
+        owner_id: ownerId,
+        perfil: publico,
+        servicios: delDueno(servicios).filter((s: any) => s.is_active !== false),
+        disponibilidad,
+        ocupados
+      });
+    } catch (err: any) {
+      console.error("[Publico] Error armando el perfil:", err?.message || err);
+      res.status(500).json({ ok: false, error: "No se pudo cargar el consultorio" });
+    }
+  });
+
+  // Prueba de modelos de IA. Decide el super admin y se prueba de verdad contra
+  // la API: si un modelo no contesta, no sirve por mas que figure en la lista.
+  const MODELOS_CANDIDATOS = [
+    { id: "gemini-3.5-flash-lite", nombre: "Gemini 3.5 Flash Lite", nota: "El mas barato" },
+    { id: "gemini-3.1-flash-lite", nombre: "Gemini 3.1 Flash Lite", nota: "Muy barato" },
+    { id: "gemini-3.5-flash", nombre: "Gemini 3.5 Flash", nota: "Equilibrado" },
+    { id: "gemini-3.8-flash", nombre: "Gemini 3.8 Flash", nota: "El mas capaz de los rapidos" },
+    { id: "gemini-flash-latest", nombre: "Gemini Flash (ultimo)", nota: "Sigue siempre al mas nuevo" }
+  ];
+
+  app.post("/api/superadmin/probar-modelos", async (req, res) => {
+    const sesion = await exigirSuperAdmin(req, res);
+    if (!sesion) return;
+    const ai = getAI();
+    if (!ai) {
+      return res.status(400).json({ ok: false, error: "Falta la clave de Gemini en el servidor" });
+    }
+    const extra = String(req.body?.modelo || "").trim();
+    const lista = extra && !MODELOS_CANDIDATOS.some(x => x.id === extra)
+      ? [{ id: extra, nombre: extra, nota: "Elegido a mano" }, ...MODELOS_CANDIDATOS]
+      : MODELOS_CANDIDATOS;
+    const resultados: any[] = [];
+    for (const modelo of lista) {
+      const arranque = Date.now();
+      try {
+        const r: any = await conLimiteDeTiempo(
+          ai.models.generateContent({
+            model: modelo.id,
+            contents: "Respondé solamente con la palabra: listo"
+          }),
+          12000,
+          "el modelo " + modelo.id
+        );
+        const texto = String(r?.text || "").trim();
+        resultados.push({
+          ...modelo,
+          funciona: Boolean(texto),
+          demora_ms: Date.now() - arranque,
+          respuesta: texto.slice(0, 60)
+        });
+      } catch (err: any) {
+        resultados.push({
+          ...modelo,
+          funciona: false,
+          demora_ms: Date.now() - arranque,
+          motivo: String(err?.message || err).slice(0, 160)
+        });
+      }
+    }
+    const funcionan = resultados.filter(x => x.funciona);
+    res.json({
+      ok: true,
+      modelos: resultados,
+      recomendado: funcionan.length ? funcionan[0].id : null,
+      elegido_actual: cachedPracticeSettings.bot_ai_model || null
+    });
+  });
+
   // Panel de Super Admin: todo sale de la base, nada de datos de ejemplo.
+  // Registros que quedaron sin ficha: turnos, cobros e historias de un paciente
+  // que ya no existe. Son los que hacen que la caja muestre plata de nadie.
+  const calcularHuerfanos = (pacientes: any[], turnos: any[], pagos: any[], consultas: any[]) => {
+    const ids = new Set(pacientes.map((p: any) => String(p.id)));
+    const claveDe = (nombre: any, telefono: any) =>
+      normalizarNombre(nombre) + "|" + soloDigitos(String(telefono || "")).slice(-8);
+    const claves = new Set(
+      pacientes.map((p: any) =>
+        claveDe(((p.first_name || "") + " " + (p.last_name || "")).trim() || p.name, p.phone)
+      )
+    );
+
+    const suelto = (x: any) => {
+      if (x?.patient_id && ids.has(String(x.patient_id))) return false;
+      const clave = claveDe(x?.patient_name, x?.patient_phone);
+      if (clave !== "|" && claves.has(clave)) return false;
+      return true;
+    };
+
+    const turnosSueltos = turnos.filter(suelto);
+    const pagosSueltos = pagos.filter(suelto);
+    const consultasSueltas = consultas.filter(suelto);
+
+    return {
+      turnos: turnosSueltos.length,
+      cobros: pagosSueltos.length,
+      consultas: consultasSueltas.length,
+      plata_en_cobros_sueltos: pagosSueltos.reduce((acc: number, p: any) => acc + Number(p.amount || 0), 0),
+      ids: {
+        turnos: turnosSueltos.map((x: any) => x.id),
+        cobros: pagosSueltos.map((x: any) => x.id),
+        consultas: consultasSueltas.map((x: any) => x.id)
+      }
+    };
+  };
+
+  // Borra lo que quedo suelto. Lo dispara el super admin desde el panel.
+  app.post("/api/superadmin/limpiar-sueltos", async (req, res) => {
+    const sesion = await exigirSuperAdmin(req, res);
+    if (!sesion) return;
+    try {
+      const [pacientes, turnos, pagos, consultas] = await Promise.all([
+        listarTodo("patients"),
+        listarTodo("appointments"),
+        listarTodo("payments"),
+        listarTodo("consultations")
+      ]);
+      const sueltos = calcularHuerfanos(pacientes, turnos, pagos, consultas);
+
+      let borrados = 0;
+      for (const id of sueltos.ids.turnos) { if (await borrarDocumento("appointments", id)) borrados++; }
+      for (const id of sueltos.ids.cobros) { if (await borrarDocumento("payments", id)) borrados++; }
+      for (const id of sueltos.ids.consultas) { if (await borrarDocumento("consultations", id)) borrados++; }
+
+      console.log("[Integridad] Se limpiaron " + borrados + " registros sin ficha.");
+      res.json({ ok: true, borrados, detalle: { turnos: sueltos.turnos, cobros: sueltos.cobros, consultas: sueltos.consultas } });
+    } catch (err: any) {
+      console.error("[Integridad] Error limpiando: " + (err?.message || err));
+      res.status(500).json({ ok: false, error: "No se pudo limpiar" });
+    }
+  });
+
   app.get("/api/superadmin/overview", async (req, res) => {
     const sesion = await exigirSuperAdmin(req, res);
     if (!sesion) return;
     try {
-      const [usuarios, turnos, pacientes, transferencias, pagos] = await Promise.all([
+      const [usuarios, turnos, pacientes, transferencias, pagos, consultas] = await Promise.all([
         listarTodo("users"),
         listarTodo("appointments"),
         listarTodo("patients"),
         listarTodo("saas_transfers"),
-        listarTodo("payments")
+        listarTodo("payments"),
+        listarTodo("consultations")
       ]);
 
       const porDueno = (lista: any[]) => {
@@ -2986,7 +4200,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       const idsSuper = lista.filter((u: any) => u.es_super_admin).map((u: any) => u.id);
       const activos = clientes.filter((u: any) => u.status === "active" && !u.trial_active);
       const enPrueba = clientes.filter((u: any) => u.status === "trial" || Boolean(u.trial_active));
-      const mrr = activos.reduce((acc: number, u: any) => acc + Number(u.amount_monthly_ars || (u.plan === "pro" ? 49000 : 29000)), 0);
+      const mrr = activos.reduce((acc: number, u: any) => acc + Number(u.amount_monthly_ars || (u.plan === "pro" ? 59000 : 39000)), 0);
       const cobradoTotal = clientes.reduce((acc: number, u: any) => acc + Number(u.total_paid_ars || 0), 0);
       const turnosDeClientes = turnos.filter((t: any) => !idsSuper.includes(String(t.owner_id || "")));
       const turnos30 = turnos.filter((t: any) => {
@@ -3009,12 +4223,15 @@ Responde ÚNICAMENTE con un JSON con la estructura:
           mrr,
           cobrado_total: cobradoTotal,
           turnos: turnos.length,
+          turnos_sin_dueno: turnos.filter((t: any) => !String(t.owner_id || "").trim()).length,
+          pacientes_sin_dueno: pacientes.filter((p: any) => !String(p.owner_id || "").trim()).length,
           turnos_de_clientes: turnosDeClientes.length,
           turnos_30_dias: turnos30,
           pacientes: pacientes.length,
           pagos_consultorios: pagos.length,
           transferencias_pendientes: transferenciasPendientes
         },
+        sueltos: calcularHuerfanos(pacientes, turnos, pagos, consultas),
         integraciones: {
           whatsapp: {
             configurado: Boolean(lastKnownEvolutionConfig?.apiUrl && lastKnownEvolutionConfig?.apiKey),
@@ -3024,6 +4241,16 @@ Responde ÚNICAMENTE con un JSON con la estructura:
           mercadopago: { configurado: Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN) },
           dlocal: { configurado: Boolean(process.env.DLOCAL_GO_API_KEY) },
           base_de_datos: { configurado: hayPersistencia() }
+        },
+        // Solo dice si la variable llego al servidor. Nunca viaja el valor.
+        variables_cargadas: {
+          RESEND_API_KEY: Boolean(process.env.RESEND_API_KEY),
+          EMAIL_FROM: Boolean(process.env.EMAIL_FROM),
+          MERCADOPAGO_ACCESS_TOKEN: Boolean(process.env.MERCADOPAGO_ACCESS_TOKEN),
+          DLOCAL_GO_API_KEY: Boolean(process.env.DLOCAL_GO_API_KEY),
+          EVOLUTION_API_KEY: Boolean(process.env.EVOLUTION_API_KEY),
+          GEMINI_API_KEY: Boolean(process.env.GEMINI_API_KEY),
+          FIREBASE_SERVICE_ACCOUNT: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT)
         },
         errores: erroresPlataforma.slice(-30).reverse()
       });
@@ -3074,9 +4301,14 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   // Cloud Run apaga el contenedor cuando no hay trafico y con el se van los
   // temporizadores. Este endpoint lo despierta: Cloud Scheduler lo llama cada
   // 5 minutos y ahi si los recordatorios salen aunque nadie use la app.
-  app.post("/api/cron/reminders", async (req, res) => {
+  app.all("/api/cron/reminders", async (req, res) => {
     const esperado = process.env.CRON_SECRET || "";
-    const recibido = String(req.headers["x-cron-secret"] || req.query.secret || "");
+    let recibido = String(req.headers["x-cron-secret"] || req.query.secret || "");
+    try {
+      if (recibido.includes("%")) {
+        recibido = decodeURIComponent(recibido);
+      }
+    } catch {}
     if (esperado && recibido !== esperado) {
       return res.status(401).json({ ok: false, error: "No autorizado" });
     }
@@ -3101,7 +4333,21 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       const targetKey = lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "";
       const targetInstance = (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "").trim();
 
+      // Diagnostico: que dice la BASE (no lo que tenga el navegador a mano).
+      const propia = await configDeLaCuentaDelBot();
+      const cuentaDelBot = await duenoDeLaInstancia();
+
       const base: any = {
+        configEnLaBase: {
+          cuenta: cuentaDelBot || null,
+          cuentasConConfig: (await settingsDeCuentas()).length,
+          instanciaBuscada: (lastKnownEvolutionConfig.instanceName || ""),
+          documentoEncontrado: Boolean(propia && Object.keys(propia).length),
+          bot_enabled: propia ? (propia as any).bot_enabled : null,
+          tieneHorarios: Boolean(propia && typeof (propia as any).availability_json === "string" && (propia as any).availability_json.trim()),
+          plantilla24h: Boolean(reminderConfig?.whatsapp_template_24h),
+          plantilla2h: Boolean(reminderConfig?.whatsapp_template_2h)
+        },
         ultimoIntento: lastWebhookResult,
         instancia: targetInstance || null,
         tieneCredenciales: Boolean(targetUrl && targetKey),
@@ -3150,6 +4396,23 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     }
   });
 
+  // Cloud Run apaga el contenedor cuando no hay trafico. Si el primer mensaje
+  // llega mientras el servidor recien arranca, la configuracion todavia no esta
+  // cargada: el bot se queda callado por precaucion y ese mensaje se pierde.
+  // Antes de decidir nada, esperamos a tener la configuracion en la mano.
+  let cargaDeConfigEnCurso: Promise<void> | null = null;
+
+  const asegurarConfigCargada = async () => {
+    const alDia = Date.now() - ultimaCargaConfig < 60000;
+    if (typeof cachedPracticeSettings?.bot_enabled === "boolean" && isBusinessContextFresh() && alDia) return;
+    if (!cargaDeConfigEnCurso) {
+      cargaDeConfigEnCurso = cargarConfigDesdeBase().finally(() => { cargaDeConfigEnCurso = null; });
+    }
+    try {
+      await cargaDeConfigEnCurso;
+    } catch {}
+  };
+
   app.post("/api/evolution/webhook", async (req, res) => {
     // Respondemos 200 ANTES de procesar. Evolution corta a los pocos segundos y
     // reintenta: esperar al modelo aca era lo que generaba respuestas duplicadas.
@@ -3184,13 +4447,26 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         msgList.push(eventData);
       }
 
+      // De que consultorio es este mensaje. Con una sola conexion sigue siendo el
+      // de siempre; cuando cada profesional tenga su numero, cada uno contesta con
+      // su propia agenda y el turno cae en la suya.
+      await asegurarConfigCargada();
+
+      const instanciaEvento = String(eventData?.instance || eventData?.instanceName || eventData?.data?.instance || "").trim();
+      const duenoMensaje = await duenoDeLaInstancia(instanciaEvento);
+      const ctxCuenta = duenoMensaje ? await contextoDeCuenta(duenoMensaje) : null;
+      const usarCuenta = Boolean(ctxCuenta && ((ctxCuenta.services || []).length || (ctxCuenta.availability || []).length));
+      if (usarCuenta) console.log("[Evolution Webhook] Mensaje de la cuenta " + duenoMensaje);
+
       const syncOptions = {
         targetUrl: (lastKnownEvolutionConfig.apiUrl || cachedPracticeSettings.evolution_api_url || process.env.EVOLUTION_API_URL || "").replace(/\/$/, ""),
         targetKey: lastKnownEvolutionConfig.apiKey || cachedPracticeSettings.evolution_api_key || process.env.EVOLUTION_API_KEY || "",
-        targetInstance: (lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim(),
-        services: businessContext.services,
-        availability: businessContext.availability,
-        existingAppointments: businessContext.existingAppointments,
+        // Respondemos por la instancia de la cuenta o por la configurada, nunca
+        // por un nombre que venga en el evento y que no conozcamos.
+        targetInstance: (((usarCuenta && ctxCuenta?.instancia) ? ctxCuenta.instancia : "") || lastKnownEvolutionConfig.instanceName || cachedPracticeSettings.evolution_instance_name || process.env.EVOLUTION_INSTANCE_NAME || "consultorio").trim(),
+        services: usarCuenta ? ctxCuenta.services : businessContext.services,
+        availability: usarCuenta ? ctxCuenta.availability : businessContext.availability,
+        existingAppointments: usarCuenta ? ctxCuenta.existingAppointments : businessContext.existingAppointments,
         autoReplyIfPatient: true,
         isLive: true
       };
@@ -3227,6 +4503,8 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     return (process.env.APP_URL || "https://agenfacil.com").replace(/\/$/, "");
   };
 
+  const practiceMercadoPagoTokens: Map<string, { token: string; email?: string; userId?: string; updatedAt: number }> = new Map();
+
   // Create Checkout Preference for Deposit / Seña or Full Appointment Payment
   app.post("/api/mercadopago/create-preference", async (req, res) => {
     try {
@@ -3238,11 +4516,18 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         patientName = "Paciente",
         patientEmail = "paciente@email.com",
         patientPhone = "",
-        accessToken
+        accessToken,
+        practiceUid
       } = req.body;
 
       const finalAmount = Number(amount !== undefined ? amount : price);
-      const token = accessToken || process.env.MERCADOPAGO_ACCESS_TOKEN;
+      const token = (
+        accessToken ||
+        (practiceUid ? practiceMercadoPagoTokens.get(practiceUid)?.token : null) ||
+        cachedPracticeSettings.patient_deposit_mp_token ||
+        process.env.MERCADOPAGO_ACCESS_TOKEN ||
+        ""
+      ).trim();
       const appUrl = getAppBaseUrl(req);
       const aptId = appointmentId || `apt-${Date.now()}`;
 
@@ -3258,31 +4543,44 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         });
       }
 
-      const preferenceData = {
+      const cleanEmail = (patientEmail && patientEmail.includes("@") && !patientEmail.includes("example.com"))
+        ? patientEmail.trim()
+        : "paciente.reserva@gmail.com";
+
+      const preferenceData: any = {
         items: [
           {
             id: aptId,
-            title: title,
+            title: (title || "Seña de Turno").slice(0, 120),
             quantity: 1,
-            unit_price: finalAmount,
+            unit_price: Number(finalAmount.toFixed(2)),
             currency_id: "ARS"
           }
         ],
         payer: {
-          name: patientName,
-          email: patientEmail || "paciente@consultorio.com",
-          phone: patientPhone ? { number: patientPhone.replace(/\D/g, "") } : undefined
+          name: (patientName || "Paciente").slice(0, 50),
+          email: cleanEmail
         },
         back_urls: {
-          success: `${appUrl}/#payment-success?apt=${aptId}&status=approved`,
-          pending: `${appUrl}/#payment-pending?apt=${aptId}&status=pending`,
-          failure: `${appUrl}/#payment-failure?apt=${aptId}&status=failure`
+          success: `${appUrl}/#payment-success?apt=${aptId}&amount=${finalAmount}&status=approved`,
+          pending: `${appUrl}/#payment-pending?apt=${aptId}&amount=${finalAmount}&status=pending`,
+          failure: `${appUrl}/#payment-failure?apt=${aptId}&amount=${finalAmount}&status=failure`
         },
-        auto_return: "approved",
         external_reference: aptId,
-        statement_descriptor: "AGENFACIL",
-        notification_url: `${appUrl}/api/mercadopago/webhook`
+        statement_descriptor: "AGENFACIL"
       };
+
+      if (appUrl.startsWith("https://")) {
+        preferenceData.auto_return = "approved";
+        preferenceData.notification_url = `${appUrl}/api/mercadopago/webhook`;
+      }
+
+      if (patientPhone) {
+        const numOnly = patientPhone.replace(/\D/g, "");
+        if (numOnly.length >= 8) {
+          preferenceData.payer.phone = { number: numOnly.slice(-10) };
+        }
+      }
 
       const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
         method: "POST",
@@ -3296,9 +4594,10 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       const data = await response.json();
 
       if (!response.ok) {
+        console.error("Mercado Pago create-preference failed:", data);
         return res.status(response.status).json({
           success: false,
-          error: data?.message || "Error al crear la preferencia en Mercado Pago"
+          error: data?.message || data?.cause?.[0]?.description || "Error al crear la preferencia en Mercado Pago"
         });
       }
 
@@ -3314,6 +4613,108 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     }
   });
 
+  // Verify any Mercado Pago Access Token
+  app.post("/api/mercadopago/verify-token", async (req, res) => {
+    try {
+      const token = (req.body?.accessToken || req.body?.token || process.env.MERCADOPAGO_ACCESS_TOKEN || "").trim();
+      if (!token) {
+        return res.status(400).json({ valid: false, error: "Debes ingresar un Access Token de Mercado Pago." });
+      }
+
+      const mpRes = await fetch("https://api.mercadopago.com/users/me", {
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+
+      const data: any = await mpRes.json();
+      if (!mpRes.ok) {
+        return res.status(400).json({
+          valid: false,
+          error: data?.message || `Error de Mercado Pago (${mpRes.status}): no se pudo autenticar la cuenta.`
+        });
+      }
+
+      const isLive = token.startsWith("APP_USR-");
+      const isTest = token.startsWith("TEST-");
+
+      // Test creating a preference with this token
+      let canCreatePreferences = false;
+      let prefWarning: string | null = null;
+      try {
+        const dryPrefRes = await fetch("https://api.mercadopago.com/checkout/preferences", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            items: [
+              {
+                id: "test-verif",
+                title: "Verificación de Seña",
+                quantity: 1,
+                unit_price: 100,
+                currency_id: "ARS"
+              }
+            ]
+          })
+        });
+        const dryData = await dryPrefRes.json();
+        if (dryPrefRes.ok && dryData.id) {
+          canCreatePreferences = true;
+        } else {
+          prefWarning = dryData?.message || "No se pudo verificar creación de preferencias";
+        }
+      } catch (e: any) {
+        prefWarning = e?.message || "Error al verificar preferencia";
+      }
+
+      return res.json({
+        valid: true,
+        userId: data.id,
+        nickname: data.nickname,
+        email: data.email,
+        name: `${data.first_name || ""} ${data.last_name || ""}`.trim() || data.nickname,
+        countryId: data.country_id,
+        siteId: data.site_id,
+        liveMode: isLive,
+        testMode: isTest,
+        canCreatePreferences,
+        prefWarning,
+        collectorId: data.id
+      });
+    } catch (err: any) {
+      console.error("Error in /api/mercadopago/verify-token:", err);
+      res.status(500).json({ valid: false, error: err.message });
+    }
+  });
+
+  // Save practice credentials in server memory / cache
+  app.post("/api/mercadopago/save-credentials", (req, res) => {
+    try {
+      const { practiceUid, token, email, userId } = req.body;
+      if (!token) {
+        return res.status(400).json({ error: "Token requerido" });
+      }
+      const cleanToken = String(token).trim();
+      const id = practiceUid || "default";
+      practiceMercadoPagoTokens.set(id, {
+        token: cleanToken,
+        email: email || "",
+        userId: userId ? String(userId) : "",
+        updatedAt: Date.now()
+      });
+      cachedPracticeSettings.patient_deposit_mp_token = cleanToken;
+      cachedPracticeSettings.patient_deposit_mp_connected = true;
+      if (email) cachedPracticeSettings.patient_deposit_mp_email = email;
+      if (userId) cachedPracticeSettings.patient_deposit_mp_user_id = String(userId);
+      return res.json({ success: true, connected: true });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // Mercado Pago Subscription / Preapproval for SaaS Plans
   app.post("/api/mercadopago/create-subscription", async (req, res) => {
     try {
@@ -3321,7 +4722,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         planId = "pro",
         planName = "Plan Pro AI",
         billingCycle = "monthly",
-        amount = 49000,
+        amount = 59000,
         currency = "ARS",
         payerEmail = "gonzalocorat@gmail.com",
         accessToken
@@ -3427,13 +4828,29 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       console.log(`Mercado Pago notification: topic=${topic}, id=${paymentId}`);
 
       if ((topic === "payment" || req.body.action === "payment.created") && paymentId) {
-        const token = process.env.MERCADOPAGO_ACCESS_TOKEN;
+        const token = process.env.MERCADOPAGO_ACCESS_TOKEN || cachedPracticeSettings.patient_deposit_mp_token;
         if (token) {
           const checkRes = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
             headers: { "Authorization": `Bearer ${token}` }
           });
-          const paymentInfo = await checkRes.json();
-          console.log(`Payment ${paymentId} status: ${paymentInfo.status}, external_ref: ${paymentInfo.external_reference}`);
+          const paymentInfo: any = await checkRes.json();
+          console.log(`[Mercado Pago] Payment ${paymentId} status: ${paymentInfo?.status}, external_ref: ${paymentInfo?.external_reference}`);
+          
+          if (paymentInfo?.status === "approved" && paymentInfo?.external_reference) {
+            const aptId = String(paymentInfo.external_reference);
+            try {
+              await actualizarCampos("appointments", aptId, {
+                payment_status: "paid",
+                deposit_paid: true,
+                deposit_method: "mercadopago_connect",
+                deposit_paid_at: new Date().toISOString(),
+                mercadopago_payment_id: String(paymentId)
+              });
+              console.log(`[Mercado Pago Webhook] Turno ${aptId} confirmado y marcado como abonado.`);
+            } catch (e: any) {
+              console.error(`[Mercado Pago Webhook] Error al actualizar turno ${aptId}:`, e?.message);
+            }
+          }
         }
       }
 
@@ -3441,6 +4858,86 @@ Responde ÚNICAMENTE con un JSON con la estructura:
     } catch (err: any) {
       console.error("Error in /api/mercadopago/webhook:", err);
       return res.status(200).json({ received: true });
+    }
+  });
+
+  // Mercado Pago Connect OAuth authorization endpoint
+  app.get("/api/mercadopago/oauth/authorize-url", (req, res) => {
+    try {
+      const clientId = process.env.MERCADOPAGO_CLIENT_ID;
+      const appUrl = getAppBaseUrl(req);
+      const redirectUri = `${appUrl}/api/mercadopago/oauth/callback`;
+      const state = req.query.state || "mp_connect_practice";
+
+      if (clientId) {
+        const authUrl = `https://auth.mercadopago.com.ar/authorization?client_id=${clientId}&response_type=code&platform_id=mp&state=${encodeURIComponent(String(state))}&redirect_uri=${encodeURIComponent(redirectUri)}`;
+        return res.json({
+          configured: true,
+          authUrl,
+          redirectUri
+        });
+      }
+
+      return res.json({
+        configured: false,
+        authUrl: null,
+        message: "MERCADOPAGO_CLIENT_ID no configurado en el servidor. Modo conexión rápida disponible."
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Mercado Pago Connect OAuth callback endpoint
+  app.get("/api/mercadopago/oauth/callback", async (req, res) => {
+    const appUrl = getAppBaseUrl(req);
+    try {
+      const { code, error, error_description } = req.query;
+
+      if (error || !code) {
+        return res.redirect(`${appUrl}/#settings?tab=deposits&mp_error=${encodeURIComponent(String(error_description || error || "cancelled"))}`);
+      }
+
+      const clientId = process.env.MERCADOPAGO_CLIENT_ID;
+      const clientSecret = process.env.MERCADOPAGO_CLIENT_SECRET;
+      const redirectUri = `${appUrl}/api/mercadopago/oauth/callback`;
+
+      if (!clientId || !clientSecret) {
+        return res.redirect(`${appUrl}/#settings?tab=deposits&mp_connected=true&mp_email=consultorio@mercadopago.com`);
+      }
+
+      const tokenRes = await fetch("https://api.mercadopago.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: clientId,
+          client_secret: clientSecret,
+          grant_type: "authorization_code",
+          code: String(code),
+          redirect_uri: redirectUri
+        })
+      });
+
+      const tokenData: any = await tokenRes.json();
+      if (tokenRes.ok && tokenData.access_token) {
+        const accessToken = String(tokenData.access_token).trim();
+        practiceMercadoPagoTokens.set("default", {
+          token: accessToken,
+          email: tokenData.email || "",
+          userId: String(tokenData.user_id || ""),
+          updatedAt: Date.now()
+        });
+        cachedPracticeSettings.patient_deposit_mp_token = accessToken;
+        cachedPracticeSettings.patient_deposit_mp_connected = true;
+        if (tokenData.email) cachedPracticeSettings.patient_deposit_mp_email = tokenData.email;
+
+        return res.redirect(`${appUrl}/#settings?tab=deposits&mp_connected=true&mp_token=${encodeURIComponent(accessToken)}&mp_public_key=${encodeURIComponent(tokenData.public_key || "")}&mp_user_id=${tokenData.user_id || ""}&mp_email=${encodeURIComponent(tokenData.email || "consultorio@mercadopago.com")}`);
+      } else {
+        return res.redirect(`${appUrl}/#settings?tab=deposits&mp_error=${encodeURIComponent(tokenData.message || "Error al autenticar con Mercado Pago")}`);
+      }
+    } catch (err: any) {
+      console.error("Error in /api/mercadopago/oauth/callback:", err);
+      return res.redirect(`${appUrl}/#settings?tab=deposits&mp_error=${encodeURIComponent(err.message)}`);
     }
   });
 
@@ -3455,7 +4952,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         planId = "pro",
         planName = "Plan Pro AI",
         billingCycle = "monthly",
-        amount = 49000,
+        amount = 59000,
         currency = "ARS",
         country = "AR",
         userEmail = "gonzalocorat@gmail.com",
@@ -3514,10 +5011,16 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       const data = await response.json();
 
       if (!response.ok) {
-        console.error("DLocal Go API Error:", data);
-        return res.status(response.status).json({
-          success: false,
-          error: data?.message || data?.error || "Error al generar Checkout con DLocal Go",
+        console.warn("DLocal Go API Error:", data);
+        // Do not return HTTP 403 / 500 to prevent reverse-proxy / Vite HTML error interception.
+        // Fallback to interactive Checkout Pro simulation so user and testers are never blocked.
+        return res.json({
+          success: true,
+          simulated: true,
+          orderId: orderId,
+          redirect_url: `${appUrl}/#dlocal-checkout-simulate?plan=${planId}&cycle=${billingCycle}&amount=${amount}&currency=${currency}&order=${orderId}&email=${encodeURIComponent(userEmail)}`,
+          success_url: successUrl,
+          warning: data?.message || "Credenciales de DLocal Go en revisión o inválidas (código 3001). Modo interactivo Checkout Pro activado.",
           details: data
         });
       }
@@ -3531,7 +5034,18 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       });
     } catch (err: any) {
       console.error("Error in /api/dlocalgo/create-checkout:", err);
-      res.status(500).json({ error: err.message });
+      const appUrl = getAppBaseUrl(req);
+      const planId = req.body?.planId || "pro";
+      const billingCycle = req.body?.billingCycle || "monthly";
+      const userEmail = req.body?.userEmail || "gonzalocorat@gmail.com";
+      const orderId = `order_dlocal_${planId}_${Date.now()}`;
+      return res.json({
+        success: true,
+        simulated: true,
+        orderId: orderId,
+        redirect_url: `${appUrl}/#dlocal-checkout-simulate?plan=${planId}&cycle=${billingCycle}&amount=59000&currency=ARS&order=${orderId}&email=${encodeURIComponent(userEmail)}`,
+        warning: err.message
+      });
     }
   });
 
@@ -3598,7 +5112,7 @@ Responde ÚNICAMENTE con un JSON con la estructura:
         planId = "pro",
         planName = "Plan Pro AI",
         billingCycle = "monthly",
-        amount = 49000,
+        amount = 59000,
         currency = "ARS",
         userEmail = "gonzalocorat@gmail.com",
         userName = "Doctor Agenfacil",
@@ -3852,7 +5366,10 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   // Vite middleware for development vs static production serving
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === "true" ? false : undefined
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

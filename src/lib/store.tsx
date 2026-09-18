@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import {
   Appointment,
+  AppointmentStatus,
   Patient,
   Service,
   DayAvailability,
@@ -39,6 +40,7 @@ import {
   sendBrowserNotification,
   NotificationPermissionStatus
 } from './browser-notifications';
+import { sincronizarTokenSiPermitido } from './fcm';
 import {
   INITIAL_PRACTICE_SETTINGS,
   INITIAL_SERVICES,
@@ -82,6 +84,8 @@ import {
   subscribeToPatients,
   subscribeToServices,
   subscribeToSettings,
+  saveReminderConfigToFirestore,
+  subscribeToReminderConfig,
   subscribeToPayments,
   subscribeToConsultations,
   subscribeToWaitlist,
@@ -105,7 +109,10 @@ import {
   createUserWithEmailAndPassword,
   updateProfile,
   esSuperAdmin,
-  obtenerPanelSuperAdmin
+  obtenerPanelSuperAdmin,
+  cargarPerfilPublico,
+  fijarDuenoPublico,
+  guardarDisponibilidadDeLaCuenta
 } from './firestore-sync';
 
 export const isAppointmentPastSchedule = (apt: Appointment, nowMs: number = Date.now()): boolean => {
@@ -535,7 +542,18 @@ export function normalizeDniString(dni?: string): string {
   return dni.replace(/[^a-zA-Z0-9]/g, '').toLowerCase().trim();
 }
 
-export function isSamePatientRecord(p1: Partial<Patient>, p2: Partial<Patient>): boolean {
+export // "juan" es el comienzo de "juan perez" -> misma persona con el nombre incompleto.
+// "luis" NO es el comienzo de "luisa": son dos personas.
+function mismoNombreOPrefijoDePalabras(a: string, b: string): boolean {
+  const pa = a.split(' ').filter(Boolean);
+  const pb = b.split(' ').filter(Boolean);
+  if (!pa.length || !pb.length) return false;
+  const corto = pa.length <= pb.length ? pa : pb;
+  const largo = pa.length <= pb.length ? pb : pa;
+  return corto.every((palabra, i) => palabra === largo[i]);
+}
+
+function isSamePatientRecord(p1: Partial<Patient>, p2: Partial<Patient>): boolean {
   if (p1.id && p2.id && p1.id === p2.id) return true;
 
   const d1 = normalizeDniString(p1.dni);
@@ -553,10 +571,10 @@ export function isSamePatientRecord(p1: Partial<Patient>, p2: Partial<Patient>):
     (ph1 === ph2 || ph1.endsWith(ph2) || ph2.endsWith(ph1))
   );
 
-  // Exact full name match (at least 4 characters)
+  // Nombre completo identico. Antes alcanzaba con que UNO de los dos no tuviera
+  // telefono: dos homonimos distintos terminaban siendo la misma ficha.
   if (n1 && n2 && n1.length >= 4 && n1 === n2) {
-    // If the full names are identical, and phones match OR at least one has no phone
-    if (phonesMatch || !ph1 || !ph2) {
+    if (phonesMatch || (!ph1 && !ph2)) {
       if (!d1 || !d2 || d1 === d2) {
         return true;
       }
@@ -570,9 +588,11 @@ export function isSamePatientRecord(p1: Partial<Patient>, p2: Partial<Patient>):
     return true;
   }
 
-  // If phones match AND both names are provided:
-  // ONLY match if one name contains the other (e.g. "Juan" and "Juan Perez" or "Juan Perez" and "Juan Perez Gomez")
-  if (phonesMatch && n1 && n2 && (n1.includes(n2) || n2.includes(n1))) {
+  // Mismo telefono y un nombre es el comienzo del otro ("Juan" y "Juan Perez").
+  // Se compara PALABRA POR PALABRA. Antes se comparaba como texto suelto y eso
+  // unia personas distintas de una misma familia: "Luis" con "Luisa", o
+  // "Ana" con "Mariana", que comparten el telefono de casa.
+  if (phonesMatch && n1 && n2 && mismoNombreOPrefijoDePalabras(n1, n2)) {
     return true;
   }
 
@@ -697,6 +717,18 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         if (parsed.sender_email_alias && (parsed.sender_email_alias.includes('Gonzalo') || parsed.sender_email_alias.includes('AgendaPro'))) {
           parsed.sender_email_alias = 'Consultorio Médico - Agenfacil';
         }
+        // Los turnos ya no piden confirmacion al paciente: las plantillas viejas
+        // que la pedian se reemplazan solas por las recomendadas.
+        const pidenConfirmacion = (texto: any) =>
+          typeof texto === 'string' &&
+          /\{link_confirmar\}|responde \*?1\*?|confirmar tu asistencia/i.test(texto);
+        if (!parsed.whatsapp_template_24h || pidenConfirmacion(parsed.whatsapp_template_24h)) {
+          parsed.whatsapp_template_24h = DEFAULT_REMINDER_CONFIG.whatsapp_template_24h;
+        }
+        if (!parsed.whatsapp_template_2h || pidenConfirmacion(parsed.whatsapp_template_2h)) {
+          parsed.whatsapp_template_2h = DEFAULT_REMINDER_CONFIG.whatsapp_template_2h;
+        }
+        parsed.require_confirmation = false;
         return parsed;
       }
       return DEFAULT_REMINDER_CONFIG;
@@ -772,10 +804,16 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     return null;
   });
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  // El uid que confirma Firebase, no el que quedo guardado en el navegador.
+  // De esto depende a que documento de configuracion nos suscribimos: si nos
+  // suscribimos antes de que Firebase responda, terminamos leyendo el documento
+  // viejo y generico, y el bot figura pausado aunque en la cuenta este activo.
+  const [uidAuth, setUidAuth] = useState<string | null>(null);
 
   // Synchronize with Firebase Auth and Firestore in real-time
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUidAuth(firebaseUser?.uid || null);
       if (firebaseUser && firebaseUser.email) {
         const emailLower = firebaseUser.email.toLowerCase();
         const isSuper = esSuperAdmin(emailLower, firebaseUser.uid);
@@ -798,6 +836,9 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         try {
           localStorage.setItem('agendapro_current_user_v1', JSON.stringify(session));
         } catch {}
+
+        // Sincronizar token FCM para alertas móviles si las notificaciones están concedidas
+        sincronizarTokenSiPermitido(firebaseUser.uid);
 
         setPracticeSettings(prev => ({
           ...prev,
@@ -931,7 +972,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         status: isSuper ? 'active' : 'trial',
         subscription_started_at: new Date().toISOString(),
         next_billing_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
-        amount_monthly_ars: 49000,
+        amount_monthly_ars: 59000,
         payment_method: 'mercadopago',
         last_payment_date: '-',
         last_payment_amount: 0,
@@ -1072,7 +1113,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
     return () => unsub();
-  }, [currentUser?.uid]);
+  }, [uidAuth]);
 
   // Panel de Super Admin: los numeros los calcula el servidor contra la base real,
   // y valida la sesion antes de contestar.
@@ -1093,6 +1134,51 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   useEffect(() => {
     refrescarPanelSuperAdmin();
   }, [refrescarPanelSuperAdmin]);
+
+  // Enlace publico /u/<handle>. Antes el handle de la direccion no se usaba:
+  // el paciente veia la configuracion que tuviera el navegador a mano y el turno
+  // quedaba sin dueño. Ahora el servidor dice de quien es ese consultorio.
+  const [perfilPublico, setPerfilPublico] = useState<any | null>(null);
+
+  useEffect(() => {
+    const ruta = window.location.pathname || '';
+    const hash = window.location.hash || '';
+    const cruda = ruta.startsWith('/u/') ? ruta.slice(3) : (hash.startsWith('#/u/') ? hash.slice(4) : '');
+    const handle = cruda.split('/')[0].split('?')[0].trim();
+    if (!handle) return;
+    // Si el profesional esta viendo su propio enlace, no hace falta pedir nada.
+    // Si abre el de otro consultorio, si: antes veia su propia configuracion.
+    const miHandle = String(practiceSettings.handle || '').toLowerCase().trim();
+    if (currentUser && (!miHandle || miHandle === handle.toLowerCase())) return;
+    let vigente = true;
+    cargarPerfilPublico(handle).then((datos: any) => {
+      if (!vigente || !datos) return;
+      fijarDuenoPublico(datos.owner_id || null);
+      setPerfilPublico(datos);
+      if (datos.perfil && datos.perfil.practice_name) {
+        setPracticeSettings(prev => ({ ...prev, ...datos.perfil }));
+      }
+      if (Array.isArray(datos.servicios) && datos.servicios.length) {
+        setServices(datos.servicios);
+      }
+      if (Array.isArray(datos.disponibilidad) && datos.disponibilidad.length) {
+        setAvailability(datos.disponibilidad);
+      }
+      if (Array.isArray(datos.ocupados)) {
+        // Solo para no ofrecer horarios ya tomados: sin datos del paciente.
+        setAppointments(datos.ocupados.map((o: any, i: number) => ({
+          id: 'ocupado-' + i,
+          patient_id: '',
+          patient_name: 'Horario reservado',
+          service_name: '',
+          start_datetime: o.start_datetime,
+          end_datetime: o.end_datetime,
+          status: 'confirmed'
+        })) as any);
+      }
+    });
+    return () => { vigente = false; };
+  }, [currentUser, practiceSettings.handle]);
 
   const updateSaasTenant = async (id: string, updates: Partial<SaasTenantUser>) => {
     setSaasTenants(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
@@ -1142,7 +1228,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       trial_active: false,
       is_permanent: isPermanent,
       access_expires_at: expiresAt,
-      amount_monthly_ars: plan === 'pro' ? 49000 : 29000,
+      amount_monthly_ars: plan === 'pro' ? 59000 : 39000,
       next_billing_date: nextBilling
     };
 
@@ -1223,7 +1309,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         total_paid_ars: currentTotalPaid + transfer.amount,
         next_billing_date: nextBilling,
         access_expires_at: expiresAt,
-        amount_monthly_ars: transfer.plan === 'pro' ? 49000 : 29000
+        amount_monthly_ars: transfer.plan === 'pro' ? 59000 : 39000
       };
       setSaasTenants(prev => prev.map(t => t.id === targetTenant.id ? { ...t, ...tenantUpdates } : t));
       await updateUserInFirestore(targetTenant.id, tenantUpdates);
@@ -1543,6 +1629,43 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     localStorage.setItem(STORAGE_KEYS.CASH_MOVEMENTS, JSON.stringify(cashMovements));
   }, [cashMovements]);
 
+  // Sincronización continua: todo turno marcado como pagado genera automáticamente su comprobante en /Cobros si no existe
+  useEffect(() => {
+    if (!appointments || appointments.length === 0) return;
+    const paidWithoutPayment = appointments.filter(a =>
+      a.payment_status === 'paid' &&
+      a.status !== 'cancelled' &&
+      !payments.some(p => p.appointment_id === a.id)
+    );
+
+    if (paidWithoutPayment.length > 0) {
+      const generatedPayments: PaymentRecord[] = paidWithoutPayment.map((apt, idx) => {
+        const nextNum = payments.length + 101 + idx;
+        const receipt_number = `REC-${String(nextNum).padStart(5, '0')}`;
+        const date = apt.start_datetime || new Date().toISOString();
+        const newPay: PaymentRecord = {
+          id: `pay-sync-${apt.id}`,
+          receipt_number,
+          appointment_id: apt.id,
+          patient_id: apt.patient_id || 'pat-unknown',
+          patient_name: apt.patient_name,
+          patient_dni: apt.patient_dni,
+          patient_phone: apt.patient_phone,
+          amount: apt.service_price || 0,
+          method: (apt as any).confirmed_payment_method || (apt as any).deposit_method || 'transfer',
+          concept: `Consulta / Sesión: ${apt.service_name || 'Servicio'}`,
+          date,
+          status: 'completed',
+          insurance_provider: apt.patient_insurance
+        };
+        savePaymentToFirestore(newPay);
+        return newPay;
+      });
+
+      setPayments(prev => [...generatedPayments, ...prev]);
+    }
+  }, [appointments]);
+
   // Save notifications to localStorage
   useEffect(() => {
     try {
@@ -1769,7 +1892,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const nowMs = Date.now();
         const processedAppointments = validList.map(apt => {
           if (!isExampleItem(apt) && apt.status !== 'cancelled' && apt.status !== 'completed' && isAppointmentPastSchedule(apt, nowMs)) {
-            const completedApt: Appointment = { ...apt, status: 'completed' };
+            const completedApt: Appointment = { ...apt, status: 'completed', patient_confirmed: true };
             saveAppointmentToFirestore(completedApt);
             return completedApt;
           }
@@ -1778,52 +1901,10 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
         setAppointments(processedAppointments);
 
-        // Ensure every real appointment has an associated patient record in patients
-        setPatients(currentPatients => {
-          let updated = false;
-          let list = [...currentPatients];
-
-          validList.forEach(apt => {
-            if (!apt.patient_name || !apt.patient_name.trim() || isExampleItem(apt)) return;
-            const nameParts = apt.patient_name.trim().split(' ');
-            const dummy: Partial<Patient> = {
-              id: apt.patient_id,
-              first_name: nameParts[0] || 'Paciente',
-              last_name: nameParts.slice(1).join(' ') || '',
-              phone: apt.patient_phone || '',
-              dni: apt.patient_dni || ''
-            };
-
-            const exists = list.some(p => isSamePatientRecord(p, dummy));
-            if (!exists) {
-              const newPatId = apt.patient_id && !apt.patient_id.startsWith('pat-web-') && !apt.patient_id.startsWith('pat-bot-')
-                ? apt.patient_id
-                : `pat-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-
-              const recoveredPatient: Patient = {
-                id: newPatId,
-                first_name: nameParts[0] || 'Paciente',
-                last_name: nameParts.slice(1).join(' ') || '',
-                phone: apt.patient_phone || '',
-                email: apt.patient_email || undefined,
-                dni: apt.patient_dni || undefined,
-                insurance_provider: apt.patient_insurance || undefined,
-                relationship_status: apt.status === 'completed' ? 'active' : 'prospect',
-                inquiry_channel: apt.origin === 'bot_whatsapp' ? 'whatsapp' : apt.origin === 'public_booking' ? 'web' : 'manual',
-                first_inquiry_at: apt.start_datetime || new Date().toISOString(),
-                total_appointments: 1,
-                completed_appointments_count: apt.status === 'completed' ? 1 : 0,
-                created_at: (apt as any).created_at || new Date().toISOString()
-              };
-
-              savePatientToFirestore(recoveredPatient);
-              list = [recoveredPatient, ...list];
-              updated = true;
-            }
-          });
-
-          return updated ? list : currentPatients;
-        });
+        // NO recreamos fichas a partir de los turnos. Antes, por cada turno sin
+        // ficha se creaba una y se guardaba en la base: al borrar un cliente el
+        // turno seguia existiendo y la ficha volvia a aparecer sola, una y otra vez.
+        // Las fichas se crean donde corresponde: al agendar (bot, portal o a mano).
       }
     });
 
@@ -1845,6 +1926,15 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const unsubSettings = subscribeToSettings((remoteSettings) => {
       if (remoteSettings && remoteSettings.practice_name) {
         setPracticeSettings(prev => ({ ...prev, ...remoteSettings }));
+        // Los horarios viajan en el mismo documento: asi el profesional los ve
+        // desde cualquier navegador y la pagina publica tambien.
+        const crudo = (remoteSettings as any).availability_json;
+        if (typeof crudo === 'string' && crudo.trim()) {
+          try {
+            const lista = JSON.parse(crudo);
+            if (Array.isArray(lista) && lista.length) setAvailability(lista);
+          } catch {}
+        }
       }
     });
 
@@ -1884,6 +1974,12 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       }
     });
 
+    const unsubReminderConfig = subscribeToReminderConfig((remoteReminderConfig) => {
+      if (remoteReminderConfig) {
+        setReminderConfig(prev => ({ ...prev, ...remoteReminderConfig }));
+      }
+    });
+
     // Recurring check every 30 seconds to automatically finalize appointments when their end time passes
     const autoFinalizeTimer = setInterval(() => {
       const now = Date.now();
@@ -1892,7 +1988,7 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         const updated = prev.map(apt => {
           if (!isExampleItem(apt) && apt.status !== 'cancelled' && apt.status !== 'completed' && isAppointmentPastSchedule(apt, now)) {
             hasChanges = true;
-            const completedApt: Appointment = { ...apt, status: 'completed' };
+            const completedApt: Appointment = { ...apt, status: 'completed', patient_confirmed: true };
             saveAppointmentToFirestore(completedApt);
             return completedApt;
           }
@@ -1911,8 +2007,13 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       unsubPayments();
       unsubWaitlist();
       unsubConsultations();
+      unsubReminderConfig();
     };
-  }, []);
+  }, [uidAuth]);
+    // Antes este efecto corria una sola vez, cuando Firebase todavia no habia
+    // restaurado la sesion: la app quedaba escuchando el documento de configuracion
+    // viejo y generico. Por eso el bot volvia a figurar en pausa cada vez que se
+    // recargaba, aunque en la cuenta estuviera activo.
 
   // Example / Demo data state helpers
   const hasExampleData = useMemo(() => {
@@ -2062,13 +2163,39 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
     const newApt: Appointment = {
       ...data,
       id: aptId,
-      patient_id: targetPatientId
+      patient_id: targetPatientId,
+      patient_confirmed: data.patient_confirmed !== undefined ? data.patient_confirmed : (data.status !== 'pending')
     };
 
     setAppointments(prev => [newApt, ...prev.filter(a => a.id !== aptId)]);
 
     // Save to Firestore in background
     saveAppointmentToFirestore(newApt);
+
+    // Auto-generate PaymentRecord if appointment is marked as paid on creation
+    if (newApt.payment_status === 'paid') {
+      const price = newApt.service_price || 0;
+      const method = (newApt as any).confirmed_payment_method || (newApt as any).deposit_method || 'transfer';
+      const nextNum = payments.length + 101;
+      const receipt_number = `REC-${String(nextNum).padStart(5, '0')}`;
+      const newPay: PaymentRecord = {
+        id: `pay-${Date.now()}`,
+        receipt_number,
+        appointment_id: aptId,
+        patient_id: targetPatientId || 'pat-unknown',
+        patient_name: newApt.patient_name,
+        patient_dni: newApt.patient_dni,
+        patient_phone: newApt.patient_phone,
+        amount: price,
+        method,
+        concept: `Consulta / Sesión: ${newApt.service_name || 'Atención'}`,
+        date: newApt.start_datetime || new Date().toISOString(),
+        status: 'completed',
+        insurance_provider: newApt.patient_insurance
+      };
+      setPayments(prev => [newPay, ...prev]);
+      savePaymentToFirestore(newPay);
+    }
 
     // Trigger browser & app notification on Bot or Public Booking
     if (data.origin === 'bot_whatsapp' && practiceSettings.notify_bot_bookings !== false) {
@@ -2104,12 +2231,26 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   const updateAppointment = (id: string, updates: Partial<Appointment>) => {
     let completedApt: Appointment | null = null;
+    let confirmedPendingApt: Appointment | null = null;
+
     setAppointments(prev => {
       const next = prev.map(a => {
         if (a.id === id) {
+          const wasPending = a.status === 'pending';
+          const isNowConfirmed = updates.status === 'confirmed';
+          if (wasPending && isNowConfirmed) {
+            confirmedPendingApt = { ...a, ...updates, patient_confirmed: true };
+          }
           const wasNotCompleted = a.status !== 'completed';
           const isNowCompleted = updates.status === 'completed';
-          const updated = { ...a, ...updates };
+          const patientConfirmedResolved = updates.patient_confirmed !== undefined
+            ? updates.patient_confirmed
+            : (updates.status === 'confirmed' || updates.status === 'completed' || a.patient_confirmed);
+          const updated = {
+            ...a,
+            ...updates,
+            patient_confirmed: patientConfirmedResolved
+          };
           saveAppointmentToFirestore(updated);
           if (wasNotCompleted && isNowCompleted) {
             completedApt = updated;
@@ -2120,6 +2261,23 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       });
       return next;
     });
+
+    if (confirmedPendingApt) {
+      const targetApt = confirmedPendingApt as Appointment;
+      fetch('/api/turnos/confirmar-profesional', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointmentId: targetApt.id,
+          owner_id: (targetApt as any).owner_id || practiceSettings?.owner_id,
+          turno: targetApt
+        })
+      }).then(r => r.json()).then(data => {
+        console.log('[Confirmación Turno] Secuencia enviada:', data);
+      }).catch(err => {
+        console.warn('[Confirmación Turno] Error llamando endpoint de confirmación:', err);
+      });
+    }
 
     if (completedApt) {
       const targetApt = completedApt as Appointment;
@@ -2155,6 +2313,34 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
         return p;
       }));
+    }
+
+    // Si se actualizó a pagado, auto-generar PaymentRecord si no existe
+    if (updates.payment_status === 'paid') {
+      const currentApt = appointments.find(a => a.id === id);
+      if (currentApt && !payments.some(p => p.appointment_id === id)) {
+        const price = updates.service_price ?? currentApt.service_price ?? 0;
+        const method = updates.confirmed_payment_method || (currentApt as any).confirmed_payment_method || (currentApt as any).deposit_method || 'transfer';
+        const nextNum = payments.length + 101;
+        const receipt_number = `REC-${String(nextNum).padStart(5, '0')}`;
+        const newPay: PaymentRecord = {
+          id: `pay-${Date.now()}`,
+          receipt_number,
+          appointment_id: id,
+          patient_id: currentApt.patient_id || 'pat-unknown',
+          patient_name: currentApt.patient_name,
+          patient_dni: currentApt.patient_dni,
+          patient_phone: currentApt.patient_phone,
+          amount: price,
+          method,
+          concept: `Consulta / Sesión: ${currentApt.service_name || 'Atención'}`,
+          date: currentApt.start_datetime || new Date().toISOString(),
+          status: 'completed',
+          insurance_provider: currentApt.patient_insurance
+        };
+        setPayments(prev => [newPay, ...prev]);
+        savePaymentToFirestore(newPay);
+      }
     }
   };
 
@@ -2247,15 +2433,37 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         localStorage.setItem('agendapro_example_dismissed', 'true');
       } catch {}
     }
+    // Los turnos viejos pueden tener otro patient_id (los creo el bot o el portal).
+    // Si quedan, el cliente parece volver de la nada: se van con la ficha.
+    const ficha = patients.find(p => p.id === id);
+    const nombreFicha = normalizeText(`${ficha?.first_name || ''} ${ficha?.last_name || ''}`);
+    const telFicha = normalizePhoneDigits(ficha?.phone);
+
+    const esDeEstePaciente = (x: any) => {
+      if (x?.patient_id === id) return true;
+      if (!ficha) return false;
+      const nombreX = normalizeText(x?.patient_name || '');
+      const telX = normalizePhoneDigits(x?.patient_phone);
+      const mismoNombre = Boolean(nombreFicha && nombreX && nombreFicha === nombreX);
+      const mismoTel = Boolean(telFicha && telX && telFicha.length >= 7 && (telFicha === telX || telFicha.endsWith(telX) || telX.endsWith(telFicha)));
+      return mismoNombre && mismoTel;
+    };
+
+    // Turnos, consultas y cobros: todos con el mismo criterio. Un cobro con otro
+    // patient_id quedaba dando vueltas y seguia sumando en la caja.
+    const turnosABorrar = appointments.filter(esDeEstePaciente);
+    const consultasABorrar = consultations.filter(esDeEstePaciente);
+    const cobrosABorrar = payments.filter(esDeEstePaciente);
+
     setPatients(prev => prev.filter(p => p.id !== id));
-    setAppointments(prev => prev.filter(a => a.patient_id !== id));
-    setConsultations(prev => prev.filter(c => c.patient_id !== id));
-    setPayments(prev => prev.filter(p => p.patient_id !== id));
+    setAppointments(prev => prev.filter(a => !turnosABorrar.some(x => x.id === a.id)));
+    setConsultations(prev => prev.filter(c => !consultasABorrar.some(x => x.id === c.id)));
+    setPayments(prev => prev.filter(p => !cobrosABorrar.some(x => x.id === p.id)));
 
     deletePatientFromFirestore(id);
-    appointments.filter(a => a.patient_id === id).forEach(a => deleteAppointmentFromFirestore(a.id));
-    consultations.filter(c => c.patient_id === id).forEach(c => deleteConsultationFromFirestore(c.id));
-    payments.filter(p => p.patient_id === id).forEach(p => deletePaymentFromFirestore(p.id));
+    turnosABorrar.forEach(a => deleteAppointmentFromFirestore(a.id));
+    consultasABorrar.forEach(c => deleteConsultationFromFirestore(c.id));
+    cobrosABorrar.forEach(p => deletePaymentFromFirestore(p.id));
   };
 
   // Service Handlers
@@ -2286,12 +2494,17 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   // Availability Handlers
   const updateAvailability = (newAvailability: DayAvailability[]) => {
     setAvailability(newAvailability);
+    // La pagina publica de reservas lee los horarios de la base, no del navegador.
+    guardarDisponibilidadDeLaCuenta(newAvailability);
   };
 
   // Practice Settings
   const updatePracticeSettings = (updates: Partial<PracticeSettings>) => {
     setPracticeSettings(prev => {
       const next = { ...prev, ...updates };
+      try {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(next));
+      } catch {}
       saveSettingsToFirestore(next);
       return next;
     });
@@ -2544,7 +2757,11 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const updateReminderConfig = (updates: Partial<ReminderConfig>) => {
-    setReminderConfig(prev => ({ ...prev, ...updates }));
+    setReminderConfig(prev => {
+      const next = { ...prev, ...updates };
+      saveReminderConfigToFirestore(next);
+      return next;
+    });
   };
 
   const sendWhatsAppReminder = (appointmentId: string, timing: '24h' | '2h' | 'manual' = 'manual') => {
@@ -2658,12 +2875,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
     setAppointments(prev => prev.map(a => {
       if (a.id === appointmentId) {
-        return {
+        const updated = {
           ...a,
           patient_confirmed: true,
           patient_confirmed_at: nowIso,
-          status: reminderConfig.auto_update_status_on_confirm ? 'confirmed' : a.status
+          status: (reminderConfig.auto_update_status_on_confirm ? 'confirmed' : a.status) as AppointmentStatus
         };
+        saveAppointmentToFirestore(updated);
+        return updated;
       }
       return a;
     }));
@@ -2753,6 +2972,9 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
         }
       }
 
+      if (updated !== apt) {
+        saveAppointmentToFirestore(updated);
+      }
       return updated;
     }));
 
@@ -2835,7 +3057,9 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (existing.appointment_id) {
         setAppointments(prev => prev.map(a => {
           if (a.id === existing.appointment_id) {
-            return { ...a, payment_status: 'pending' };
+            const reverted: Appointment = { ...a, payment_status: 'pending' };
+            saveAppointmentToFirestore(reverted);
+            return reverted;
           }
           return a;
         }));
@@ -2854,7 +3078,14 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (p.id === paymentId) {
         // If it was linked to an appointment, revert appointment payment status to pending
         if (p.appointment_id) {
-          setAppointments(curr => curr.map(a => a.id === p.appointment_id ? { ...a, payment_status: 'pending' } : a));
+          setAppointments(curr => curr.map(a => {
+            if (a.id === p.appointment_id) {
+              const reverted: Appointment = { ...a, payment_status: 'pending' };
+              saveAppointmentToFirestore(reverted);
+              return reverted;
+            }
+            return a;
+          }));
         }
 
         // If it was cash, register an expense / counter-movement

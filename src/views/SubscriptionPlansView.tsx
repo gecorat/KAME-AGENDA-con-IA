@@ -217,8 +217,8 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
 
   const handleConfirmSubscription = async () => {
     const numericAmount = selectedPlanForCheckout === 'pro'
-      ? (billingCycle === 'monthly' ? (currency === 'ARS' ? 49000 : 49) : (currency === 'ARS' ? 499000 : 499))
-      : (billingCycle === 'monthly' ? (currency === 'ARS' ? 29000 : 29) : (currency === 'ARS' ? 299000 : 299));
+      ? (billingCycle === 'monthly' ? (currency === 'ARS' ? 59000 : 59) : (currency === 'ARS' ? 599000 : 599))
+      : (billingCycle === 'monthly' ? (currency === 'ARS' ? 39000 : 39) : (currency === 'ARS' ? 399000 : 399));
 
     // Bank Transfer flow
     if (selectedGateway === 'transferencia') {
@@ -290,22 +290,27 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
             secretKey: practiceSettings.dlocal_go_secret_key
           })
         });
-        const data = await res.json();
+        
+        let data: any = null;
+        try {
+          data = await res.json();
+        } catch {
+          data = { success: true, simulated: true };
+        }
         setIsProcessing(false);
 
-        if (data.success) {
-          if (data.simulated || !practiceSettings.dlocal_go_api_key) {
+        if (data?.success) {
+          if (data.redirect_url && !data.simulated) {
+            window.location.href = data.redirect_url;
+          } else {
             setShowCheckoutModal(false);
             setShowDlocalSimulator(true);
-          } else if (data.redirect_url) {
-            window.location.href = data.redirect_url;
           }
         } else {
           setShowCheckoutModal(false);
           setShowDlocalSimulator(true);
         }
       } catch (err) {
-        console.error('Error creating DLocal Go checkout:', err);
         setIsProcessing(false);
         setShowCheckoutModal(false);
         setShowDlocalSimulator(true);
@@ -766,11 +771,11 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
                 <th className="p-3.5 font-bold text-neutral-700 w-1/2">Módulo / Funcionalidad</th>
                 <th className="p-3.5 font-bold text-neutral-700 text-center w-1/4">
                   Plan Esencial <br />
-                  <span className="font-normal text-[11px] text-neutral-500">$29.000 ARS</span>
+                  <span className="font-normal text-[11px] text-neutral-500">$39.000 ARS</span>
                 </th>
                 <th className="p-3.5 font-bold text-sky-800 text-center w-1/4 bg-sky-50/60">
                   Plan Pro AI <br />
-                  <span className="font-normal text-[11px] text-sky-600">$49.000 ARS</span>
+                  <span className="font-normal text-[11px] text-sky-600">$59.000 ARS</span>
                 </th>
               </tr>
             </thead>
@@ -936,11 +941,11 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
                     <span className="text-sky-700 font-extrabold">
                       {selectedPlanForCheckout === 'pro'
                         ? billingCycle === 'monthly'
-                          ? currency === 'ARS' ? '$49.000 ARS / mes' : '$49 USD / mes'
-                          : currency === 'ARS' ? '$499.000 ARS / año' : '$499 USD / año'
+                          ? currency === 'ARS' ? '$59.000 ARS / mes' : '$59 USD / mes'
+                          : currency === 'ARS' ? '$599.000 ARS / año' : '$599 USD / año'
                         : billingCycle === 'monthly'
-                          ? currency === 'ARS' ? '$29.000 ARS / mes' : '$29 USD / mes'
-                          : currency === 'ARS' ? '$299.000 ARS / año' : '$299 USD / año'}
+                          ? currency === 'ARS' ? '$39.000 ARS / mes' : '$39 USD / mes'
+                          : currency === 'ARS' ? '$399.000 ARS / año' : '$399 USD / año'}
                     </span>
                   </div>
                 </div>
@@ -1331,11 +1336,11 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
                   <span className="text-base font-black font-mono text-amber-900">
                     {selectedPlanForCheckout === 'pro'
                       ? billingCycle === 'monthly'
-                        ? currency === 'ARS' ? '$49.000 ARS' : '$49 USD'
-                        : currency === 'ARS' ? '$499.000 ARS' : '$499 USD'
+                        ? currency === 'ARS' ? '$59.000 ARS' : '$59 USD'
+                        : currency === 'ARS' ? '$599.000 ARS' : '$599 USD'
                       : billingCycle === 'monthly'
-                        ? currency === 'ARS' ? '$29.000 ARS' : '$29 USD'
-                        : currency === 'ARS' ? '$299.000 ARS' : '$299 USD'}
+                        ? currency === 'ARS' ? '$39.000 ARS' : '$39 USD'
+                        : currency === 'ARS' ? '$399.000 ARS' : '$399 USD'}
                   </span>
                 </div>
               </div>
@@ -1521,11 +1526,11 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
                   <span className="text-base font-black font-mono text-amber-900">
                     {selectedPlanForCheckout === 'pro'
                       ? billingCycle === 'monthly'
-                        ? currency === 'ARS' ? '$49.000 ARS' : '$49 USD'
-                        : currency === 'ARS' ? '$499.000 ARS' : '$499 USD'
+                        ? currency === 'ARS' ? '$59.000 ARS' : '$59 USD'
+                        : currency === 'ARS' ? '$599.000 ARS' : '$599 USD'
                       : billingCycle === 'monthly'
-                        ? currency === 'ARS' ? '$29.000 ARS' : '$29 USD'
-                        : currency === 'ARS' ? '$299.000 ARS' : '$299 USD'}
+                        ? currency === 'ARS' ? '$39.000 ARS' : '$39 USD'
+                        : currency === 'ARS' ? '$399.000 ARS' : '$399 USD'}
                   </span>
                 </div>
               </div>
@@ -1623,8 +1628,8 @@ export const SubscriptionPlansView: React.FC<SubscriptionPlansViewProps> = ({ on
         billingCycle={billingCycle}
         amount={
           selectedPlanForCheckout === 'pro'
-            ? (billingCycle === 'monthly' ? (currency === 'ARS' ? 49000 : 49) : (currency === 'ARS' ? 499000 : 499))
-            : (billingCycle === 'monthly' ? (currency === 'ARS' ? 29000 : 29) : (currency === 'ARS' ? 299000 : 299))
+            ? (billingCycle === 'monthly' ? (currency === 'ARS' ? 59000 : 59) : (currency === 'ARS' ? 599000 : 599))
+            : (billingCycle === 'monthly' ? (currency === 'ARS' ? 39000 : 39) : (currency === 'ARS' ? 399000 : 399))
         }
       />
     </div>

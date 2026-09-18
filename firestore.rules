@@ -11,58 +11,62 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.token.email == 'gonzalocorat@gmail.com';
     }
 
-    function isValidAppointment(data) {
-      return data.patient_name is string && data.patient_name.size() > 0 &&
-             data.patient_phone is string && data.patient_phone.size() > 0 &&
-             data.start_datetime is string &&
-             data.end_datetime is string;
-    }
-
-    // Services - Public read (for booking portal) and clinic management
+    // Services - Public read (for booking portal), authenticated owner write
     match /services/{serviceId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create, update, delete: if isSuperAdmin() || isAuthenticated();
     }
 
-    // Practice Settings - Public read and practice configuration
+    // Practice & Reminder Settings - Public read for practice configuration (booking portal), authenticated owner write
     match /settings/{settingsId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isSuperAdmin() || isAuthenticated();
     }
 
-    // Appointments - Web booking, bot reservations and staff management
+    // Appointments - Read and write restricted by owner_id.
+    // Public reservations now execute securely on the server via /api/publico/crear-reserva
     match /appointments/{appointmentId} {
-      allow read, write: if true;
+      allow read: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
+      allow create: if isSuperAdmin() || (isAuthenticated() && (request.resource.data.owner_id == request.auth.uid || request.resource.data.owner_id == null));
+      allow update, delete: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
     }
 
-    // Patients - Patient management, self-booking and clinical history
+    // Patients - Patient management and clinical data protected per owner
     match /patients/{patientId} {
-      allow read, write: if true;
+      allow read: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
+      allow create: if isSuperAdmin() || (isAuthenticated() && (request.resource.data.owner_id == request.auth.uid || request.resource.data.owner_id == null));
+      allow update, delete: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
     }
 
     // Waitlist - Smart waitlist management
     match /waitlist/{waitlistId} {
-      allow read, write: if true;
+      allow read: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
+      allow create, update, delete: if isSuperAdmin() || (isAuthenticated() && (request.resource.data.owner_id == request.auth.uid || request.resource.data.owner_id == null));
     }
 
     // Consultations & SOAP records
     match /consultations/{consultationId} {
-      allow read, write: if true;
+      allow read: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
+      allow create, update, delete: if isSuperAdmin() || (isAuthenticated() && (request.resource.data.owner_id == request.auth.uid || request.resource.data.owner_id == null));
     }
 
     // Billing & Payments
     match /payments/{paymentId} {
-      allow read, write: if true;
+      allow read: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
+      allow create, update, delete: if isSuperAdmin() || (isAuthenticated() && (request.resource.data.owner_id == request.auth.uid || request.resource.data.owner_id == null));
     }
 
     // Conversations / WhatsApp chats
     match /conversations/{conversationId} {
-      allow read, write: if true;
+      allow read: if isSuperAdmin() || (isAuthenticated() && (resource == null || resource.data.owner_id == request.auth.uid || resource.data.owner_id == null));
+      allow create, update, delete: if isSuperAdmin() || (isAuthenticated() && (request.resource.data.owner_id == request.auth.uid || request.resource.data.owner_id == null));
     }
 
     // User profiles & SaaS Tenants
     match /users/{userId} {
-      allow read: if true;
-      allow create, update: if true;
-      allow delete: if isAuthenticated();
+      allow read: if isAuthenticated() || isSuperAdmin();
+      allow create, update: if isSuperAdmin() || (isAuthenticated() && request.auth.uid == userId);
+      allow delete: if isSuperAdmin();
     }
 
     // Connection test document
@@ -72,17 +76,20 @@ service cloud.firestore {
 
     // SaaS Bank Transfers for subscription confirmations
     match /saas_transfers/{transferId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated() || isSuperAdmin();
     }
 
     // App Suggestions & Community Feedback
     match /suggestions/{suggestionId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated() || isSuperAdmin();
     }
 
     // Contact Messages from landing page
     match /contact_messages/{messageId} {
-      allow read, write: if true;
+      allow create: if true;
+      allow read, update, delete: if isAuthenticated() || isSuperAdmin();
     }
   }
 }

@@ -11,10 +11,12 @@ import {
   HelpCircle,
   Play,
   CheckCircle2,
-  Sparkles
+  Sparkles,
+  Smartphone
 } from 'lucide-react';
 import { useAgendaStore } from '../../lib/store';
 import { playNotificationSound } from '../../lib/browser-notifications';
+import { solicitarYRegistrarPushFCM } from '../../lib/fcm';
 
 export const NotificationSettings: React.FC = () => {
   const {
@@ -22,16 +24,100 @@ export const NotificationSettings: React.FC = () => {
     updatePracticeSettings,
     notificationPermission,
     requestBrowserNotificationPermission,
-    triggerNotification
+    triggerNotification,
+    currentUser
   } = useAgendaStore();
 
   const [testSent, setTestSent] = useState<string | null>(null);
+  const [fcmLoading, setFcmLoading] = useState(false);
+  const [fcmRegistered, setFcmRegistered] = useState(false);
 
   const isGranted = notificationPermission === 'granted';
   const isDenied = notificationPermission === 'denied';
 
   const handleToggle = (field: keyof typeof practiceSettings, value: boolean) => {
     updatePracticeSettings({ [field]: value });
+  };
+
+  const handleRegisterFcm = async () => {
+    setFcmLoading(true);
+    try {
+      const res = await solicitarYRegistrarPushFCM(currentUser?.uid);
+      if (res.ok) {
+        setFcmRegistered(true);
+        setTestSent('¡Dispositivo registrado para notificaciones Push al celular!');
+        setTimeout(() => setTestSent(null), 4000);
+      } else {
+        setTestSent(`Error: ${res.error || 'No se pudo registrar'}`);
+        setTimeout(() => setTestSent(null), 4000);
+      }
+    } catch (e: any) {
+      setTestSent(`Error: ${e?.message || 'Error registrando push'}`);
+      setTimeout(() => setTestSent(null), 4000);
+    } finally {
+      setFcmLoading(false);
+    }
+  };
+
+  const handleTestPushReal = async () => {
+    if (!currentUser?.uid) {
+      setTestSent('Inicia sesión para probar push al celular');
+      setTimeout(() => setTestSent(null), 3000);
+      return;
+    }
+    setTestSent('Enviando notificación push a tu dispositivo...');
+    try {
+      const res = await fetch('/api/push/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: currentUser.uid,
+          title: '🔔 Agenfacil: ¡Prueba de Notificación Push!',
+          body: 'Si ves este mensaje en tu celular o PC, tu cuenta recibe alertas instantáneas en tiempo real.'
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setTestSent(`¡Push FCM enviado con éxito (${data.sent || 1} dispositivo)!`);
+      } else {
+        setTestSent(`Aviso: ${data.message || 'Primero vincula tu dispositivo con el botón de abajo'}`);
+      }
+    } catch (e: any) {
+      setTestSent(`Error enviando push: ${e?.message || 'Fallo de red'}`);
+    }
+    setTimeout(() => setTestSent(null), 4000);
+  };
+
+  const handleTestCriticalPush = async () => {
+    if (!currentUser?.uid) {
+      setTestSent('Inicia sesión para probar la alerta crítica');
+      setTimeout(() => setTestSent(null), 3000);
+      return;
+    }
+    setTestSent('Enviando alerta crítica de turno al celular...');
+    try {
+      const res = await fetch('/api/push/send-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: currentUser.uid,
+          title: '🚨 URGENTE: Novedad Crítica de Turno',
+          body: 'Paciente en sala de espera o turno reasignado con prioridad inmediata.',
+          priority: 'high',
+          critical: true,
+          url: '/#agenda'
+        })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setTestSent(`¡Alerta crítica enviada (${data.sent || 1} dispositivo)!`);
+      } else {
+        setTestSent(`Aviso: ${data.message || data.reason || 'Primero vincula tu dispositivo'}`);
+      }
+    } catch (e: any) {
+      setTestSent(`Error enviando push: ${e?.message || 'Fallo de red'}`);
+    }
+    setTimeout(() => setTestSent(null), 4000);
   };
 
   const handleRequestPermission = async () => {
@@ -186,6 +272,73 @@ export const NotificationSettings: React.FC = () => {
             />
           </div>
 
+          {/* Por donde le avisamos al profesional que entro un turno */}
+          <div className="p-4 rounded-xl bg-neutral-50/60 border border-neutral-200/80 space-y-3">
+            <div className="space-y-0.5">
+              <label className="text-xs font-bold text-neutral-900 flex items-center gap-2">
+                <BellRing className="w-4 h-4 text-emerald-600" />
+                <span>Cómo querés que te avisemos cuando entra un turno</span>
+              </label>
+              <p className="text-xs text-neutral-500 leading-relaxed">
+                Vale para los turnos que entran por la página y por WhatsApp. El correo y el aviso al celular vienen activados.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {[
+                { campo: 'avisar_prof_email' as const, titulo: 'Correo', detalle: 'A tu casilla', porDefecto: true },
+                { campo: 'avisar_prof_push' as const, titulo: 'Aviso al celular', detalle: 'Aunque tengas la app cerrada', porDefecto: true },
+                { campo: 'avisar_prof_whatsapp' as const, titulo: 'WhatsApp', detalle: 'A tu propio número', porDefecto: false },
+                { campo: 'avisar_prof_app' as const, titulo: 'Dentro de la app', detalle: 'En la campanita', porDefecto: false }
+              ].map((op) => {
+                const activo = (practiceSettings as any)[op.campo] === undefined
+                  ? op.porDefecto
+                  : Boolean((practiceSettings as any)[op.campo]);
+                return (
+                  <label
+                    key={op.campo}
+                    className="flex items-start justify-between gap-3 p-3 rounded-lg bg-white border border-neutral-200 cursor-pointer"
+                  >
+                    <span className="space-y-0.5">
+                      <span className="block text-xs font-bold text-neutral-900">{op.titulo}</span>
+                      <span className="block text-[11px] text-neutral-500">{op.detalle}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={activo}
+                      onChange={(e) => handleToggle(op.campo as any, e.target.checked)}
+                      className="w-4 h-4 accent-emerald-600 mt-0.5 cursor-pointer"
+                    />
+                  </label>
+                );
+              })}
+            </div>
+
+            {practiceSettings.avisar_prof_push !== false && (
+              <div className="mt-2 pt-3 border-t border-neutral-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-3 rounded-lg border border-neutral-200">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="text-xs font-bold text-neutral-800 block">Vincular este dispositivo para Push (FCM)</span>
+                    <span className="text-[11px] text-neutral-500 block">Genera el token seguro de Firebase Cloud Messaging para recibir alertas aunque tengas la app cerrada.</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleRegisterFcm}
+                  disabled={fcmLoading}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 ${
+                    fcmRegistered
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                  }`}
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{fcmLoading ? 'Vinculando...' : fcmRegistered ? 'Dispositivo Vinculado' : 'Vincular este Celular/PC'}</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Toggle 2: Bot Bookings */}
           <div className="flex items-start justify-between gap-4 p-4 rounded-xl bg-neutral-50/60 border border-neutral-200/80">
             <div className="space-y-0.5">
@@ -305,6 +458,42 @@ export const NotificationSettings: React.FC = () => {
               </span>
               <span className="text-[11px] text-neutral-500 leading-tight block mt-0.5">
                 Emite notificación de confirmación de asistencia del paciente
+              </span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTestPushReal}
+            className="p-3 bg-neutral-50 hover:bg-neutral-100 border border-neutral-200 rounded-xl text-left transition-all group flex items-start gap-3"
+          >
+            <div className="p-2 rounded-lg bg-purple-100 text-purple-700 shrink-0 group-hover:scale-105 transition-transform">
+              <Smartphone className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-neutral-800 block">
+                Simular Push Real al Celular (FCM)
+              </span>
+              <span className="text-[11px] text-neutral-500 leading-tight block mt-0.5">
+                Envía notificación push en segundo plano a través del Service Worker
+              </span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleTestCriticalPush}
+            className="p-3 bg-rose-50/60 hover:bg-rose-50 border border-rose-200 rounded-xl text-left transition-all group flex items-start gap-3"
+          >
+            <div className="p-2 rounded-lg bg-rose-100 text-rose-700 shrink-0 group-hover:scale-105 transition-transform">
+              <Bell className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="text-xs font-bold text-rose-900 block">
+                Simular Alerta Crítica (Vibración / Urgente)
+              </span>
+              <span className="text-[11px] text-rose-600/90 leading-tight block mt-0.5">
+                Alerta de alta prioridad para cancelaciones o turnos urgentes
               </span>
             </div>
           </button>

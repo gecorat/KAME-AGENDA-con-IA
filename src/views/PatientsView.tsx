@@ -68,7 +68,104 @@ interface PatientsViewProps {
   onOpenAppointment?: (appointmentId: string) => void;
 }
 
-type PatientTab = 'consultations' | 'overview' | 'appointments' | 'billing';
+// Borrar una ficha es definitivo. Antes de hacerlo mostramos exactamente que se
+// pierde y pedimos escribir ELIMINAR: dos confirmaciones, no una al voleo.
+const ModalEliminarCliente: React.FC<{
+  abierto: boolean;
+  nombre: string;
+  termino: string;
+  turnos: number;
+  consultas: number;
+  cobros: number;
+  onCerrar: () => void;
+  onConfirmar: () => void;
+}> = ({ abierto, nombre, termino, turnos, consultas, cobros, onCerrar, onConfirmar }) => {
+  const [paso, setPaso] = React.useState(1);
+
+  React.useEffect(() => {
+    if (abierto) setPaso(1);
+  }, [abierto]);
+
+  if (!abierto) return null;
+
+  const items = [
+    { etiqueta: "Turnos en la agenda", valor: turnos },
+    { etiqueta: "Consultas e historia clínica", valor: consultas },
+    { etiqueta: "Cobros y recibos", valor: cobros }
+  ];
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-neutral-900/60 p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+        <div className="bg-red-50 border-b border-red-200 px-5 py-4">
+          <h3 className="font-bold text-red-900">
+            {paso === 1 ? `¿Eliminar a ${nombre}?` : "Confirmá una vez más"}
+          </h3>
+          <p className="text-xs text-red-800/80 mt-0.5">
+            Esta acción es definitiva. No se puede deshacer.
+          </p>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          {paso === 1 ? (
+            <>
+              <p className="text-xs text-neutral-600">
+                Se borra la ficha de {termino.toLowerCase()} y todo lo que tiene asociado:
+              </p>
+              <div className="space-y-1.5">
+                {items.map((it) => (
+                  <div
+                    key={it.etiqueta}
+                    className="flex items-center justify-between text-xs bg-neutral-50 border border-neutral-200 rounded-lg px-3 py-2"
+                  >
+                    <span className="text-neutral-700">{it.etiqueta}</span>
+                    <span className={it.valor > 0 ? "font-bold text-red-700" : "text-neutral-400"}>
+                      {it.valor}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              {(turnos > 0 || consultas > 0 || cobros > 0) && (
+                <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  Ojo: los turnos y cobros ya registrados quedan sin ficha asociada.
+                </p>
+              )}
+            </>
+          ) : (
+            <p className="text-xs text-neutral-600">
+              Vas a borrar la ficha de <span className="font-bold text-neutral-900">{nombre}</span> y
+              todo lo que figura arriba. Despues no hay forma de recuperarlo.
+            </p>
+          )}
+        </div>
+
+        <div className="px-5 py-3 bg-neutral-50 border-t border-neutral-200 flex items-center justify-end gap-2">
+          <button
+            onClick={onCerrar}
+            className="px-3 py-2 rounded-lg text-xs font-bold text-neutral-600 hover:bg-neutral-200"
+          >
+            Cancelar
+          </button>
+          {paso === 1 ? (
+            <button
+              onClick={() => setPaso(2)}
+              className="px-3 py-2 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700"
+            >
+              Entiendo, continuar
+            </button>
+          ) : (
+            <button
+              onClick={onConfirmar}
+              className="px-3 py-2 rounded-lg text-xs font-bold bg-red-600 text-white hover:bg-red-700"
+            >
+              Eliminar definitivamente
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const PatientsView: React.FC<PatientsViewProps> = ({
   onOpenNewPatient,
@@ -84,6 +181,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
     practiceSettings,
     deletePatient,
     updatePatient,
+    addPayment,
     deletePayment,
     voidPayment,
     deleteConsultation,
@@ -101,7 +199,6 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
 
   const [search, setSearch] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string>(patients[0]?.id || '');
-  const [activeTab, setActiveTab] = useState<PatientTab>('consultations');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'prospect'>('all');
 
   const prospectCount = patients.filter(p => p.relationship_status === 'prospect' || (!p.relationship_status && (p.completed_appointments_count || 0) === 0)).length;
@@ -324,6 +421,38 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
     (acc, c) => acc + (c.certificates?.length || 0),
     0
   );
+
+  const handleShowReceiptForAppointment = (apt: Appointment) => {
+    let pay = payments.find(p => p.appointment_id === apt.id);
+    if (!pay && apt.patient_id) {
+      const aptDate = apt.start_datetime ? apt.start_datetime.split('T')[0] : '';
+      pay = payments.find(p => p.patient_id === apt.patient_id && p.date && p.date.startsWith(aptDate));
+    }
+
+    if (pay) {
+      setActiveReceiptPayment(pay);
+    } else {
+      const nextNum = payments.length + 101;
+      const receipt_number = `REC-${String(nextNum).padStart(5, '0')}`;
+      const newPay: PaymentRecord = {
+        id: `pay-gen-${apt.id}`,
+        receipt_number,
+        appointment_id: apt.id,
+        patient_id: apt.patient_id || selectedPatient?.id || 'pat-unknown',
+        patient_name: apt.patient_name || `${selectedPatient?.first_name} ${selectedPatient?.last_name}`,
+        patient_dni: apt.patient_dni || selectedPatient?.dni,
+        patient_phone: apt.patient_phone || selectedPatient?.phone,
+        amount: apt.service_price || 0,
+        method: (apt as any).confirmed_payment_method || (apt as any).deposit_method || 'transfer',
+        concept: `Consulta / Sesión: ${apt.service_name || 'Atención'}`,
+        date: apt.start_datetime || new Date().toISOString(),
+        status: 'completed',
+        insurance_provider: apt.patient_insurance || selectedPatient?.insurance_provider
+      };
+      addPayment(newPay);
+      setActiveReceiptPayment(newPay);
+    }
+  };
 
   const handleDeletePatient = (patient: Patient) => {
     setPatientToDelete(patient);
@@ -759,7 +888,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                   type="button"
                   onClick={() => handleSendPaymentRequest()}
                   className="px-2.5 py-2 bg-sky-600 hover:bg-sky-700 active:scale-[0.98] text-white text-xs font-semibold rounded-lg shadow-2xs transition-all flex items-center justify-center gap-1.5 truncate cursor-pointer"
-                  title="Solicitar pago por WhatsApp (Alias / CBU / Link MP / QR)"
+                  title="Solicitar pago por WhatsApp (Alias / CBU / Link MP)"
                 >
                   <Send className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">Solicitar Pago</span>
@@ -1012,64 +1141,112 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                     </>
                   )}
                 </div>
+
+                {/* Antecedentes, Observaciones Clave & Notas de Voz Integradas */}
+                <div className="pt-3 border-t border-neutral-200/80 space-y-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-neutral-600 uppercase font-semibold tracking-wider flex items-center gap-1">
+                      <FileText className="w-3.5 h-3.5 text-neutral-400" />
+                      {professionInfo.id === 'legal_contable'
+                        ? 'Antecedentes del Caso & Observaciones'
+                        : professionInfo.id === 'educacion_clases'
+                        ? 'Antecedentes Académicos & Metas'
+                        : 'Antecedentes & Observaciones Clave'}
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsRecordingGeneralVoice(!isRecordingGeneralVoice)}
+                        className="px-2 py-0.5 text-[11px] font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        <Mic className="w-3 h-3 text-amber-700" />
+                        <span>{isRecordingGeneralVoice ? 'Cerrar Micrófono' : 'Grabar Audio'}</span>
+                      </button>
+                      {!isEditingNotes ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTempNotes(selectedPatient.notes || '');
+                            setIsEditingNotes(true);
+                          }}
+                          className="px-2 py-0.5 text-[11px] font-semibold text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors flex items-center gap-1 cursor-pointer"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Editar Notas</span>
+                        </button>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={handleSaveNotes}
+                            className="px-2 py-0.5 text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-colors cursor-pointer"
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingNotes(false)}
+                            className="px-2 py-0.5 text-[11px] font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 rounded-md transition-colors cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Voice Recorder */}
+                  {isRecordingGeneralVoice && (
+                    <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200">
+                      <VoiceNoteRecorder
+                        patientId={selectedPatient.id}
+                        onAudioSaved={(newVoiceNote) => {
+                          const existingNotes = selectedPatient.voice_notes || [];
+                          updatePatient(selectedPatient.id, {
+                            voice_notes: [...existingNotes, newVoiceNote],
+                            notes: selectedPatient.notes
+                              ? `${selectedPatient.notes}\n\n[Audio ${new Date().toLocaleDateString()}]: ${newVoiceNote.transcription || 'Sin transcripción'}`
+                              : `[Audio ${new Date().toLocaleDateString()}]: ${newVoiceNote.transcription || 'Sin transcripción'}`,
+                          });
+                          setIsRecordingGeneralVoice(false);
+                        }}
+                      />
+                    </div>
+                  )}
+
+                  {/* Notes Text or Edit Field */}
+                  {isEditingNotes ? (
+                    <textarea
+                      value={tempNotes}
+                      onChange={(e) => setTempNotes(e.target.value)}
+                      rows={3}
+                      className="w-full text-xs p-2.5 rounded-lg border border-neutral-300 focus:outline-hidden focus:ring-1 focus:ring-neutral-900 bg-white text-neutral-900"
+                      placeholder="Escribe antecedentes, patologías previas, contexto o notas clave..."
+                    />
+                  ) : (
+                    <p className={`text-xs leading-relaxed ${selectedPatient.notes ? 'text-neutral-700 bg-white p-2.5 rounded-lg border border-neutral-200/60 whitespace-pre-line' : 'text-neutral-400 italic'}`}>
+                      {selectedPatient.notes || 'Sin antecedentes ni notas registradas aún. Haz clic en "Editar Notas" o "Grabar Audio" para añadir.'}
+                    </p>
+                  )}
+
+                  {/* Tags */}
+                  {selectedPatient.tags && selectedPatient.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {selectedPatient.tags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          className="px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-full text-[11px] font-medium border border-neutral-200"
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* 5. Sub-Tab Navigation inside Patient Profile (Unified & Simplified) */}
-              <div 
-                onWheel={(e) => {
-                  if (e.deltaY !== 0 && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
-                    e.currentTarget.scrollLeft += e.deltaY;
-                  }
-                }}
-                className="border-b border-neutral-200 flex items-center gap-2 sm:gap-4 text-xs font-semibold overflow-x-auto scroll-touch-x subtle-scrollbar whitespace-nowrap pb-1.5 w-full max-w-full min-w-0"
-              >
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('consultations')}
-                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] cursor-pointer ${
-                    activeTab === 'consultations' || activeTab === 'appointments'
-                      ? 'text-indigo-700 border-b-2 border-indigo-600 font-bold'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Historial Turnos y Sesiones</span>
-                  <span className="text-[10px] bg-indigo-50 text-indigo-700 font-semibold px-1.5 py-0.2 rounded border border-indigo-200/60">
-                    {patientAppointments.length + patientConsultations.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('overview')}
-                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] cursor-pointer ${
-                    activeTab === 'overview'
-                      ? 'text-neutral-900 border-b-2 border-neutral-900 font-bold'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Ficha y Antecedentes</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('billing')}
-                  className={`pb-2 px-1 transition-colors relative flex items-center gap-1.5 shrink-0 min-h-[38px] cursor-pointer ${
-                    activeTab === 'billing'
-                      ? 'text-emerald-700 border-b-2 border-emerald-600 font-bold'
-                      : 'text-neutral-500 hover:text-neutral-800'
-                  }`}
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  <span>
-                    {professionInfo.id === 'legal_contable' ? 'Honorarios & Recibos' : 'Cobros & Recibos'} ({patientPayments.length})
-                  </span>
-                </button>
-              </div>
-
-              {/* Tab 1: Línea de Tiempo Unificada (Turnos & Consultas Coordinadas) */}
-              {(activeTab === 'consultations' || activeTab === 'appointments') && (() => {
+              {/* Historial Turnos y Sesiones Unificado */}
+              {(() => {
                 // Map linked consultations to appointments
                 const linkedConsultationsMap = new Map<string, ConsultationRecord>();
                 patientConsultations.forEach(c => {
@@ -1408,7 +1585,7 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                                         type="button"
                                         onClick={() => handleSendPaymentRequest(apt)}
                                         className="px-2.5 py-1 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-lg transition-colors flex items-center gap-1"
-                                        title="Solicitar pago por WhatsApp con Alias, Link MP o QR"
+                                        title="Solicitar pago por WhatsApp con Alias o Link MP"
                                       >
                                         <Send className="w-3.5 h-3.5" />
                                         <span>Solicitar Pago</span>
@@ -1420,27 +1597,15 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                                         <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                                         <span>Cobro Registrado</span>
                                       </span>
-                                      {linkedPayment ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => setActiveReceiptPayment(linkedPayment)}
-                                          className="px-2 py-0.5 text-xs font-medium text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
-                                          title="Ver e imprimir recibo oficial"
-                                        >
-                                          <Receipt className="w-3 h-3 text-emerald-600" />
-                                          <span>Ver Recibo</span>
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => setActiveTab('billing')}
-                                          className="px-2 py-0.5 text-xs font-medium text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1 shadow-2xs"
-                                          title="Ver comprobante en pestaña de Cobros & Recibos"
-                                        >
-                                          <Receipt className="w-3 h-3 text-emerald-600" />
-                                          <span>Ver Cobros</span>
-                                        </button>
-                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handleShowReceiptForAppointment(apt)}
+                                        className="px-2.5 py-1 text-xs font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                                        title="Ver e imprimir comprobante oficial"
+                                      >
+                                        <Receipt className="w-3.5 h-3.5 text-emerald-600" />
+                                        <span>Ver Comprobante</span>
+                                      </button>
                                     </div>
                                   )}
                                 </div>
@@ -1716,305 +1881,27 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
                         })}
                       </div>
                     )}
+
+                    {/* Notice pointing to /Cobros for global accounting and billing ledger */}
+                    <div className="mt-4 p-3 bg-neutral-50/80 rounded-xl border border-neutral-200/80 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-neutral-600">
+                      <span className="flex items-center gap-1.5">
+                        <Info className="w-4 h-4 text-neutral-400 shrink-0" />
+                        Los balances contables, arqueos de caja y el historial completo de cobranzas se gestionan en la sección de Cobros.
+                      </span>
+                      <a
+                        href="/Cobros"
+                        className="text-indigo-600 hover:text-indigo-700 font-semibold inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        Ir a Cobros →
+                      </a>
+                    </div>
                   </div>
                 );
               })()}
 
-              {/* Tab 2: Ficha & Antecedentes Detallados */}
-              {activeTab === 'overview' && (
-                <div className="space-y-3 animate-in fade-in duration-150">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    <div className="p-3 bg-neutral-50/70 rounded-lg border border-neutral-200/80 text-xs">
-                      <div className="text-neutral-500 flex items-center gap-1.5 mb-1 font-medium text-[11px]">
-                        <Phone className="w-3.5 h-3.5 text-neutral-400" /> WhatsApp / Teléfono
-                      </div>
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                        <span className="font-semibold text-neutral-900">{selectedPatient.phone}</span>
-                        <a
-                          href={`https://wa.me/${selectedPatient.phone.replace(/[^0-9]/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-neutral-700 hover:underline text-[11px] font-medium"
-                        >
-                          Chat WhatsApp →
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-neutral-50/70 rounded-lg border border-neutral-200/80 text-xs">
-                      <div className="text-neutral-500 flex items-center gap-1.5 mb-1 font-medium text-[11px]">
-                        <Mail className="w-3.5 h-3.5 text-neutral-400" /> Correo Electrónico
-                      </div>
-                      <div className="font-semibold text-neutral-900 truncate">
-                        {selectedPatient.email || 'Sin correo cargado'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Profession Specific Secondary Card */}
-                  {professionInfo.id === 'legal_contable' ? (
-                    <div className="p-3 bg-indigo-50/50 rounded-lg border border-indigo-100 text-xs grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[11px] text-indigo-700 block font-medium">Expediente / Autos</span>
-                        <span className="font-semibold text-indigo-950 font-mono">
-                          {selectedPatient.case_number || 'En trámite extrajudicial'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[11px] text-indigo-700 block font-medium">Fuero / Materia</span>
-                        <span className="font-semibold text-indigo-950">
-                          {selectedPatient.subject_or_matter || 'Civil / Comercial / Laboral / Fiscal'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : professionInfo.id === 'educacion_clases' ? (
-                    <div className="p-3 bg-sky-50/50 rounded-lg border border-sky-100 text-xs grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div>
-                        <span className="text-[11px] text-sky-700 block font-medium">Nivel Escolar / Académico</span>
-                        <span className="font-semibold text-sky-950">
-                          {selectedPatient.student_level || 'Primario / Secundario / Superior'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-[11px] text-sky-700 block font-medium">Materia / Especialidad</span>
-                        <span className="font-semibold text-sky-950">
-                          {selectedPatient.subject_or_matter || 'Clases regulares'}
-                        </span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="p-3 bg-neutral-50/70 rounded-lg border border-neutral-200/80 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
-                      <div>
-                        <span className="text-[11px] text-neutral-500 block font-medium">Obra Social / Prepaga</span>
-                        <span className="font-semibold text-neutral-900">
-                          {selectedPatient.insurance_provider || 'Particular (Sin cobertura)'}
-                        </span>
-                      </div>
-                      {selectedPatient.insurance_number && (
-                        <div className="sm:text-right">
-                          <span className="text-[11px] text-neutral-500 block font-medium">Credencial N°</span>
-                          <span className="font-mono text-neutral-900 font-semibold">{selectedPatient.insurance_number}</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Tags */}
-                  {selectedPatient.tags && selectedPatient.tags.length > 0 && (
-                    <div>
-                      <span className="text-[11px] font-semibold text-neutral-700 uppercase tracking-wider block mb-1">
-                        Etiquetas & Clasificación
-                      </span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedPatient.tags.map((tag, idx) => (
-                          <span
-                            key={idx}
-                            className="px-2 py-0.5 bg-neutral-100 text-neutral-700 rounded-full text-xs font-medium border border-neutral-200"
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Clinical / Legal / Educational Notes Full View with Voice Recorder & Edit */}
-                  <div className="p-3.5 bg-amber-50/40 rounded-xl border border-amber-200/70 space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-[11px] font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5 font-display">
-                        <FileText className="w-3.5 h-3.5 text-amber-600" />
-                        {professionInfo.id === 'legal_contable'
-                          ? 'Antecedentes del Caso & Observaciones Jurídicas / Contables'
-                          : professionInfo.id === 'educacion_clases'
-                          ? 'Antecedentes Académicos & Objetivos de Aprendizaje'
-                          : 'Antecedentes, Estado Inicial & Observaciones'}
-                      </h4>
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setIsRecordingGeneralVoice(!isRecordingGeneralVoice)}
-                          className="px-2 py-1 text-[11px] font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors flex items-center gap-1"
-                        >
-                          <Mic className="w-3 h-3 text-amber-700" />
-                          <span>{isRecordingGeneralVoice ? 'Cerrar Grabador' : 'Grabar Nota de Voz'}</span>
-                        </button>
-                        {!isEditingNotes ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setTempNotes(selectedPatient.notes || '');
-                              setIsEditingNotes(true);
-                            }}
-                            className="px-2 py-1 text-[11px] font-semibold text-neutral-700 bg-white border border-neutral-200 hover:bg-neutral-50 rounded-md transition-colors flex items-center gap-1"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                            <span>Editar Notas</span>
-                          </button>
-                        ) : (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={handleSaveNotes}
-                              className="px-2.5 py-1 text-[11px] font-semibold text-white bg-amber-700 hover:bg-amber-800 rounded-md transition-colors flex items-center gap-1"
-                            >
-                              <Save className="w-3 h-3" />
-                              <span>Guardar</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setIsEditingNotes(false)}
-                              className="px-2 py-1 text-[11px] text-neutral-500 hover:bg-neutral-200 rounded-md"
-                            >
-                              Cancelar
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {isRecordingGeneralVoice && (
-                      <div className="p-3 bg-white rounded-lg border border-amber-300 shadow-2xs">
-                        <VoiceNoteRecorder
-                          patientName={`${selectedPatient.first_name} ${selectedPatient.last_name}`}
-                          specialty={professionInfo.name}
-                          onTranscriptionComplete={data => {
-                            const newNote = selectedPatient.notes 
-                              ? `${selectedPatient.notes}\n\n[Nota de Voz ${new Date().toLocaleDateString()}]: ${data.transcription}`
-                              : `[Nota de Voz ${new Date().toLocaleDateString()}]: ${data.transcription}`;
-                            updatePatient(selectedPatient.id, { notes: newNote });
-                            setIsRecordingGeneralVoice(false);
-                          }}
-                        />
-                      </div>
-                    )}
-
-                    {isEditingNotes ? (
-                      <textarea
-                        rows={4}
-                        value={tempNotes}
-                        onChange={e => setTempNotes(e.target.value)}
-                        placeholder={
-                          professionInfo.id === 'legal_contable'
-                            ? 'Registra antecedentes fácticos, pruebas aportadas, acuerdos prejudiciales u observaciones del cliente...'
-                            : professionInfo.id === 'educacion_clases'
-                            ? 'Registra nivel del alumno, fortalezas, debilidades, requerimientos curriculares...'
-                            : 'Registra antecedentes patológicos, quirúrgicos, hábitos, alergias u observaciones iniciales...'
-                        }
-                        className="w-full p-2.5 bg-white border border-amber-300 rounded-lg text-xs text-neutral-900 focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                      />
-                    ) : (
-                      <p className="text-neutral-700 leading-relaxed min-h-[50px] bg-white/80 p-3 rounded-lg border border-amber-100 whitespace-pre-wrap">
-                        {selectedPatient.notes || (
-                          <span className="text-neutral-400 italic">
-                            Sin antecedentes u observaciones iniciales cargadas. Haz clic en 'Editar Notas' o 'Grabar Nota de Voz' para añadir detalles.
-                          </span>
-                        )}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Tab 3: Cobros & Recibos */}
-              {activeTab === 'billing' && (
-                <div className="space-y-3 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-neutral-500">
-                      Comprobantes de pago y recibos emitidos a este {clientTermSingular.toLowerCase()}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setIsPaymentModalOpen(true)}
-                      className="px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg border border-emerald-200 transition-colors flex items-center gap-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{professionInfo.id === 'legal_contable' ? 'Registrar Cobro de Honorarios' : 'Registrar Cobro / Emitir Recibo'}</span>
-                    </button>
-                  </div>
-
-                  {patientPayments.length === 0 ? (
-                    <div className="p-8 bg-neutral-50/70 rounded-xl border border-neutral-200/70 text-center text-xs text-neutral-500 space-y-2">
-                      <Receipt className="w-6 h-6 mx-auto text-neutral-400 stroke-1" />
-                      <p className="font-semibold text-neutral-700">Sin pagos registrados para este {clientTermSingular.toLowerCase()}</p>
-                      <p className="text-[11px] text-neutral-400">
-                        Registra cobros en efectivo, transferencia o tarjeta y genera recibos oficiales en PDF.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-[380px] overflow-y-auto pr-1">
-                      {patientPayments.map(pay => (
-                        <div
-                          key={pay.id}
-                          className="p-3 rounded-xl border border-neutral-200/80 bg-white hover:bg-neutral-50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-mono text-xs font-bold text-neutral-900">
-                                Recibo {pay.receipt_number}
-                              </span>
-                              <span className="px-1.5 py-0.2 text-[10px] font-semibold uppercase bg-neutral-100 text-neutral-700 rounded border border-neutral-200">
-                                {pay.method}
-                              </span>
-                            </div>
-                            <span className="text-neutral-500 text-[11px] block mt-0.5 truncate">
-                              {pay.concept} • {new Date(pay.date).toLocaleDateString()} {new Date(pay.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center justify-between sm:justify-end gap-3 pt-1 sm:pt-0 border-t sm:border-t-0 border-neutral-100">
-                            <div className="sm:text-right">
-                              <span className="text-xs font-bold text-emerald-700 block">
-                                ${pay.amount.toLocaleString('es-AR')}
-                              </span>
-                              {pay.copay_amount ? (
-                                <span className="text-[10px] text-neutral-400 block">
-                                  Coseguro: ${pay.copay_amount.toLocaleString('es-AR')}
-                                </span>
-                              ) : null}
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => setActiveReceiptPayment(pay)}
-                                className="px-2.5 py-1 bg-white border border-neutral-200 hover:bg-neutral-100 rounded-lg text-xs font-semibold text-neutral-800 transition-colors shadow-2xs flex items-center gap-1 shrink-0"
-                                title="Ver comprobante e imprimir"
-                              >
-                                <Receipt className="w-3.5 h-3.5 text-neutral-600" />
-                                <span>Ver</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setPaymentToEdit(pay);
-                                  setIsEditPaymentModalOpen(true);
-                                }}
-                                className="p-1.5 bg-white border border-neutral-200 hover:bg-neutral-100 text-neutral-600 hover:text-neutral-900 rounded-lg transition-colors shadow-2xs"
-                                title="Editar recibo"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setPaymentToDelete(pay)}
-                                className="p-1.5 bg-white border border-neutral-200 hover:bg-rose-50 text-neutral-400 hover:text-rose-600 rounded-lg transition-colors shadow-2xs"
-                                title="Eliminar recibo"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-                </div>
-              );
-            })()
+              </div>
+            );
+          })()
           ) : (
             <div className="p-12 text-center text-neutral-400">
               Selecciona un paciente para ver su ficha completa.
@@ -2177,11 +2064,16 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
         variant="danger"
       />
 
-      {/* Confirmation Dialog for Patient Deletion */}
-      <ConfirmModal
-        isOpen={!!patientToDelete}
-        onClose={() => setPatientToDelete(null)}
-        onConfirm={() => {
+            {/* Baja de ficha: muestra que se pierde y pide confirmar dos veces */}
+      <ModalEliminarCliente
+        abierto={!!patientToDelete}
+        nombre={`${patientToDelete?.first_name || ""} ${patientToDelete?.last_name || ""}`.trim()}
+        termino={clientTermSingular}
+        turnos={appointments.filter(a => a.patient_id === patientToDelete?.id).length}
+        consultas={consultations.filter(c => c.patient_id === patientToDelete?.id).length}
+        cobros={payments.filter(p => p.patient_id === patientToDelete?.id).length}
+        onCerrar={() => setPatientToDelete(null)}
+        onConfirmar={() => {
           if (patientToDelete) {
             deletePatient(patientToDelete.id);
             if (selectedPatientId === patientToDelete.id) {
@@ -2191,10 +2083,6 @@ export const PatientsView: React.FC<PatientsViewProps> = ({
             setPatientToDelete(null);
           }
         }}
-        title={`¿Eliminar ${clientTermSingular} ${patientToDelete?.first_name} ${patientToDelete?.last_name}?`}
-        message={`Esta acción eliminará de forma permanente al paciente ${patientToDelete?.first_name} ${patientToDelete?.last_name} y todos sus registros asociados.`}
-        confirmText={`Sí, Eliminar ${clientTermSingular}`}
-        variant="danger"
       />
 
       {/* Confirmation Dialog for Appointment Deletion */}

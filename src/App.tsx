@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AgendaStoreProvider, useAgendaStore } from './lib/store';
 import { esSuperAdmin } from './lib/firestore-sync';
+import { escucharNotificacionesEnPrimerPlano } from './lib/fcm';
 import { AppLayout } from './components/AppLayout';
 import { DashboardView } from './views/DashboardView';
 import { AgendaView } from './views/AgendaView';
@@ -24,6 +25,8 @@ import { SuperAdminAnalyticsView } from './views/SuperAdminAnalyticsView';
 import { SuperAdminApisView } from './views/SuperAdminApisView';
 import { SuperAdminMessagesView } from './views/SuperAdminMessagesView';
 import { SuggestionsView } from './views/SuggestionsView';
+import { BusinessSettingsView } from './views/BusinessSettingsView';
+import { BrowserNotificationsView } from './views/BrowserNotificationsView';
 import { LandingPageView } from './views/LandingPageView';
 import { ContactView } from './views/ContactView';
 import { TermsView } from './views/TermsView';
@@ -62,6 +65,7 @@ function MainApp() {
     'guia', 'dashboard', 'agenda', 'pacientes', 'consultas', 'chats', 'asistente',
     'espera', 'recordatorios', 'cobros', 'servicios', 'horarios', 'metricas',
     'suscripcion', 'google-sync', 'editor-pagina', 'sugerencias', 'configuracion',
+    'datos-cobro', 'senas', 'ajustes-negocio', 'negocio', 'notificaciones', 'respaldo', 'backup',
     'superadmin-analytics', 'superadmin-apis', 'apis', 'superadmin-mensajes', 'mensajes'
   ];
 
@@ -128,6 +132,18 @@ function MainApp() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // Escuchar notificaciones push en primer plano (FCM)
+  useEffect(() => {
+    escucharNotificacionesEnPrimerPlano((payload) => {
+      triggerNotification({
+        type: 'bot_booking',
+        title: payload.title || '🔔 Aviso de Turno',
+        message: payload.body || 'Novedad registrada en tu agenda',
+        force: true
+      });
+    });
+  }, [triggerNotification]);
 
   // Synchronize browser URL bar cleanly
   const syncBrowserUrl = (tab: string) => {
@@ -671,7 +687,7 @@ function MainApp() {
       )}
 
       {activeTab === 'cobros' && (
-        <BillingView />
+        <BillingView onNavigateToTab={handleSelectTab} />
       )}
 
       {activeTab === 'espera' && (
@@ -726,37 +742,12 @@ function MainApp() {
         )
       )}
 
-      {activeTab === 'servicios' && (
-        <ServicesView
-          onOpenNewService={handleOpenNewService}
-          onEditService={handleEditService}
-        />
-      )}
-
-      {activeTab === 'horarios' && (
-        <AvailabilityView />
-      )}
-
       {activeTab === 'metricas' && (
         <AnalyticsView />
       )}
 
       {activeTab === 'suscripcion' && (
         <SubscriptionPlansView onNavigateTab={handleSelectTab} />
-      )}
-
-      {/* Plan-Protected: Google Workspace Sync */}
-      {activeTab === 'google-sync' && (
-        isBasicPlan ? (
-          <ProFeatureGate
-            featureTitle="Sincronización Bidireccional con Google Calendar"
-            featureDescription="Sincroniza tus turnos automáticamente con tu calendario personal de Google Calendar y exporta pacientes a Google Sheets en tiempo real."
-            icon="google"
-            onNavigateToPlans={() => handleSelectTab('suscripcion')}
-          />
-        ) : (
-          <GoogleWorkspaceView />
-        )
       )}
 
       {activeTab === 'editor-pagina' && (
@@ -822,8 +813,29 @@ function MainApp() {
         )
       )}
 
-      {activeTab === 'configuracion' && (
-        <SettingsView />
+      {(activeTab === 'ajustes-negocio' || activeTab === 'negocio' || activeTab === 'configuracion' || activeTab === 'servicios' || activeTab === 'horarios' || activeTab === 'datos-cobro' || activeTab === 'senas' || activeTab === 'google-sync' || activeTab === 'respaldo' || activeTab === 'backup') && (
+        <BusinessSettingsView
+          initialStep={
+            activeTab === 'servicios'
+              ? 'services'
+              : activeTab === 'horarios'
+              ? 'hours'
+              : activeTab === 'datos-cobro' || activeTab === 'senas'
+              ? 'deposits'
+              : activeTab === 'google-sync'
+              ? 'google'
+              : activeTab === 'respaldo' || activeTab === 'backup'
+              ? 'backup'
+              : 'profile'
+          }
+          onOpenNewService={handleOpenNewService}
+          onEditService={handleEditService}
+          onNavigateTab={handleSelectTab}
+        />
+      )}
+
+      {activeTab === 'notificaciones' && (
+        <BrowserNotificationsView />
       )}
 
       {activeTab === 'sugerencias' && (

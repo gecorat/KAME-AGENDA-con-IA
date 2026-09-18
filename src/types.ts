@@ -135,7 +135,7 @@ export interface DayAvailability {
   break_end?: string;   // "14:00"
 }
 
-export type BotAiModel = 'gemini-3.8-flash' | 'gemini-3.1-flash-lite' | 'gemini-2.5-flash' | 'gemini-2.5-pro';
+export type BotAiModel = string; // el super admin elige entre los modelos que el probador confirma que andan
 export type BotIdentityMode = 'professional' | 'assistant';
 export type BotPersonalityPreset = 'warm' | 'formal' | 'concise' | 'custom';
 
@@ -255,6 +255,11 @@ export interface PracticeSettings {
   patient_deposit_mp_link?: string;
   patient_deposit_mp_connected?: boolean;
   patient_deposit_mp_email?: string;
+  patient_deposit_mp_token?: string;
+  patient_deposit_mp_public_key?: string;
+  patient_deposit_mp_user_id?: string;
+  patient_deposit_mp_collector_id?: string;
+  patient_deposit_mp_live_mode?: boolean;
   // Evolution API (WhatsApp infrastructure - Superadmin only)
   evolution_api_url?: string;
   evolution_api_key?: string;
@@ -285,6 +290,13 @@ export interface PracticeSettings {
   notify_bot_bookings?: boolean;
   notify_patient_confirmations?: boolean;
   notify_sound_enabled?: boolean;
+
+  // Como se le avisa al profesional que entro un turno. Correo y push vienen
+  // activados; WhatsApp y el aviso dentro de la app son opcionales.
+  avisar_prof_email?: boolean;
+  avisar_prof_push?: boolean;
+  avisar_prof_whatsapp?: boolean;
+  avisar_prof_app?: boolean;
   // Configurable Required Fields for Booking & Bot
   booking_required_fields?: BookingRequiredFields;
   bot_required_fields?: BookingRequiredFields;

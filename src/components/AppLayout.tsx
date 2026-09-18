@@ -39,7 +39,9 @@ import {
   Lightbulb,
   Mail,
   ArrowRight,
-  ChevronDown
+  ChevronDown,
+  Landmark,
+  Building2
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
 import { esSuperAdmin } from '../lib/firestore-sync';
@@ -87,6 +89,13 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   const isProfileComplete = Boolean(practiceSettings.practice_name?.trim() && practiceSettings.professional_name?.trim() && practiceSettings.phone?.trim());
   const isServicesComplete = services.some(s => s.active);
   const isHoursComplete = availability.some(d => d.enabled);
+  const isDepositConfigured = Boolean(
+    practiceSettings.patient_deposit_alias?.trim() ||
+    practiceSettings.patient_deposit_cbu?.trim() ||
+    practiceSettings.patient_deposit_mp_token?.trim() ||
+    practiceSettings.patient_deposit_mp_link?.trim() ||
+    practiceSettings.patient_deposit_mp_connected
+  );
   const completedStepsList = practiceSettings.onboarding_completed_steps || [];
   const isBotTested = completedStepsList.includes('whatsapp') || appointments.some(a => a.origin === 'bot_whatsapp');
   const isPortalTested = completedStepsList.includes('share') || appointments.some(a => (a.origin as string) === 'patient_portal' || a.origin === 'public_booking');
@@ -95,8 +104,15 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
   if (isProfileComplete) completedStepsCount++;
   if (isServicesComplete) completedStepsCount++;
   if (isHoursComplete) completedStepsCount++;
+  if (isDepositConfigured) completedStepsCount++;
   if (isBotTested) completedStepsCount++;
   if (isPortalTested) completedStepsCount++;
+
+  let completedBusinessSteps = 0;
+  if (isProfileComplete) completedBusinessSteps++;
+  if (isServicesComplete) completedBusinessSteps++;
+  if (isHoursComplete) completedBusinessSteps++;
+  if (isDepositConfigured) completedBusinessSteps++;
 
   const professionInfo = getProfessionInfo(practiceSettings);
   const clientTermPlural = getClientTerm(practiceSettings, { plural: true, capitalize: true });
@@ -132,8 +148,12 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           id: 'chats',
           label: 'WhatsApp',
           icon: MessageSquare,
-          badge: isPro ? (practiceSettings.whatsapp_connected ? 'En línea' : 'Configurar') : 'IA Activa',
-          badgeColor: isPro ? (practiceSettings.whatsapp_connected ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/60' : 'bg-amber-100 text-amber-800') : 'bg-teal-50 text-teal-800 border border-teal-200/60'
+          badge: isPro
+            ? (practiceSettings.whatsapp_connected ? 'En línea' : 'Configurar')
+            : (practiceSettings.subscription_plan === 'basic' ? 'PRO AI' : 'IA Activa'),
+          badgeColor: isPro
+            ? (practiceSettings.whatsapp_connected ? 'bg-emerald-100 text-emerald-800 border border-emerald-200/60' : 'bg-amber-100 text-amber-800')
+            : (practiceSettings.subscription_plan === 'basic' ? 'bg-amber-100 text-amber-900 border border-amber-300 font-semibold' : 'bg-teal-50 text-teal-800 border border-teal-200/60')
         },
         { id: 'pacientes', label: clientTermPlural, icon: professionInfo.id === 'legal_contable' ? Scale : Users },
         {
@@ -152,8 +172,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           id: 'consultas',
           label: professionInfo.historyTabTitle,
           icon: getHistoryIcon(),
-          badge: professionInfo.badgeWorkflow,
-          badgeColor: 'bg-slate-200/80 text-slate-700'
+          badge: practiceSettings.subscription_plan === 'basic' && !isSuperAdmin ? 'PRO AI' : professionInfo.badgeWorkflow,
+          badgeColor: practiceSettings.subscription_plan === 'basic' && !isSuperAdmin ? 'bg-amber-100 text-amber-900 border border-amber-300 font-semibold' : 'bg-slate-200/80 text-slate-700'
         },
         {
           id: 'espera',
@@ -175,15 +195,17 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
     {
       title: 'Configuración',
       items: [
-        { id: 'editor-pagina', label: 'Mi Página', icon: Palette, badge: 'Público', badgeColor: 'bg-teal-100 text-teal-800 border border-teal-200/60' },
-        { id: 'servicios', label: 'Servicios', icon: DollarSign },
-        { id: 'horarios', label: 'Horarios', icon: Clock },
         {
-          id: 'google-sync',
-          label: 'Google',
-          icon: Cloud
+          id: 'ajustes-negocio',
+          label: 'Ajustes del Negocio',
+          icon: Building2,
+          badge: `${completedBusinessSteps}/4`,
+          badgeColor: completedBusinessSteps === 4
+            ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'
+            : 'bg-amber-100 text-amber-900 border border-amber-300 font-bold'
         },
-        { id: 'configuracion', label: 'Ajustes', icon: Settings },
+        { id: 'editor-pagina', label: 'Mi Página', icon: Palette, badge: 'Público', badgeColor: 'bg-teal-100 text-teal-800 border border-teal-200/60' },
+        { id: 'notificaciones', label: 'Notificaciones', icon: Bell },
         {
           id: 'suscripcion',
           label: 'Mi Plan',
@@ -200,8 +222,8 @@ export const AppLayout: React.FC<AppLayoutProps> = ({
           id: 'guia',
           label: 'Guía de Inicio',
           icon: Compass,
-          badge: `${completedStepsCount}/5`,
-          badgeColor: completedStepsCount === 5 ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-teal-100 text-teal-800 border border-teal-200/60'
+          badge: `${completedStepsCount}/6`,
+          badgeColor: completedStepsCount === 6 ? 'bg-emerald-100 text-emerald-800 font-bold' : 'bg-teal-100 text-teal-800 border border-teal-200/60'
         },
         {
           id: 'sugerencias',

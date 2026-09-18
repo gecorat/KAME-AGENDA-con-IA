@@ -34,7 +34,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     switch (method) {
       case 'cash': return 'Efectivo en mano';
       case 'transfer': return 'Transferencia Bancaria';
-      case 'mercado_pago': return 'Mercado Pago / QR';
+      case 'mercado_pago': return 'Mercado Pago';
       case 'card_debit': return 'Tarjeta de Débito';
       case 'card_credit': return 'Tarjeta de Crédito';
       case 'insurance': return `Obra Social (${payment.insurance_provider || 'Cobertura'})`;

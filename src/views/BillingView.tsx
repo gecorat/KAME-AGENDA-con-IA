@@ -29,7 +29,9 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
-  X
+  X,
+  Landmark,
+  ArrowRight
 } from 'lucide-react';
 import { useAgendaStore, isAppointmentPastSchedule } from '../lib/store';
 import { PaymentRecord, PaymentMethod, Appointment, CashMovement } from '../types';
@@ -49,7 +51,11 @@ interface MethodSummaryItem {
   icon: string;
 }
 
-export const BillingView: React.FC = () => {
+interface BillingViewProps {
+  onNavigateToTab?: (tab: string) => void;
+}
+
+export const BillingView: React.FC<BillingViewProps> = ({ onNavigateToTab }) => {
   const {
     payments,
     cashRegister,
@@ -350,6 +356,70 @@ export const BillingView: React.FC = () => {
     setIsNewPaymentModalOpen(true);
   };
 
+  const handleExportAccountingReport = () => {
+    if (filteredPayments.length === 0) {
+      alert('No hay registros de cobros para exportar con los filtros seleccionados.');
+      return;
+    }
+
+    const headers = [
+      'Nro Recibo',
+      'Fecha',
+      'Hora',
+      'Paciente / Cliente',
+      'DNI / Documento',
+      'Concepto',
+      'Método de Pago',
+      'Monto Cobrado',
+      'Descuento (%)',
+      'Comprobante Fiscal',
+      'Notas / Observaciones'
+    ];
+
+    const getMethodLabel = (m: PaymentMethod) => {
+      switch (m) {
+        case 'cash': return 'Efectivo';
+        case 'transfer': return 'Transferencia';
+        case 'mercado_pago': return 'Mercado Pago';
+        case 'card_debit': return 'Tarjeta Débito';
+        case 'card_credit': return 'Tarjeta Crédito';
+        case 'insurance': return 'Obra Social';
+        default: return m;
+      }
+    };
+
+    const rows = filteredPayments.map(p => {
+      const pDate = new Date(p.date);
+      const fechaStr = isNaN(pDate.getTime()) ? p.date : pDate.toLocaleDateString('es-AR');
+      const horaStr = isNaN(pDate.getTime()) ? '' : pDate.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      return [
+        `"${p.receipt_number || ''}"`,
+        `"${fechaStr}"`,
+        `"${horaStr}"`,
+        `"${(p.patient_name || '').replace(/"/g, '""')}"`,
+        `"${p.patient_dni || ''}"`,
+        `"${(p.concept || '').replace(/"/g, '""')}"`,
+        `"${getMethodLabel(p.method)}"`,
+        `"${p.amount.toFixed(2)}"`,
+        `"${p.discount_applied ? p.discount_percentage + '%' : '0%'}"`,
+        `"${p.fiscal_invoice_emitted ? (p.fiscal_invoice_number || 'Emitida') : 'No emitido'}"`,
+        `"${(p.notes || '').replace(/"/g, '""')}"`
+      ].join(';');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const todayFormatted = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Reporte_Contable_Cobros_${todayFormatted}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       
@@ -390,6 +460,25 @@ export const BillingView: React.FC = () => {
           </button>
 
           <button
+            onClick={handleExportAccountingReport}
+            className="px-3 py-1.5 text-xs font-semibold bg-white hover:bg-neutral-50 text-neutral-700 border border-neutral-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs whitespace-nowrap"
+            title="Descargar listado de cobros filtrados en formato Excel / CSV para el contador o liquidación"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <span>Exportar Reporte</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onNavigateToTab?.('datos-cobro')}
+            className="px-3 py-1.5 text-xs font-semibold bg-white hover:bg-neutral-50 text-neutral-800 border border-neutral-200 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs whitespace-nowrap cursor-pointer"
+            title="Configurar Alias, CBU o Mercado Pago para señas y cobros de pacientes"
+          >
+            <Landmark className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+            <span>Datos de Cobro & Señas</span>
+          </button>
+
+          <button
             onClick={() => {
               setPreselectedAppointment(null);
               setIsNewPaymentModalOpen(true);
@@ -401,6 +490,33 @@ export const BillingView: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Quick notice when bank/payment details are pending */}
+      {(!practiceSettings.patient_deposit_alias && !practiceSettings.patient_deposit_cbu && !practiceSettings.patient_deposit_mp_token && !practiceSettings.patient_deposit_mp_link) && (
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-sky-50 border border-emerald-200 rounded-2xl p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-neutral-800 shadow-2xs">
+          <div className="flex items-start sm:items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0 shadow-2xs">
+              <Landmark className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-xs font-bold text-neutral-900">
+                ¿Aún no configuraste tus datos de cobro de señas?
+              </p>
+              <p className="text-[11px] text-neutral-600 mt-0.5 leading-relaxed">
+                Carga tu <strong>Alias</strong>, <strong>CBU</strong> o conecta <strong>Mercado Pago</strong> para recibir señas previas cuando tus pacientes reserven online o por WhatsApp.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onNavigateToTab?.('datos-cobro')}
+            className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-2xs shrink-0 self-start sm:self-auto cursor-pointer"
+          >
+            <span>Configurar Cuenta</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Demo / Example Data Banner with 1-click removal */}
       {hasExampleData && (
@@ -1021,7 +1137,7 @@ export const BillingView: React.FC = () => {
                   </div>
 
                   <div className="bg-white p-3 rounded-xl border border-neutral-200">
-                    <span className="text-[11px] text-neutral-500 block">📱 Mercado Pago / QR</span>
+                    <span className="text-[11px] text-neutral-500 block">📱 Mercado Pago</span>
                     <span className="text-base font-bold font-mono text-blue-800">
                       ${todayByMethod.mercado_pago.toLocaleString('es-AR')}
                     </span>
@@ -1253,7 +1369,7 @@ export const BillingView: React.FC = () => {
                               <button
                                 onClick={() => setSelectedAptForRequest(apt)}
                                 className="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-2xs transition-colors flex items-center gap-1 cursor-pointer"
-                                title="Solicitar datos de pago por WhatsApp (Alias, MP o QR)"
+                                title="Solicitar datos de pago por WhatsApp (Alias o Mercado Pago)"
                               >
                                 <Send className="w-3.5 h-3.5" />
                                 Solicitar Pago

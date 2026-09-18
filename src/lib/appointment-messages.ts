@@ -2,6 +2,12 @@ import { Appointment, PracticeSettings, Service } from '../types';
 
 export interface FormatConfirmationOptions {
   /**
+   * De donde salio el turno. Cambia solo el saludo:
+   * 'whatsapp' -> "¡Buenisimo {paciente}! Tu turno quedo agendado..."
+   * 'pagina' (o sin especificar) -> "¡Hola {paciente}! Queria recordarte que tu turno quedo agendado..."
+   */
+  origen?: 'pagina' | 'whatsapp';
+  /**
    * If true or if patientName is in greeting:
    * "¡Hola Mauricio Macri! 👋. Te escribo para avisarte que tu turno quedó confirmado, te paso los detalles 😊:"
    * Otherwise:
@@ -125,18 +131,17 @@ export function formatAppointmentConfirmationMessage(
   }
 
   // 5. Header: For chat vs general
-  const isChat = options?.forChat || options?.includeGreetingWithName;
-  const header = isChat
-    ? `¡Hola ${apt.patient_name}! 👋. Te escribo para avisarte que tu turno quedó confirmado, te paso los detalles 😊:`
-    : `Te confirmo tu turno, te paso los detalles 😊:`;
+  const header = options?.origen === 'whatsapp'
+    ? `¡Buenísimo ${apt.patient_name}! Tu turno quedó agendado, te paso los detalles:`
+    : `¡Hola ${apt.patient_name}! Quería recordarte que tu turno quedó agendado, te paso los detalles:`;
 
   return `${header}
 
-🗓 **Fecha:** ${formattedDate}  
-⏰ **Horario:** ${formattedTime}  
-👤 **Profesional:** ${professionalName}  
-💼 **Servicio:** ${serviceText}  
-📍 **Lugar:** ${locationText}  
+🗓️ *Fecha:* ${formattedDate}
+⏰ *Horario:* ${formattedTime}
+👤 *Profesional:* ${professionalName}
+💼 *Servicio:* ${serviceText}
+📍 *Lugar:* ${locationText}
 
 ${waitingText} Si necesitás hacer alguna modificación o consulta previa, avisame por acá. 😊`;
 }

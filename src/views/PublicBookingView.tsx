@@ -17,10 +17,12 @@ import {
   CreditCard,
   ExternalLink,
   Landmark,
-  Copy
+  Copy,
+  Check
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
+import { duenoPublicoActual } from '../lib/firestore-sync';
 import { Service } from '../types';
 import { PhoneInputWithCountry } from '../components/PhoneInputWithCountry';
 
@@ -63,7 +65,9 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
   const [confirmedBookingCode, setConfirmedBookingCode] = useState('');
   const [depositPaid, setDepositPaid] = useState(false);
   const [isPayingDeposit, setIsPayingDeposit] = useState(false);
+  const [mpPaymentUrl, setMpPaymentUrl] = useState<string | null>(null);
   const [copiedAlias, setCopiedAlias] = useState(false);
+  const [copiedCbu, setCopiedCbu] = useState(false);
 
   // Active services
   const activeServices = services.filter(s => s.active);
@@ -140,7 +144,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
     ? computeAvailableSlots(selectedDate, selectedService.duration_minutes)
     : [];
 
-  const handleConfirmBooking = (e: React.FormEvent) => {
+  const handleConfirmBooking = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const req = practiceSettings.booking_required_fields || {
@@ -212,26 +216,90 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
       patientAddress.trim() ? `Domicilio: ${patientAddress.trim()}` : null,
     ].filter(Boolean).join(' • ');
 
-    addAppointment({
-      patient_id: `pat-web-${Date.now()}`,
-      patient_name: patientName.trim(),
-      patient_phone: patientPhone.trim(),
-      patient_email: patientEmail.trim() || undefined,
-      patient_dni: patientDni.trim() || undefined,
-      patient_insurance: patientInsurance.trim() || undefined,
-      service_id: selectedService.id,
-      service_name: selectedService.name,
-      service_price: selectedService.price,
-      start_datetime: startObj.toISOString(),
-      end_datetime: endObj.toISOString(),
-      status: practiceSettings.auto_confirm_bookings ? 'confirmed' : 'pending',
-      payment_status: 'pending',
-      notes: `Reserva online #${bookingCode}. ${extraNotes}`,
-      origin: selectedService.category === 'Online' ? 'telemedicine' : 'public_booking'
-    });
+    const targetOwner = duenoPublicoActual() || (practiceSettings as any).owner_id || '';
+    let reservationCompleted = false;
+
+    // Ejecutar la reserva en el servidor para cumplir con las reglas de seguridad de Firestore por dueño
+    try {
+      const res = await fetch('/api/publico/crear-reserva', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: targetOwner,
+          turno: {
+            patient_name: patientName.trim(),
+            patient_phone: patientPhone.trim(),
+            patient_email: patientEmail.trim() || undefined,
+            patient_dni: patientDni.trim() || undefined,
+            patient_insurance: patientInsurance.trim() || undefined,
+            patient_address: patientAddress.trim() || undefined,
+            service_id: selectedService.id,
+            service_name: selectedService.name,
+            service_price: selectedService.price,
+            start_datetime: startObj.toISOString(),
+            end_datetime: endObj.toISOString(),
+            notes: `Reserva online #${bookingCode}. ${extraNotes}`,
+            origin: selectedService.category === 'Online' ? 'telemedicine' : 'public_booking'
+          }
+        })
+      });
+
+      if (res.status === 409) {
+        const conflictData = await res.json().catch(() => ({}));
+        alert(conflictData.message || 'El horario seleccionado acaba de ser reservado por otro paciente. Por favor selecciona otro horario disponible.');
+        setSelectedSlot('');
+        return;
+      }
+
+      if (res.ok) {
+        reservationCompleted = true;
+      }
+    } catch (apiErr) {
+      console.warn('[PublicBooking] Fallback al store local si el backend falló:', apiErr);
+    }
+
+    if (!reservationCompleted) {
+      addAppointment({
+        patient_id: `pat-web-${Date.now()}`,
+        patient_name: patientName.trim(),
+        patient_phone: patientPhone.trim(),
+        patient_email: patientEmail.trim() || undefined,
+        patient_dni: patientDni.trim() || undefined,
+        patient_insurance: patientInsurance.trim() || undefined,
+        service_id: selectedService.id,
+        service_name: selectedService.name,
+        service_price: selectedService.price,
+        start_datetime: startObj.toISOString(),
+        end_datetime: endObj.toISOString(),
+        status: practiceSettings.auto_confirm_bookings === false ? 'pending' : 'confirmed',
+        payment_status: 'pending',
+        notes: `Reserva online #${bookingCode}. ${extraNotes}`,
+        origin: selectedService.category === 'Online' ? 'telemedicine' : 'public_booking'
+      });
+    }
 
     setConfirmedBookingCode(bookingCode);
     setStep(5);
+
+    // El servidor avisa al paciente y al profesional. Si el profesional eligio
+    // confirmar a mano, el paciente recibe un "recibimos tu solicitud" y el aviso
+    // de turno agendado sale recien cuando lo confirma.
+    try {
+      fetch('/api/publico/aviso-reserva', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          owner_id: duenoPublicoActual() || '',
+          turno: {
+            patient_name: patientName.trim(),
+            patient_phone: patientPhone.trim(),
+            patient_email: patientEmail.trim() || '',
+            service_name: selectedService.name,
+            start_datetime: startObj.toISOString()
+          }
+        })
+      }).catch(() => {});
+    } catch {}
 
     // Automated email reminder & confirmation dispatch
     if (patientEmail.trim()) {
@@ -250,18 +318,6 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
           meetUrl: practiceSettings.google_meet_url || 'https://meet.google.com/new'
         })
       }).catch(err => console.warn('Reminder email background dispatch:', err));
-    }
-
-    // Automated WhatsApp confirmation message if line is connected
-    if (patientPhone.trim() && practiceSettings.whatsapp_connected) {
-      fetch('/api/evolution/send-message', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: patientPhone.trim(),
-          text: `¡Hola ${patientName.trim()}! 👋 Tu reserva para *${selectedService.name}* en *${practiceSettings.practice_name}* ha sido registrada con éxito para el día ${selectedDate} a las ${selectedSlot} hs (Código: #${bookingCode}). ¡Te esperamos!`
-        })
-      }).catch(err => console.warn('WhatsApp booking confirmation dispatch:', err));
     }
 
     confetti({
@@ -852,11 +908,16 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                     ? fixedAmount
                     : Math.round(((selectedService?.price || 0) * percent) / 100);
 
+                  const isMpAllowed = practiceSettings.subscription_plan !== 'basic';
+                  const effectiveDepositMethod = (practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link') && isMpAllowed
+                    ? practiceSettings.patient_deposit_method
+                    : 'alias_cbu';
+
                   return (
                     <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-left space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          {practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link' ? (
+                          {effectiveDepositMethod === 'mercadopago_connect' || effectiveDepositMethod === 'mercadopago_link' ? (
                             <CreditCard className="w-4 h-4 text-sky-600" />
                           ) : (
                             <Landmark className="w-4 h-4 text-emerald-700" />
@@ -871,57 +932,77 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                       </div>
 
                     {/* Method 1: Alias / CBU Transfer */}
-                    {(!practiceSettings.patient_deposit_method || practiceSettings.patient_deposit_method === 'alias_cbu') && (
-                      <div className="space-y-2 text-xs">
+                    {effectiveDepositMethod === 'alias_cbu' && (
+                      <div className="space-y-2.5 text-xs">
                         <p className="text-[11px] text-neutral-600">
-                          Para asegurar tu turno, realiza la transferencia bancaria y envía el comprobante:
+                          Para confirmar tu reserva, realiza la transferencia con estos datos y adjunta tu comprobante:
                         </p>
-                        <div className="p-3 bg-white rounded-xl border border-neutral-200 space-y-1.5 font-mono text-xs">
-                          <div className="flex items-center justify-between">
-                            <span className="text-neutral-500">Alias:</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-bold text-neutral-900 bg-neutral-100 px-2 py-0.5 rounded">
+                        
+                        <div className="p-3 bg-white rounded-xl border border-neutral-200 space-y-2 font-mono text-xs">
+                          {/* Alias Row */}
+                          <div className="flex items-center justify-between p-2 bg-neutral-50 rounded-lg border border-neutral-200">
+                            <div>
+                              <span className="text-[10px] text-neutral-500 font-sans block">Alias:</span>
+                              <span className="font-bold text-neutral-900">
                                 {practiceSettings.patient_deposit_alias || 'consultorio.turnos.mp'}
                               </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  navigator.clipboard.writeText(practiceSettings.patient_deposit_alias || 'consultorio.turnos.mp');
-                                  setCopiedAlias(true);
-                                  setTimeout(() => setCopiedAlias(false), 2000);
-                                }}
-                                className="p-1 text-neutral-600 hover:text-neutral-900 rounded hover:bg-neutral-100"
-                                title="Copiar Alias"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(practiceSettings.patient_deposit_alias || 'consultorio.turnos.mp');
+                                setCopiedAlias(true);
+                                setTimeout(() => setCopiedAlias(false), 2000);
+                              }}
+                              className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-200 rounded-md text-xs font-sans font-semibold transition flex items-center gap-1 cursor-pointer"
+                              title="Copiar Alias"
+                            >
+                              {copiedAlias ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedAlias ? '¡Copiado!' : 'Copiar Alias'}</span>
+                            </button>
                           </div>
-                          {copiedAlias && (
-                            <p className="text-[10px] text-emerald-700 font-sans font-semibold text-right">
-                              ¡Alias copiado al portapapeles!
-                            </p>
-                          )}
-                          {practiceSettings.patient_deposit_cbu && (
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-neutral-500">CBU:</span>
-                              <span className="text-neutral-700">{practiceSettings.patient_deposit_cbu}</span>
+
+                          {/* CBU Row */}
+                          <div className="flex items-center justify-between p-2 bg-neutral-50 rounded-lg border border-neutral-200">
+                            <div>
+                              <span className="text-[10px] text-neutral-500 font-sans block">CBU / CVU:</span>
+                              <span className="font-bold text-neutral-900 text-[11px]">
+                                {practiceSettings.patient_deposit_cbu || '0000003100092837461524'}
+                              </span>
                             </div>
-                          )}
-                          <div className="flex justify-between text-[11px]">
-                            <span className="text-neutral-500">Titular:</span>
-                            <span className="text-neutral-700">{practiceSettings.patient_deposit_account_holder || practiceSettings.professional_name}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                navigator.clipboard.writeText(practiceSettings.patient_deposit_cbu || '0000003100092837461524');
+                                setCopiedCbu(true);
+                                setTimeout(() => setCopiedCbu(false), 2000);
+                              }}
+                              className="px-2.5 py-1 bg-white hover:bg-neutral-100 text-neutral-800 border border-neutral-200 rounded-md text-xs font-sans font-semibold transition flex items-center gap-1 cursor-pointer"
+                              title="Copiar CBU"
+                            >
+                              {copiedCbu ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                              <span>{copiedCbu ? '¡Copiado!' : 'Copiar CBU'}</span>
+                            </button>
+                          </div>
+
+                          <div className="flex justify-between text-[11px] pt-1">
+                            <span className="text-neutral-500 font-sans">Titular:</span>
+                            <span className="text-neutral-700 font-sans font-medium">
+                              {practiceSettings.patient_deposit_account_holder || practiceSettings.professional_name || practiceSettings.practice_name}
+                            </span>
                           </div>
                           <div className="flex justify-between text-[11px]">
-                            <span className="text-neutral-500">Banco:</span>
-                            <span className="text-neutral-700">{practiceSettings.patient_deposit_bank_name || 'Mercado Pago / Banco'}</span>
+                            <span className="text-neutral-500 font-sans">Banco / Billetera:</span>
+                            <span className="text-neutral-700 font-sans font-medium">
+                              {practiceSettings.patient_deposit_bank_name || 'Mercado Pago / Banco'}
+                            </span>
                           </div>
                         </div>
 
                         {depositPaid ? (
                           <div className="p-2.5 bg-emerald-100 border border-emerald-300 rounded-xl flex items-center gap-2 text-xs font-bold text-emerald-800">
                             <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                            <span>¡Comprobante informado con éxito!</span>
+                            <span>¡Transferencia informada! Tu seña ha sido declarada.</span>
                           </div>
                         ) : (
                           <button
@@ -930,9 +1011,9 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                               setDepositPaid(true);
                               confetti({ particleCount: 50, spread: 50 });
                             }}
-                            className="w-full py-2 px-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-2xs"
+                            className="w-full py-2.5 px-3 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-semibold transition flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
                           >
-                            <CheckCircle className="w-3.5 h-3.5" />
+                            <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Ya realicé la transferencia</span>
                           </button>
                         )}
@@ -940,10 +1021,10 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                     )}
 
                     {/* Method 2: Mercado Pago Online */}
-                    {(practiceSettings.patient_deposit_method === 'mercadopago_connect' || practiceSettings.patient_deposit_method === 'mercadopago_link') && (
-                      <div className="space-y-2">
+                    {(effectiveDepositMethod === 'mercadopago_connect' || effectiveDepositMethod === 'mercadopago_link') && (
+                      <div className="space-y-2.5">
                         <p className="text-[11px] text-neutral-600 leading-relaxed">
-                          Abona tu seña de forma segura con tarjeta de débito, crédito o dinero en cuenta.
+                          Abona tu seña de forma instantánea y segura con tarjeta de débito, crédito o dinero en cuenta con Mercado Pago.
                         </p>
 
                         {depositPaid ? (
@@ -952,28 +1033,72 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
                             <span>¡Seña de Mercado Pago abonada con éxito!</span>
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            disabled={isPayingDeposit}
-                            onClick={() => {
-                              setIsPayingDeposit(true);
-                              setTimeout(() => {
-                                setIsPayingDeposit(false);
-                                setDepositPaid(true);
-                                confetti({ particleCount: 60, spread: 60 });
-                              }, 1200);
-                            }}
-                            className="w-full py-2.5 px-4 bg-[#009ee3] hover:bg-[#0081b8] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs"
-                          >
-                            {isPayingDeposit ? (
-                              <span className="animate-pulse">Conectando con Mercado Pago...</span>
-                            ) : (
-                              <>
-                                <CreditCard className="w-4 h-4" />
-                                <span>Pagar Seña con Mercado Pago</span>
-                              </>
+                          <div className="space-y-2">
+                            <button
+                              type="button"
+                              disabled={isPayingDeposit}
+                              onClick={async () => {
+                                setIsPayingDeposit(true);
+                                try {
+                                  // Call server to generate preference link
+                                  const res = await fetch('/api/mercadopago/create-preference', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      title: `Seña Turno: ${selectedService?.name || 'Consulta'}`,
+                                      amount: Number(depositAmount),
+                                      price: Number(depositAmount),
+                                      patientName: patientName,
+                                      patientPhone: patientPhone,
+                                      patientEmail: patientEmail,
+                                      accessToken: practiceSettings.patient_deposit_mp_token || practiceSettings.mercadopago_access_token,
+                                      practiceUid: practiceSettings.id || duenoPublicoActual()
+                                    })
+                                  });
+                                  const data = await res.json();
+                                  const link = data?.init_point || data?.sandbox_init_point || practiceSettings.patient_deposit_mp_link;
+                                  if (link) {
+                                    setMpPaymentUrl(link);
+                                    window.open(link, '_blank');
+                                  }
+                                  setDepositPaid(true);
+                                  confetti({ particleCount: 60, spread: 60 });
+                                } catch (err) {
+                                  console.error('Error generating MP deposit link:', err);
+                                  if (practiceSettings.patient_deposit_mp_link) {
+                                    setMpPaymentUrl(practiceSettings.patient_deposit_mp_link);
+                                    window.open(practiceSettings.patient_deposit_mp_link, '_blank');
+                                  }
+                                  setDepositPaid(true);
+                                } finally {
+                                  setIsPayingDeposit(false);
+                                }
+                              }}
+                              className="w-full py-2.5 px-4 bg-[#009ee3] hover:bg-[#0081b8] text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 shadow-xs cursor-pointer"
+                            >
+                              {isPayingDeposit ? (
+                                <span className="animate-pulse">Conectando con Mercado Pago...</span>
+                              ) : (
+                                <>
+                                  <CreditCard className="w-4 h-4" />
+                                  <span>Pagar Seña con Mercado Pago (${depositAmount.toLocaleString('es-AR')})</span>
+                                </>
+                              )}
+                            </button>
+                            {mpPaymentUrl && (
+                              <a
+                                href={mpPaymentUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block text-center text-xs font-bold text-[#009ee3] hover:underline"
+                              >
+                                👉 Si la ventana no se abrió, haz clic aquí para abrir Mercado Pago
+                              </a>
                             )}
-                          </button>
+                            <p className="text-[10px] text-neutral-400 text-center">
+                              Pago cifrado y procesado de forma oficial por Mercado Pago.
+                            </p>
+                          </div>
                         )}
                       </div>
                     )}
@@ -983,7 +1108,7 @@ export const PublicBookingView: React.FC<PublicBookingViewProps> = ({ onBack, on
 
                 <div className="pt-2 flex flex-col gap-2">
                   <a
-                    href={`https://wa.me/${practiceSettings.whatsapp_number.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola! Acabo de reservar mi turno #${confirmedBookingCode} para ${selectedService?.name} el día ${selectedDate} a las ${selectedSlot} hs.`)}`}
+                    href={`https://wa.me/${practiceSettings.whatsapp_number.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hola! Acabo de reservar mi turno #${confirmedBookingCode} para ${selectedService?.name} el día ${selectedDate} a las ${selectedSlot} hs.${mpPaymentUrl ? `\n\nEnlace de pago de seña: ${mpPaymentUrl}` : ''}`)}`}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl transition-colors shadow-xs"

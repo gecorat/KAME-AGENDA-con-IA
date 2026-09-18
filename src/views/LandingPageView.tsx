@@ -235,10 +235,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       name: 'Plan Esencial',
       badge: 'Consultorio Básico',
       tagline: 'Ideal para profesionales independientes que buscan ordenar su agenda y terminar con el desorden de turnos.',
-      priceMonthlyARS: 29000,
-      priceAnnualARS: 299000, // ~15% off
-      priceMonthlyUSD: 29,
-      priceAnnualUSD: 299,
+      priceMonthlyARS: 39000,
+      priceAnnualARS: 399000, // ~15% off
+      priceMonthlyUSD: 39,
+      priceAnnualUSD: 399,
       featuresIncluded: [
         '1 Profesional de la salud independiente',
         'Turnos y Pacientes ilimitados sin comisiones',
@@ -263,10 +263,10 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       name: 'Plan Pro AI',
       badge: 'MÁS ELEGIDO • RECOMENDADO',
       tagline: 'Automatización integral con Inteligencia Artificial. Ahorra +10 horas semanales y elimina inasistencias.',
-      priceMonthlyARS: 49000,
-      priceAnnualARS: 499000, // ~15% off
-      priceMonthlyUSD: 49,
-      priceAnnualUSD: 499,
+      priceMonthlyARS: 59000,
+      priceAnnualARS: 599000, // ~15% off
+      priceMonthlyUSD: 59,
+      priceAnnualUSD: 599,
       featuresIncluded: [
         'Todo lo incluido en el Plan Esencial',
         'Bot Autónomo de WhatsApp 24/7 con IA (atiende y agenda solo)',
@@ -286,37 +286,37 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
     if (pricingCurrency === 'ARS') {
       if (billingCycle === 'monthly') {
         return {
-          amount: '$29.000',
-          amountPro: '$49.000',
-          current: plan === 'basic' ? '$29.000' : '$49.000',
+          amount: '$39.000',
+          amountPro: '$59.000',
+          current: plan === 'basic' ? '$39.000' : '$59.000',
           period: '/ mes',
           subtext: 'Facturado mensualmente en pesos argentinos'
         };
       } else {
         return {
-          amount: '$299.000',
-          amountPro: '$499.000',
-          current: plan === 'basic' ? '$299.000' : '$499.000',
+          amount: '$399.000',
+          amountPro: '$599.000',
+          current: plan === 'basic' ? '$399.000' : '$599.000',
           period: '/ año',
-          subtext: 'Facturado anualmente (equivale a ~' + (plan === 'basic' ? '$24.916' : '$41.583') + ' / mes)'
+          subtext: 'Facturado anualmente (equivale a ~' + (plan === 'basic' ? '$33.250' : '$49.916') + ' / mes)'
         };
       }
     } else {
       if (billingCycle === 'monthly') {
         return {
-          amount: '$29',
-          amountPro: '$49',
-          current: plan === 'basic' ? '$29' : '$49',
+          amount: '$39',
+          amountPro: '$59',
+          current: plan === 'basic' ? '$39' : '$59',
           period: 'USD / mes',
           subtext: 'Cobro internacional mensual en dólares'
         };
       } else {
         return {
-          amount: '$299',
-          amountPro: '$499',
-          current: plan === 'basic' ? '$299' : '$499',
+          amount: '$399',
+          amountPro: '$599',
+          current: plan === 'basic' ? '$399' : '$599',
           period: 'USD / año',
-          subtext: 'Cobro internacional anual (equivale a ~' + (plan === 'basic' ? '$24.90' : '$41.50') + ' USD/mes)'
+          subtext: 'Cobro internacional anual (equivale a ~' + (plan === 'basic' ? '$33.25' : '$49.91') + ' USD/mes)'
         };
       }
     }
@@ -1132,7 +1132,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
           {/* Pricing Cards Grid (The 2 Plans with Full Benefits) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-5xl mx-auto items-stretch pt-4">
             
-            {/* PLAN 1: PLAN ESENCIAL ($29.000 ARS / $29 USD) */}
+            {/* PLAN 1: PLAN ESENCIAL ($39.000 ARS / $39 USD) */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -1220,7 +1220,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               </div>
             </motion.div>
 
-            {/* PLAN 2: PLAN PRO AI ($49.000 ARS / $49 USD) - HIGHLIGHTED */}
+            {/* PLAN 2: PLAN PRO AI ($59.000 ARS / $59 USD) - HIGHLIGHTED */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -1479,7 +1479,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
             },
             {
               q: '¿Cuál es la diferencia entre el Plan Esencial y el Plan Pro AI?',
-              a: 'El Plan Esencial ($29.000 ARS / $29 USD) incluye la agenda interactiva, turnos ilimitados, portal público y recordatorios por WhatsApp en 1 clic. El Plan Pro AI ($49.000 ARS / $49 USD) suma el Bot autónomo 24/7 con IA, cobro de señas por Alias/Mercado Pago, historias clínicas con dictado por voz y SOAP, Smart Waitlist y sincronización con Google Calendar.'
+              a: 'El Plan Esencial ($39.000 ARS / $39 USD) incluye la agenda interactiva, turnos ilimitados, portal público y recordatorios por WhatsApp en 1 clic. El Plan Pro AI ($59.000 ARS / $59 USD) suma el Bot autónomo 24/7 con IA, cobro de señas por Alias/Mercado Pago, historias clínicas con dictado por voz y SOAP, Smart Waitlist y sincronización con Google Calendar.'
             },
             {
               q: '¿Puedo pagar por transferencia bancaria o en pesos?',
