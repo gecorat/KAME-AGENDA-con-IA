@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Calendar,
   Users,
@@ -36,6 +36,14 @@ import {
 } from 'lucide-react';
 import { useAgendaStore, isAppointmentPastSchedule } from '../lib/store';
 import { Appointment } from '../types';
+import {
+  getTodayArgentinaDateStr,
+  getCurrentMonthArgentinaStr,
+  getTodayCandidateDates,
+  isAppointmentOnDate,
+  isPaymentOnDate,
+  isPaymentInMonth
+} from '../lib/timezone';
 
 interface DashboardViewProps {
   onOpenNewAppointment: () => void;
@@ -99,22 +107,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const realAppointments = appointments.filter(a => !isExampleItem(a));
   const realPayments = payments.filter(p => !isExampleItem(p));
 
-  const todayStr = new Date().toISOString().split('T')[0];
-  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const todayStr = getTodayArgentinaDateStr();
+  const currentMonthStr = getCurrentMonthArgentinaStr();
   const waitingList = waitlist.filter(w => w.status === 'waiting' && !isExampleItem(w));
   const monthCollected = realPayments
-    .filter(p => p.status === 'completed' && p.date.startsWith(currentMonthStr))
+    .filter(p => p.status === 'completed' && isPaymentInMonth(p, currentMonthStr))
     .reduce((sum, p) => sum + p.amount, 0);
   const todayCollected = realPayments
-    .filter(p => p.status === 'completed' && p.date.startsWith(todayStr))
+    .filter(p => p.status === 'completed' && isPaymentOnDate(p, todayStr))
     .reduce((sum, p) => sum + p.amount, 0);
 
-  // Appointments today
-  const todayAppointments = appointments.filter(a => {
-    return a.start_datetime.startsWith(todayStr);
-  }).sort((a, b) => new Date(a.start_datetime).getTime() - new Date(b.start_datetime).getTime());
+  // Appointments today (robust match against Argentina timezone and ISO formats)
+  const todayAppointments = useMemo(() => {
+    return appointments
+      .filter(a => isAppointmentOnDate(a, todayStr))
+      .sort((a, b) => {
+        const timeA = new Date(a.start_datetime || a.date || 0).getTime();
+        const timeB = new Date(b.start_datetime || b.date || 0).getTime();
+        return timeA - timeB;
+      });
+  }, [appointments, todayStr]);
 
-  const todayRealAppointments = realAppointments.filter(a => a.start_datetime.startsWith(todayStr));
+  const todayRealAppointments = useMemo(() => {
+    return realAppointments.filter(a => isAppointmentOnDate(a, todayStr));
+  }, [realAppointments, todayStr]);
+
+  // Debug log: Detailed diagnostics to verify DB objects retrieval and today's matching
+  useEffect(() => {
+    const candidateDates = getTodayCandidateDates(todayStr);
+    console.group(`🩺 [Dashboard Diagnóstico] Turnos de Hoy`);
+    console.log(`📅 Fecha 'Hoy' evaluada: "${todayStr}" | Candidatos compatibles:`, candidateDates);
+    console.log(`📦 Total turnos en estado/DB: ${appointments.length}`);
+    
+    if (appointments.length > 0) {
+      console.table(
+        appointments.map(a => {
+          const isMatched = isAppointmentOnDate(a, todayStr);
+          const isEx = isExampleItem(a);
+          return {
+            id: a.id,
+            paciente: a.patient_name || a.patient_id || 'Sin nombre',
+            start_datetime: a.start_datetime,
+            campo_date: a.date,
+            es_ejemplo: isEx ? 'Sí (demo)' : 'No (real)',
+            coincide_con_hoy: isMatched ? '✅ SÍ' : '❌ NO',
+            estado: a.status,
+            origen: a.origin || 'manual'
+          };
+        })
+      );
+    } else {
+      console.log('ℹ️ No hay ningún turno cargado en el estado o base de datos.');
+    }
+    
+    console.log(`🎯 Turnos filtrados para Hoy (Total): ${todayAppointments.length}`, todayAppointments);
+    console.log(`⭐ Turnos filtrados para Hoy (Reales): ${todayRealAppointments.length}`, todayRealAppointments);
+    console.groupEnd();
+  }, [appointments, todayStr, todayAppointments, todayRealAppointments, isExampleItem]);
 
   // 7-day registered real patients
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -454,16 +503,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <Calendar className="w-4 h-4 text-slate-400 group-hover:text-teal-700 transition-colors" />
           </div>
           <div className="text-2xl font-bold text-slate-900 tracking-tight font-display">
-            {todayRealAppointments.length}
+            {todayRealAppointments.length > 0 ? todayRealAppointments.length : todayAppointments.length}
           </div>
-          {hasExampleData && todayRealAppointments.length === 0 && todayAppointments.length > 0 ? (
-            <p className="text-[11px] text-amber-700 font-medium mt-1">
-              1 turno de ejemplo (no sumado)
-            </p>
-          ) : (
+          {todayRealAppointments.length > 0 ? (
             <p className="text-[11px] text-slate-500 group-hover:text-slate-800 font-medium mt-1 flex items-center justify-between">
               <span>{todayRealAppointments.filter(a => a.status === 'confirmed').length} confirmados • {todayRealAppointments.filter(a => a.status === 'completed').length} atendidos</span>
               <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-slate-400 shrink-0 ml-1" />
+            </p>
+          ) : todayAppointments.length > 0 ? (
+            <p className="text-[11px] text-amber-700 font-medium mt-1 flex items-center justify-between">
+              <span>{todayAppointments.length} turno de ejemplo</span>
+              <ChevronRight className="w-3 h-3 group-hover:translate-x-0.5 transition-transform text-slate-400 shrink-0 ml-1" />
+            </p>
+          ) : (
+            <p className="text-[11px] text-slate-400 font-medium mt-1">
+              Sin turnos programados para hoy
             </p>
           )}
         </div>

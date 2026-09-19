@@ -5,87 +5,22 @@ import {
   Send,
   Sparkles,
   CheckCircle2,
-  Lightbulb,
+  Lock,
   Clock,
-  Calendar,
-  CreditCard,
-  Bot,
   UserCheck,
-  Zap,
-  Volume2,
-  RefreshCw,
-  Copy,
-  Check,
-  AlertCircle,
-  HelpCircle,
-  ChevronDown,
-  ChevronUp,
   Building,
   ShieldCheck,
-  Trash2
+  Trash2,
+  Filter,
+  MessageSquare,
+  Volume2,
+  AlertCircle,
+  X
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAgendaStore } from '../lib/store';
-import { AppSuggestion, SuggestionCategory, SuggestionPriority } from '../types';
-
-// Reference guide data to inspire users on what to suggest
-const SUGGESTION_REFERENCES = [
-  {
-    category: 'Agenda y Gestión de Turnos',
-    icon: Calendar,
-    color: 'text-blue-600 bg-blue-50 border-blue-200',
-    examples: [
-      'Configurar sobreturnos de emergencia con cupos limitados',
-      'Definir descansos o almuerzos automáticos no reservables',
-      'Permitir turnos dobles para tratamientos largos o cirugías',
-      'Recordatorios con 2 horas de anticipación además de las 24 horas'
-    ]
-  },
-  {
-    category: 'WhatsApp y Asistente Bot IA',
-    icon: Bot,
-    color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-    examples: [
-      'Respuestas personalizadas para pacientes con indicaciones previas al turno',
-      'Ajustar el tono del bot (más formal, clínico o cercano)',
-      'Escuchar y responder notas de voz de los pacientes automáticamente',
-      'Preguntas frecuentes automáticas sobre obras sociales y coberturas'
-    ]
-  },
-  {
-    category: 'Pagos, Señas y Cobros',
-    icon: CreditCard,
-    color: 'text-amber-600 bg-amber-50 border-amber-200',
-    examples: [
-      'Exigir pago del 50% de seña para confirmar el turno en DLocal Go / Mercado Pago',
-      'Exportar reporte mensual de cobros para el contador en formato Excel',
-      'Reembolsos automáticos si el turno se cancela con 48hs de anticipación',
-      'Precios diferenciados según el medio de pago (efectivo vs tarjeta)'
-    ]
-  },
-  {
-    category: 'Ficha Clínica y Pacientes',
-    icon: UserCheck,
-    color: 'text-purple-600 bg-purple-50 border-purple-200',
-    examples: [
-      'Campos clínicos personalizados para mi especialidad (anamnesis, odontograma, etc.)',
-      'Galería de fotos antes / después comparativas en cada consulta',
-      'Generación rápida de recetas o constancias con membrete en PDF',
-      'Alertas de antecedentes médicos críticos o alergias visibles'
-    ]
-  },
-  {
-    category: 'Automatizaciones e Integraciones',
-    icon: Zap,
-    color: 'text-rose-600 bg-rose-50 border-rose-200',
-    examples: [
-      'Sincronización bidireccional inmediata con Google Calendar',
-      'Notificaciones de huecos libres a los pacientes en lista de espera',
-      'Envío automático de encuesta de satisfacción luego de la atención',
-      'Múltiples profesionales con agendas y horarios independientes'
-    ]
-  }
-];
+import { esSuperAdmin } from '../lib/firestore-sync';
+import { SuggestionCategory, SuggestionStatus } from '../types';
 
 export const SuggestionsView: React.FC = () => {
   const {
@@ -102,7 +37,6 @@ export const SuggestionsView: React.FC = () => {
   const [category, setCategory] = useState<SuggestionCategory>('improvement');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submittedSuccess, setSubmittedSuccess] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Speech Recognition state
   const [isRecording, setIsRecording] = useState(false);
@@ -111,13 +45,18 @@ export const SuggestionsView: React.FC = () => {
   const [speechError, setSpeechError] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Reference guide toggle
-  const [showGuide, setShowGuide] = useState(true);
+  // SuperAdmin state & Inline Delete confirmation
+  const [statusFilter, setStatusFilter] = useState<'all' | SuggestionStatus>('all');
+  const [replyDrafts, setReplyDrafts] = useState<Record<string, string>>({});
+  const [savingReplyId, setSavingReplyId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  // Admin states
+  // Admin validation
   const userEmail = currentUser?.email || practiceSettings.email || '';
-  const isSuperAdmin =
-    userEmail.toLowerCase() === 'gonzalocorat@gmail.com' ||
+  const isSuper =
+    esSuperAdmin(currentUser?.email, currentUser?.uid) ||
+    esSuperAdmin(practiceSettings?.email) ||
     currentUser?.role === 'superadmin' ||
     Boolean(currentUser?.isSuperAdmin);
 
@@ -148,7 +87,7 @@ export const SuggestionsView: React.FC = () => {
 
     if (!SpeechRecognition) {
       setSpeechSupported(false);
-      setSpeechError('Tu navegador no soporta el reconocimiento de voz directo. Puedes escribir tu sugerencia en el cuadro de texto.');
+      setSpeechError('Reconocimiento de voz no soportado en este navegador. Escribe directamente.');
       return;
     }
 
@@ -188,12 +127,11 @@ export const SuggestionsView: React.FC = () => {
       };
 
       recognition.onerror = (event: any) => {
-        console.warn('Speech recognition warning:', event.error);
         if (event.error === 'not-allowed') {
-          setSpeechError('Permiso de micrófono bloqueado. Por favor habilita el micrófono en el navegador para dictar por voz.');
+          setSpeechError('Micrófono bloqueado en el navegador.');
           setIsRecording(false);
         } else if (event.error !== 'no-speech') {
-          setSpeechError(`Aviso de dictado (${event.error}). Puedes continuar dictando o escribir normalmente.`);
+          setSpeechError(`Aviso de dictado (${event.error})`);
         }
       };
 
@@ -205,8 +143,7 @@ export const SuggestionsView: React.FC = () => {
       recognitionRef.current = recognition;
       recognition.start();
     } catch (err) {
-      console.warn('Error starting speech recognition:', err);
-      setSpeechError('No se pudo inicializar el micrófono. Por favor intenta de nuevo.');
+      setSpeechError('No se pudo activar el micrófono.');
       setIsRecording(false);
     }
   };
@@ -215,9 +152,7 @@ export const SuggestionsView: React.FC = () => {
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
     setIsRecording(false);
     setInterimTranscript('');
@@ -226,16 +161,13 @@ export const SuggestionsView: React.FC = () => {
   // Submit suggestion
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isRecording) {
-      stopRecording();
-    }
+    if (isRecording) stopRecording();
 
     const trimmedDesc = description.trim();
     if (!trimmedDesc) return;
 
     setIsSubmitting(true);
-
-    const finalTitle = title.trim() || (trimmedDesc.slice(0, 60) + (trimmedDesc.length > 60 ? '...' : ''));
+    const finalTitle = title.trim() || (trimmedDesc.slice(0, 50) + (trimmedDesc.length > 50 ? '...' : ''));
 
     try {
       await addSuggestion({
@@ -245,7 +177,7 @@ export const SuggestionsView: React.FC = () => {
         priority: 'high'
       });
 
-      confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+      confetti({ particleCount: 50, spread: 60, origin: { y: 0.6 } });
       setTitle('');
       setDescription('');
       setInterimTranscript('');
@@ -258,228 +190,146 @@ export const SuggestionsView: React.FC = () => {
     }
   };
 
-  const handleUseExample = (exampleText: string, exampleCategory: SuggestionCategory) => {
-    setDescription(prev => {
-      const cleanPrev = prev ? prev.trim() : '';
-      return cleanPrev ? `${cleanPrev}\n• ${exampleText}` : `Me gustaría poder ${exampleText.toLowerCase()}`;
-    });
-    setCategory(exampleCategory);
-    if (!title) {
-      setTitle(exampleText);
+  // Delete Handler with inline confirmation (no window.confirm popup needed)
+  const handleDeleteSuggestion = async (sugId: string) => {
+    setDeletingId(sugId);
+    try {
+      await deleteSuggestion(sugId);
+      setConfirmDeleteId(null);
+    } finally {
+      setDeletingId(null);
     }
   };
 
-  // Filter only user's suggestions (or all if superadmin)
-  const relevantSuggestions = suggestions.filter(s => {
-    if (isSuperAdmin) return true;
-    if (userEmail && s.user_email?.toLowerCase() === userEmail.toLowerCase()) return true;
-    if (currentUser?.uid && s.user_id === currentUser.uid) return true;
-    return false;
+  // Save admin reply
+  const handleSaveAdminReply = async (sugId: string, currentStatus: SuggestionStatus) => {
+    const replyText = replyDrafts[sugId];
+    if (replyText === undefined) return;
+    setSavingReplyId(sugId);
+    try {
+      await updateSuggestionStatus(sugId, currentStatus, replyText.trim());
+    } finally {
+      setSavingReplyId(null);
+    }
+  };
+
+  // Filtered suggestions for SuperAdmin
+  const filteredSuggestions = suggestions.filter(s => {
+    if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+    return true;
   });
 
-  return (
-    <div className="space-y-6 max-w-5xl mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-20">
-      {/* HEADER */}
-      <div className="bg-white rounded-3xl border border-neutral-200/80 p-6 sm:p-8 shadow-xs relative overflow-hidden">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-5 relative z-10">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-xs font-bold">
-              <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-              <span>Buzón de Voz & Mejoras para AgenFacil</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-neutral-900">
-              Sugerencias de Mejoras y Cambios
-            </h1>
-            <p className="text-neutral-600 text-xs sm:text-sm leading-relaxed">
-              Dicta por voz o escribe directamente los cambios, funciones o detalles que te gustaría que sumemos a AgenFacil.
-              El sistema transcribe tus palabras automáticamente en tiempo real para que no tengas que redactar todo a mano.
-            </p>
-          </div>
+  const categoryBadges: Record<SuggestionCategory, { label: string; color: string }> = {
+    improvement: { label: '⚡ Mejora', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+    new_feature: { label: '🚀 Nueva Función', color: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+    integration: { label: '🔗 Integración', color: 'bg-purple-50 text-purple-700 border-purple-200' },
+    bug: { label: '🐛 Corrección', color: 'bg-rose-50 text-rose-700 border-rose-200' },
+    other: { label: '💡 Idea', color: 'bg-amber-50 text-amber-700 border-amber-200' }
+  };
 
-          <div className="shrink-0 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowGuide(!showGuide)}
-              className="px-3.5 py-2 rounded-xl text-xs font-bold border border-neutral-200 bg-neutral-50 hover:bg-neutral-100 text-neutral-700 transition flex items-center gap-1.5 cursor-pointer"
-            >
-              <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
-              <span>{showGuide ? 'Ocultar Ideas' : 'Ver Ideas de Referencia'}</span>
-              {showGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
+  const statusBadges: Record<SuggestionStatus, { label: string; color: string }> = {
+    review: { label: 'En Revisión', color: 'bg-amber-100 text-amber-900 border-amber-300' },
+    planned: { label: 'Planificada', color: 'bg-sky-100 text-sky-900 border-sky-300' },
+    in_progress: { label: 'En Desarrollo', color: 'bg-purple-100 text-purple-900 border-purple-300' },
+    completed: { label: 'Implementada', color: 'bg-emerald-100 text-emerald-900 border-emerald-300' },
+    declined: { label: 'Pospuesta', color: 'bg-neutral-100 text-neutral-700 border-neutral-300' }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-5 pb-20">
+      {/* HEADER COMPACT */}
+      <div className="bg-white rounded-2xl border border-neutral-200/90 p-5 sm:p-6 shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div>
+            <h1 className="text-xl font-extrabold text-neutral-900 tracking-tight">
+              Sugerencias y Mejoras
+            </h1>
+            <p className="text-xs text-neutral-500">
+              Envía ideas, pedidos de funciones o ajustes por dictado de voz o texto.
+            </p>
           </div>
         </div>
       </div>
 
-      {/* REFERENCE GUIDE SECTION (Collapsible) */}
-      {showGuide && (
-        <div className="bg-neutral-50/80 rounded-3xl border border-neutral-200/80 p-5 sm:p-6 space-y-4 transition-all">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center font-bold text-xs">
-                <Lightbulb className="w-4 h-4" />
-              </div>
-              <div>
-                <h3 className="text-xs sm:text-sm font-bold text-neutral-900">
-                  ¿Qué cosas puedes pedir o sugerir? (Guía de referencia)
-                </h3>
-                <p className="text-[11px] text-neutral-500">
-                  Haz clic en cualquiera de estos ejemplos para agregarlo automáticamente a tu mensaje:
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-            {SUGGESTION_REFERENCES.map((item, idx) => {
-              const Icon = item.icon;
-              const catMap: Record<number, SuggestionCategory> = {
-                0: 'improvement',
-                1: 'new_feature',
-                2: 'integration',
-                3: 'improvement',
-                4: 'integration'
-              };
-              return (
-                <div
-                  key={idx}
-                  className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-2xs space-y-2.5"
-                >
-                  <div className="flex items-center gap-2">
-                    <div className={`p-1.5 rounded-lg border ${item.color}`}>
-                      <Icon className="w-3.5 h-3.5" />
-                    </div>
-                    <span className="text-xs font-bold text-neutral-900">{item.category}</span>
-                  </div>
-
-                  <ul className="space-y-1.5 text-[11px] text-neutral-600">
-                    {item.examples.map((ex, exIdx) => (
-                      <li key={exIdx} className="leading-tight flex items-start gap-1.5">
-                        <span className="text-neutral-400 select-none">•</span>
-                        <button
-                          type="button"
-                          onClick={() => handleUseExample(ex, catMap[idx] || 'improvement')}
-                          className="text-left hover:text-emerald-700 hover:underline cursor-pointer"
-                          title="Usar este ejemplo"
-                        >
-                          {ex}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* CENTRAL VOICE DICTATION & WRITING STUDIO */}
-      <div className="bg-white rounded-3xl border border-neutral-200 p-6 sm:p-8 shadow-xs space-y-6">
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* VOICE RECORDER BIG CONTROL */}
-          <div className={`p-6 rounded-2xl border-2 transition-all flex flex-col sm:flex-row items-center justify-between gap-5 ${
+      {/* FORMULARIO COMPACTO */}
+      <div className="bg-white rounded-2xl border border-neutral-200/90 p-5 sm:p-6 shadow-2xs">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Quick Voice Bar */}
+          <div className={`p-3.5 rounded-xl border transition flex items-center justify-between gap-3 ${
             isRecording
-              ? 'bg-rose-50/70 border-rose-400 ring-4 ring-rose-100'
-              : 'bg-neutral-50/70 border-neutral-200/90'
+              ? 'bg-rose-50 border-rose-300 ring-2 ring-rose-100'
+              : 'bg-neutral-50/90 border-neutral-200'
           }`}>
-            <div className="flex items-center gap-4 text-center sm:text-left">
-              {/* Record Button */}
+            <div className="flex items-center gap-3">
               <button
                 type="button"
                 onClick={toggleRecording}
-                className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow-md shrink-0 active:scale-95 ${
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition cursor-pointer shadow-xs shrink-0 ${
                   isRecording
-                    ? 'bg-rose-600 text-white animate-pulse shadow-rose-300'
-                    : 'bg-neutral-950 text-white hover:bg-neutral-800'
+                    ? 'bg-rose-600 text-white animate-pulse'
+                    : 'bg-neutral-900 text-white hover:bg-neutral-800'
                 }`}
-                title={isRecording ? 'Detener dictado por voz' : 'Iniciar dictado por voz'}
+                title={isRecording ? 'Detener dictado' : 'Dictar por voz'}
               >
-                {isRecording ? (
-                  <MicOff className="w-7 h-7 animate-bounce" />
-                ) : (
-                  <Mic className="w-7 h-7" />
-                )}
+                {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
               </button>
-
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 justify-center sm:justify-start">
-                  <span className="text-sm sm:text-base font-extrabold text-neutral-950">
-                    {isRecording ? 'Escuchando tu voz...' : 'Dictar Sugerencia por Voz'}
-                  </span>
-                  {isRecording && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-rose-200 text-rose-800 animate-pulse">
-                      ● GRABANDO
-                    </span>
-                  )}
+              <div>
+                <div className="text-xs font-bold text-neutral-900">
+                  {isRecording ? '🎙️ Escuchando tu voz...' : 'Dictado por voz'}
                 </div>
-                <p className="text-xs text-neutral-500 max-w-md">
-                  {isRecording
-                    ? 'Habla con naturalidad. Tus palabras se transcribirán automáticamente en el recuadro inferior.'
-                    : 'Presiona el micrófono para hablar y transcribir automáticamente sin escribir.'}
-                </p>
+                <div className="text-[11px] text-neutral-500">
+                  {isRecording ? 'Habla con naturalidad para transcribir' : 'Presiona el micrófono para no escribir a mano'}
+                </div>
               </div>
             </div>
 
-            {/* Quick Actions */}
-            <div className="flex items-center gap-2 shrink-0">
-              {isRecording ? (
-                <button
-                  type="button"
-                  onClick={stopRecording}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-2xs"
-                >
-                  Listo / Detener
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className="px-4 py-2 bg-neutral-900 hover:bg-neutral-800 text-white rounded-xl text-xs font-bold cursor-pointer transition shadow-2xs flex items-center gap-1.5"
-                >
-                  <Mic className="w-3.5 h-3.5" />
-                  <span>Empezar a Dictar</span>
-                </button>
-              )}
-            </div>
+            {isRecording && (
+              <button
+                type="button"
+                onClick={stopRecording}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold cursor-pointer"
+              >
+                Listo
+              </button>
+            )}
           </div>
 
-          {/* Speech Error banner if any */}
           {speechError && (
-            <div className="p-3 bg-amber-50 border border-amber-200 text-amber-900 text-xs rounded-xl flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs rounded-xl flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{speechError}</span>
             </div>
           )}
 
-          {/* Real-time Interim Transcript Preview */}
           {isRecording && interimTranscript && (
-            <div className="p-3 bg-rose-50/80 border border-rose-200 rounded-xl text-xs text-rose-900 italic flex items-center gap-2 animate-fade-in">
-              <Volume2 className="w-4 h-4 text-rose-600 animate-pulse shrink-0" />
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 italic flex items-center gap-2">
+              <Volume2 className="w-4 h-4 text-rose-600 shrink-0" />
               <span>Transcribiendo: &ldquo;{interimTranscript}&rdquo;</span>
             </div>
           )}
 
-          {/* Category Chips */}
+          {/* Categorías */}
           <div className="space-y-1.5">
-            <label className="text-xs font-bold text-neutral-800 block">
-              Área o categoría del cambio
-            </label>
-            <div className="flex flex-wrap items-center gap-2">
+            <label className="text-xs font-bold text-neutral-700 block">Categoría</label>
+            <div className="flex flex-wrap gap-1.5">
               {[
-                { id: 'improvement', label: '⚡ Mejora de Función Existente' },
+                { id: 'improvement', label: '⚡ Mejora' },
                 { id: 'new_feature', label: '🚀 Nueva Función' },
-                { id: 'integration', label: '🔗 Integración (Pasarela / WhatsApp / Google)' },
-                { id: 'bug', label: '🐛 Detalle o Inconveniente a Corregir' },
-                { id: 'other', label: '💡 Otra Idea' }
+                { id: 'integration', label: '🔗 Integración' },
+                { id: 'bug', label: '🐛 Corrección' },
+                { id: 'other', label: '💡 Idea' }
               ].map(cat => (
                 <button
                   type="button"
                   key={cat.id}
                   onClick={() => setCategory(cat.id as SuggestionCategory)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
                     category === cat.id
-                      ? 'bg-neutral-900 text-white shadow-xs'
-                      : 'bg-neutral-100 text-neutral-700 hover:bg-neutral-200'
+                      ? 'bg-neutral-900 text-white'
+                      : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                   }`}
                 >
                   {cat.label}
@@ -488,70 +338,47 @@ export const SuggestionsView: React.FC = () => {
             </div>
           </div>
 
-          {/* Title (Optional / Quick) */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-neutral-800 block">
-              Título o resumen breve <span className="text-neutral-400 font-normal">(opcional)</span>
-            </label>
+          {/* Título opcional */}
+          <div>
             <input
               type="text"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              placeholder="Ej: Cobrar seña del 50% antes de dar el turno"
-              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-neutral-950 focus:outline-hidden transition"
+              placeholder="Título breve (opcional)"
+              className="w-full px-3.5 py-2 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-neutral-900 focus:outline-hidden"
             />
           </div>
 
-          {/* Main Description / Transcribed text area */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-neutral-800 block">
-                Detalle de la sugerencia o transcripción del dictado <span className="text-rose-500">*</span>
-              </label>
-              {description && (
-                <button
-                  type="button"
-                  onClick={() => setDescription('')}
-                  className="text-[11px] text-neutral-400 hover:text-rose-600 transition cursor-pointer"
-                >
-                  Limpiar texto
-                </button>
-              )}
-            </div>
+          {/* Texto de sugerencia */}
+          <div>
             <textarea
               required
-              rows={5}
+              rows={3}
               value={description}
               onChange={e => setDescription(e.target.value)}
-              placeholder="Explica qué te gustaría mejorar, cómo te facilitaría el día a día o qué cambio quisieras ver. Puedes escribir aquí o usar el botón de dictado por voz de arriba..."
-              className="w-full px-4 py-3 text-xs sm:text-sm bg-neutral-50 border border-neutral-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-neutral-950 focus:outline-hidden transition resize-none leading-relaxed"
+              placeholder="Describe lo que te gustaría agregar o cambiar en AgenFacil..."
+              className="w-full px-3.5 py-2.5 text-xs bg-neutral-50 border border-neutral-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-neutral-900 focus:outline-hidden resize-none leading-relaxed"
             />
           </div>
 
-          {/* Success Banner */}
           {submittedSuccess && (
-            <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-900 text-xs sm:text-sm flex items-center gap-2 animate-fade-in">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-              <span>
-                <strong>¡Sugerencia recibida con éxito!</strong> Nuestro equipo la revisará y podrás seguir su avance en la lista inferior.
-              </span>
+            <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span><strong>¡Sugerencia recibida!</strong> Ha sido enviada de forma privada al Super Administrador.</span>
             </div>
           )}
 
-          {/* Submit Button */}
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-            <div className="text-[11px] text-neutral-500">
-              Enviado por: <strong className="text-neutral-800">{userEmail || 'Tu Cuenta'}</strong>
-            </div>
+          <div className="flex items-center justify-between gap-3 pt-1">
+            <span className="text-[11px] text-neutral-400 truncate">
+              {userEmail}
+            </span>
 
             <button
               type="submit"
               disabled={isSubmitting || !description.trim()}
-              className="w-full sm:w-auto px-6 py-3 bg-neutral-950 hover:bg-neutral-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 text-white font-bold text-xs rounded-xl transition flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
-              {isSubmitting ? (
-                <span>Guardando sugerencia...</span>
-              ) : (
+              {isSubmitting ? <span>Enviando...</span> : (
                 <>
                   <span>Enviar Sugerencia</span>
                   <Send className="w-3.5 h-3.5" />
@@ -562,110 +389,190 @@ export const SuggestionsView: React.FC = () => {
         </form>
       </div>
 
-      {/* RECENT SUBMISSIONS HISTORY */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-neutral-900">
-            {isSuperAdmin ? 'Todas las Sugerencias Recibidas' : 'Mis Sugerencias Enviadas'} ({relevantSuggestions.length})
-          </h2>
-          <span className="text-xs text-neutral-500">
-            {isSuperAdmin ? 'Panel de Moderación SuperAdmin' : 'Seguimiento en tiempo real'}
-          </span>
+      {/* REGULAR USER PRIVACY NOTE */}
+      {!isSuper && (
+        <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200/80 flex items-center gap-2.5 text-xs text-neutral-600">
+          <Lock className="w-4 h-4 text-neutral-400 shrink-0" />
+          <span>Tus sugerencias son privadas y recibidas directamente por la administración para mejorar AgenFacil.</span>
         </div>
+      )}
 
-        {relevantSuggestions.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center border border-neutral-200 text-xs text-neutral-500 space-y-2">
-            <Lightbulb className="w-6 h-6 text-neutral-400 mx-auto" />
-            <p className="font-semibold text-neutral-700">Aún no has enviado sugerencias</p>
-            <p>Usa el micrófono arriba para dictar tu primera idea o mejora para el sistema.</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {relevantSuggestions.map(sug => {
-              const statusBadge = {
-                review: { label: 'En Revisión', color: 'bg-amber-100 text-amber-800' },
-                planned: { label: 'Planificada', color: 'bg-sky-100 text-sky-800' },
-                in_progress: { label: 'En Desarrollo', color: 'bg-purple-100 text-purple-800' },
-                completed: { label: 'Implementada 🎉', color: 'bg-emerald-100 text-emerald-800' },
-                declined: { label: 'Pospuesta', color: 'bg-neutral-100 text-neutral-700' }
-              }[sug.status] || { label: 'En Revisión', color: 'bg-amber-100 text-amber-800' };
+      {/* SUPERADMIN MODERATION INBOX (ONLY VISIBLE FOR SUPERADMIN) */}
+      {isSuper && (
+        <div className="space-y-3 pt-2">
+          {/* Header Bar */}
+          <div className="bg-neutral-900 text-white rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-amber-400 shrink-0" />
+              <div>
+                <h2 className="text-sm font-bold flex items-center gap-2">
+                  <span>Bandeja SuperAdmin</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-400/20 text-amber-300 font-bold border border-amber-400/30">
+                    {suggestions.length} sugerencias
+                  </span>
+                </h2>
+                <p className="text-[11px] text-neutral-400">
+                  Moderación exclusiva de sugerencias de todos los usuarios
+                </p>
+              </div>
+            </div>
 
-              return (
-                <div
-                  key={sug.id}
-                  className="bg-white rounded-2xl p-5 border border-neutral-200 shadow-2xs space-y-3"
+            {/* Filter pills */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'all', label: `Todos (${suggestions.length})` },
+                { id: 'review', label: `Revisión (${suggestions.filter(s => s.status === 'review').length})` },
+                { id: 'planned', label: `Planificadas (${suggestions.filter(s => s.status === 'planned').length})` },
+                { id: 'in_progress', label: `Desarrollo (${suggestions.filter(s => s.status === 'in_progress').length})` },
+                { id: 'completed', label: `Hechas (${suggestions.filter(s => s.status === 'completed').length})` }
+              ].map(f => (
+                <button
+                  type="button"
+                  key={f.id}
+                  onClick={() => setStatusFilter(f.id as any)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
+                    statusFilter === f.id
+                      ? 'bg-amber-400 text-neutral-950'
+                      : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                  }`}
                 >
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-bold text-neutral-950">
-                          {sug.title}
-                        </h3>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${statusBadge.color}`}>
-                          {statusBadge.label}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-neutral-500 flex items-center gap-2">
-                        <span>{sug.user_name || sug.user_email || 'Profesional'}</span>
-                        <span>•</span>
-                        <span>
-                          {new Date(sug.created_at).toLocaleDateString('es-AR', {
-                            day: 'numeric',
-                            month: 'short',
-                            year: 'numeric'
-                          })}
-                        </span>
-                      </div>
-                    </div>
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-                    {isSuperAdmin && (
-                      <div className="flex items-center gap-2 shrink-0">
+          {/* Cards List */}
+          {filteredSuggestions.length === 0 ? (
+            <div className="bg-white rounded-2xl p-8 text-center border border-neutral-200 text-xs text-neutral-500">
+              <MessageSquare className="w-6 h-6 text-neutral-300 mx-auto mb-1.5" />
+              <p className="font-semibold text-neutral-700">No hay sugerencias en esta categoría</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredSuggestions.map(sug => {
+                const badge = statusBadges[sug.status] || statusBadges.review;
+                const catBadge = categoryBadges[sug.category] || categoryBadges.other;
+                const currentDraft = replyDrafts[sug.id] !== undefined ? replyDrafts[sug.id] : (sug.admin_reply || '');
+                const isConfirming = confirmDeleteId === sug.id;
+                const isDeleting = deletingId === sug.id;
+
+                return (
+                  <div
+                    key={sug.id}
+                    className="bg-white rounded-2xl p-4 border border-neutral-200 shadow-2xs space-y-3"
+                  >
+                    {/* Top row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${catBadge.color}`}>
+                            {catBadge.label}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${badge.color}`}>
+                            {badge.label}
+                          </span>
+                          <span className="text-xs font-bold text-neutral-900">{sug.title}</span>
+                        </div>
+
+                        <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-1.5">
+                          <span className="font-medium text-neutral-700">{sug.user_name || 'Usuario'}</span>
+                          <span>•</span>
+                          <span>{sug.user_email || 'Sin email'}</span>
+                          {sug.practice_name && (
+                            <>
+                              <span>•</span>
+                              <span>{sug.practice_name}</span>
+                            </>
+                          )}
+                          <span>•</span>
+                          <span className="text-neutral-400">
+                            {new Date(sug.created_at).toLocaleDateString('es-AR', {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Controls: status switcher and inline delete confirmation */}
+                      <div className="flex items-center gap-1.5 self-start sm:self-center shrink-0">
                         <select
                           value={sug.status}
                           onChange={e => updateSuggestionStatus(sug.id, e.target.value as any, sug.admin_reply)}
-                          className="text-xs bg-neutral-50 border border-neutral-200 rounded-lg px-2 py-1"
+                          className="text-xs bg-neutral-50 border border-neutral-200 rounded-lg px-2 py-1 font-medium text-neutral-800 cursor-pointer"
                         >
-                          <option value="review">En Revisión</option>
-                          <option value="planned">Planificada</option>
-                          <option value="in_progress">En Desarrollo</option>
-                          <option value="completed">Implementada 🎉</option>
-                          <option value="declined">Pospuesta</option>
+                          <option value="review">🟡 En Revisión</option>
+                          <option value="planned">🔵 Planificada</option>
+                          <option value="in_progress">🟣 En Desarrollo</option>
+                          <option value="completed">🟢 Implementada</option>
+                          <option value="declined">⚪ Pospuesta</option>
                         </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm('¿Eliminar esta sugerencia?')) {
-                              deleteSuggestion(sug.id);
-                            }
-                          }}
-                          className="p-1 text-neutral-400 hover:text-red-600 rounded transition"
-                          title="Eliminar"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
 
-                  <p className="text-xs sm:text-sm text-neutral-700 whitespace-pre-wrap leading-relaxed">
-                    {sug.description}
-                  </p>
-
-                  {sug.admin_reply && (
-                    <div className="p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-xs space-y-1">
-                      <div className="flex items-center gap-1.5 font-bold text-neutral-900">
-                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Respuesta del Equipo AgenFacil:</span>
+                        {isConfirming ? (
+                          <div className="flex items-center gap-1 bg-rose-50 border border-rose-200 rounded-lg p-0.5">
+                            <button
+                              type="button"
+                              disabled={isDeleting}
+                              onClick={() => handleDeleteSuggestion(sug.id)}
+                              className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold cursor-pointer transition disabled:opacity-50"
+                            >
+                              {isDeleting ? 'Borrando...' : 'Confirmar'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="p-1 text-neutral-500 hover:text-neutral-800 rounded cursor-pointer"
+                              title="Cancelar"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmDeleteId(sug.id)}
+                            className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                            title="Eliminar sugerencia"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
-                      <p className="text-neutral-700 leading-relaxed">{sug.admin_reply}</p>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+
+                    {/* Text */}
+                    <p className="text-xs text-neutral-700 whitespace-pre-wrap leading-relaxed bg-neutral-50 p-2.5 rounded-xl">
+                      {sug.description}
+                    </p>
+
+                    {/* Admin reply input */}
+                    <div className="flex items-center gap-2 pt-0.5">
+                      <input
+                        type="text"
+                        value={currentDraft}
+                        onChange={e => setReplyDrafts(prev => ({ ...prev, [sug.id]: e.target.value }))}
+                        placeholder="Nota o respuesta administrativa..."
+                        className="flex-1 px-3 py-1.5 text-xs bg-white border border-neutral-200 rounded-lg focus:ring-1 focus:ring-neutral-900 focus:outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        disabled={savingReplyId === sug.id || currentDraft === (sug.admin_reply || '')}
+                        onClick={() => handleSaveAdminReply(sug.id, sug.status)}
+                        className="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded-lg text-xs font-bold transition disabled:opacity-30 cursor-pointer shrink-0"
+                      >
+                        {savingReplyId === sug.id ? '...' : 'Guardar'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

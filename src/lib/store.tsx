@@ -1373,14 +1373,24 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   // App Suggestions and Community Improvements
+  const [deletedSuggestionIds, setDeletedSuggestionIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('agendapro_deleted_suggestions_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
   const [suggestions, setSuggestions] = useState<AppSuggestion[]>(() => {
     try {
+      const deleted = JSON.parse(localStorage.getItem('agendapro_deleted_suggestions_v1') || '[]');
       const saved = localStorage.getItem(STORAGE_KEYS.SUGGESTIONS);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed.filter((s: AppSuggestion) => !deleted.includes(s.id));
       }
-      return INITIAL_SUGGESTIONS;
+      return INITIAL_SUGGESTIONS.filter(s => !deleted.includes(s.id));
     } catch {
       return INITIAL_SUGGESTIONS;
     }
@@ -1388,13 +1398,16 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
 
   useEffect(() => {
     const unsub = subscribeToSuggestions((remote) => {
+      const deleted: string[] = JSON.parse(localStorage.getItem('agendapro_deleted_suggestions_v1') || '[]');
       if (remote && remote.length > 0) {
         setSuggestions(prev => {
           const map = new Map<string, AppSuggestion>();
-          INITIAL_SUGGESTIONS.forEach(s => map.set(s.id, s));
-          prev.forEach(s => map.set(s.id, s));
-          remote.forEach(s => map.set(s.id, s));
-          return Array.from(map.values()).sort((a, b) => (b.upvotes || 0) - (a.upvotes || 0));
+          INITIAL_SUGGESTIONS.filter(s => !deleted.includes(s.id)).forEach(s => map.set(s.id, s));
+          prev.filter(s => !deleted.includes(s.id)).forEach(s => map.set(s.id, s));
+          remote.filter(s => !deleted.includes(s.id)).forEach(s => map.set(s.id, s));
+          return Array.from(map.values()).sort(
+            (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          );
         });
       }
     });
@@ -1479,6 +1492,11 @@ export const AgendaStoreProvider: React.FC<{ children: React.ReactNode }> = ({ c
   };
 
   const deleteSuggestion = async (suggestionId: string): Promise<void> => {
+    const updatedDeleted = Array.from(new Set([...deletedSuggestionIds, suggestionId]));
+    setDeletedSuggestionIds(updatedDeleted);
+    try {
+      localStorage.setItem('agendapro_deleted_suggestions_v1', JSON.stringify(updatedDeleted));
+    } catch {}
     setSuggestions(prev => prev.filter(s => s.id !== suggestionId));
     await deleteSuggestionFromFirestore(suggestionId);
   };

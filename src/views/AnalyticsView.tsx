@@ -29,6 +29,7 @@ import {
 } from 'recharts';
 import { useAgendaStore } from '../lib/store';
 import { PaymentMethod } from '../types';
+import { getCurrentMonthArgentinaStr, isPaymentInMonth } from '../lib/timezone';
 
 const COLORS = ['#10b981', '#0ea5e9', '#6366f1', '#a855f7', '#f59e0b', '#14b8a6'];
 
@@ -36,7 +37,7 @@ export const AnalyticsView: React.FC = () => {
   const { appointments, services, patients, payments, isExampleItem } = useAgendaStore();
   const [timeframe, setTimeframe] = useState<'month' | 'all'>('month');
 
-  const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const currentMonthStr = getCurrentMonthArgentinaStr();
 
   const realAppointments = useMemo(() => {
     return appointments.filter(a => !isExampleItem(a));
@@ -48,7 +49,7 @@ export const AnalyticsView: React.FC = () => {
 
   const filteredPayments = useMemo(() => {
     if (timeframe === 'month') {
-      return realPayments.filter(p => p.date.startsWith(currentMonthStr));
+      return realPayments.filter(p => isPaymentInMonth(p, currentMonthStr));
     }
     return realPayments;
   }, [realPayments, timeframe, currentMonthStr]);

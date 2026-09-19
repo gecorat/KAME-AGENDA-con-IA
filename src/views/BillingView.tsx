@@ -43,6 +43,12 @@ import { CashMovementModal } from '../components/CashMovementModal';
 import { CashRegisterModal } from '../components/CashRegisterModal';
 import { ConfirmModal } from '../components/ConfirmModal';
 import { getClientTerm } from '../lib/terminology';
+import {
+  getTodayArgentinaDateStr,
+  getCurrentMonthArgentinaStr,
+  isPaymentOnDate,
+  isPaymentInMonth
+} from '../lib/timezone';
 
 interface MethodSummaryItem {
   total: number;
@@ -101,9 +107,9 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateToTab }) => 
   const [cashModalMode, setCashModalMode] = useState<'open_box' | 'close_box' | 'add_movement' | null>(null);
 
   // Financial calculations
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const startOfMonthStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const todayStr = getTodayArgentinaDateStr();
+  const currentMonthStr = getCurrentMonthArgentinaStr();
+  const startOfMonthStr = `${currentMonthStr}-01`;
 
   // Completed non-voided real payments (excluding example data from actual revenue stats)
   const validPayments = useMemo(() => payments.filter(p => p.status === 'completed' && !isExampleItem(p)), [payments, isExampleItem]);
@@ -111,20 +117,20 @@ export const BillingView: React.FC<BillingViewProps> = ({ onNavigateToTab }) => 
   // Today's total collected
   const todayCollected = useMemo(() => {
     return validPayments
-      .filter(p => p.date.startsWith(todayStr))
+      .filter(p => isPaymentOnDate(p, todayStr))
       .reduce((sum, p) => sum + p.amount, 0);
   }, [validPayments, todayStr]);
 
   // This month's total collected
   const monthCollected = useMemo(() => {
     return validPayments
-      .filter(p => p.date >= startOfMonthStr)
+      .filter(p => isPaymentInMonth(p, currentMonthStr))
       .reduce((sum, p) => sum + p.amount, 0);
-  }, [validPayments, startOfMonthStr]);
+  }, [validPayments, currentMonthStr]);
 
   // Calculate cash currently in box
   const todayCashMovements = useMemo(() => {
-    return cashMovements.filter(m => m.created_at.startsWith(todayStr) && m.method === 'cash');
+    return cashMovements.filter(m => (m.created_at.startsWith(todayStr) || isPaymentOnDate({ created_at: m.created_at }, todayStr)) && m.method === 'cash');
   }, [cashMovements, todayStr]);
 
   const cashIn = todayCashMovements

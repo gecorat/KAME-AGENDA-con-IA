@@ -28,6 +28,11 @@ import { DEFAULT_REMINDER_CONFIG } from '../lib/demo-data';
 import { Appointment } from '../types';
 import { WhatsAppPreviewModal } from '../components/WhatsAppPreviewModal';
 import { EmailPreviewModal } from '../components/EmailPreviewModal';
+import {
+  getTodayArgentinaDateStr,
+  getTomorrowArgentinaDateStr,
+  isAppointmentOnDate
+} from '../lib/timezone';
 
 export const RemindersView: React.FC = () => {
   const {
@@ -79,19 +84,15 @@ export const RemindersView: React.FC = () => {
   const totalEmailSent = reminderLogs.filter(l => l.channel === 'email').length;
 
   // Filtered upcoming appointments
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const tomorrow = new Date(now);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const tomorrowStr = tomorrow.toISOString().split('T')[0];
+  const todayStr = getTodayArgentinaDateStr();
+  const tomorrowStr = getTomorrowArgentinaDateStr();
 
   const filteredAppointments = appointments
     .filter(a => {
       if (isExampleItem(a)) return false;
       if (a.status === 'cancelled') return false;
-      const aptDate = a.start_datetime.split('T')[0];
-      if (filterQueue === 'today') return aptDate === todayStr;
-      if (filterQueue === 'tomorrow') return aptDate === tomorrowStr;
+      if (filterQueue === 'today') return isAppointmentOnDate(a, todayStr);
+      if (filterQueue === 'tomorrow') return isAppointmentOnDate(a, tomorrowStr);
       if (filterQueue === 'unconfirmed') return a.status === 'pending' && !a.patient_confirmed;
       return true;
     })

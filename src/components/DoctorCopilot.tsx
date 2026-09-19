@@ -26,6 +26,13 @@ import {
   Play
 } from 'lucide-react';
 import { useAgendaStore } from '../lib/store';
+import {
+  getTodayArgentinaDateStr,
+  getCurrentMonthArgentinaStr,
+  isAppointmentOnDate,
+  isPaymentOnDate,
+  isPaymentInMonth
+} from '../lib/timezone';
 
 interface DoctorCopilotProps {
   onSelectTab: (tab: string) => void;
@@ -168,13 +175,12 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
   }, [payments, isExampleItem]);
 
   // Calculations for prompt context
-  const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
-  const startOfMonthStr = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+  const todayStr = getTodayArgentinaDateStr();
+  const currentMonthStr = getCurrentMonthArgentinaStr();
 
   const todayAppointments = useMemo(() => {
     return realAppointments
-      .filter(a => a.start_datetime.startsWith(todayStr) && a.status !== 'cancelled')
+      .filter(a => isAppointmentOnDate(a, todayStr) && a.status !== 'cancelled')
       .sort((a, b) => a.start_datetime.localeCompare(b.start_datetime))
       .map(a => ({
         id: a.id,
@@ -189,7 +195,7 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
 
   const upcomingAppointments = useMemo(() => {
     return realAppointments
-      .filter(a => a.start_datetime > todayStr && a.status !== 'cancelled')
+      .filter(a => a.start_datetime > todayStr && !isAppointmentOnDate(a, todayStr) && a.status !== 'cancelled')
       .slice(0, 10)
       .map(a => ({
         id: a.id,
@@ -203,15 +209,15 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
 
   const todayRevenue = useMemo(() => {
     return realPayments
-      .filter(p => p.date.startsWith(todayStr))
+      .filter(p => isPaymentOnDate(p, todayStr))
       .reduce((sum, p) => sum + p.amount, 0);
   }, [realPayments, todayStr]);
 
   const monthRevenue = useMemo(() => {
     return realPayments
-      .filter(p => p.date >= startOfMonthStr)
+      .filter(p => isPaymentInMonth(p, currentMonthStr))
       .reduce((sum, p) => sum + p.amount, 0);
-  }, [realPayments, startOfMonthStr]);
+  }, [realPayments, currentMonthStr]);
 
   const pendingAppointments = useMemo(() => {
     return realAppointments.filter(a => a.payment_status === 'pending' && a.status !== 'cancelled');
@@ -477,7 +483,7 @@ export const DoctorCopilot: React.FC<DoctorCopilotProps> = ({
     setIsLoading(true);
 
     try {
-      const todayDateFormatted = now.toLocaleDateString('es-AR', {
+      const todayDateFormatted = new Date().toLocaleDateString('es-AR', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',

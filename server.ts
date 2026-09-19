@@ -4962,8 +4962,8 @@ Responde ÚNICAMENTE con un JSON con la estructura:
       } = req.body;
 
       const appUrl = getAppBaseUrl(req);
-      const effectiveApiKey = apiKey || process.env.DLOCAL_GO_API_KEY;
-      const effectiveSecret = secretKey || process.env.DLOCAL_GO_SECRET_KEY;
+      const effectiveApiKey = (apiKey || process.env.DLOCAL_GO_API_KEY || "").replace(/^Bearer\s+/i, "").trim();
+      const effectiveSecret = (secretKey || process.env.DLOCAL_GO_SECRET_KEY || "").trim();
       const orderId = `order_dlocal_${planId}_${Date.now()}`;
 
       const successUrl = `${appUrl}/#dlocal-success?plan=${planId}&cycle=${billingCycle}&order=${orderId}&status=PAID`;
@@ -5053,14 +5053,16 @@ Responde ÚNICAMENTE con un JSON con la estructura:
   app.post("/api/dlocalgo/test-connection", async (req, res) => {
     try {
       const { apiKey } = req.body;
-      const keyToTest = apiKey || process.env.DLOCAL_GO_API_KEY;
+      const rawKey = apiKey || process.env.DLOCAL_GO_API_KEY;
 
-      if (!keyToTest) {
+      if (!rawKey || !rawKey.trim()) {
         return res.status(400).json({
           success: false,
           error: "No se proporcionó API Key de DLocal Go."
         });
       }
+
+      const keyToTest = rawKey.replace(/^Bearer\s+/i, "").trim();
 
       // Try fetching account or payments endpoint
       const response = await fetch("https://api.dlocalgo.com/v1/payments?limit=1", {
